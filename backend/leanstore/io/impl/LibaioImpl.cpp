@@ -196,23 +196,23 @@ LibaioChannel::LibaioChannel(RaidController<int>& raidCtl, IoOptions ioOptions) 
 // -------------------------------------------------------------------------------------
 LibaioChannel::~LibaioChannel()
 {
-   io_destroy(aio_context);
+   // io_destroy(aio_context);
 }
 // -------------------------------------------------------------------------------------
 void LibaioChannel::_push(RaidRequest<LibaioIoRequest>* req)
 {
-   switch (req->base.type) {
-   case IoRequestType::Write:
-      io_prep_pwrite(&req->impl.aio_iocb, raidCtl.device(req->base.device), req->base.buffer(), req->base.len, req->base.offset);
-      break;
-   case IoRequestType::Read:
-      io_prep_pread(&req->impl.aio_iocb, raidCtl.device(req->base.device), req->base.buffer(), req->base.len, req->base.offset);
-      // std::cout << "read: " << req->aio_fildes << " len: " << req->u.c.nbytes << " addr: " << req->u.c.offset << std::endl;
-      break;
-   default:
-      throw "";
-   }
-   request_stack.push_back(reinterpret_cast<iocb*>(req)); 
+   // switch (req->base.type) {
+   // case IoRequestType::Write:
+   //    io_prep_pwrite(&req->impl.aio_iocb, raidCtl.device(req->base.device), req->base.buffer(), req->base.len, req->base.offset);
+   //    break;
+   // case IoRequestType::Read:
+   //    io_prep_pread(&req->impl.aio_iocb, raidCtl.device(req->base.device), req->base.buffer(), req->base.len, req->base.offset);
+   //    // std::cout << "read: " << req->aio_fildes << " len: " << req->u.c.nbytes << " addr: " << req->u.c.offset << std::endl;
+   //    break;
+   // default:
+   //    throw "";
+   // }
+   // request_stack.push_back(reinterpret_cast<iocb*>(req));
 }
 // -------------------------------------------------------------------------------------
 void LibaioChannel::_printSpecializedCounters(std::ostream& ss)
@@ -226,39 +226,42 @@ int LibaioChannel::_submit()
    if(rand() % 1000000 == 0)
       printf("len: %i thr: %p init: %p cnt: %lu \n", request_stack.data()[0]->u.saddr.len, (void*)pthread_self(), &aio_context, request_stack.size());
       */
-   int submitted = io_submit(aio_context, request_stack.size(), reinterpret_cast<iocb**>(request_stack.data()));
-   ensure(request_stack.size() == (u64)submitted);
-   outstanding += request_stack.size();
-   request_stack.clear();
-   return submitted;
+   // int submitted = io_submit(aio_context, request_stack.size(), reinterpret_cast<iocb**>(request_stack.data()));
+   // ensure(request_stack.size() == (u64)submitted);
+   // outstanding += request_stack.size();
+   // request_stack.clear();
+   // return submitted;
+
+   return 0;
 }
 // -------------------------------------------------------------------------------------
 int LibaioChannel::_poll(int)
 {
    //ensure(outstanding <= ioOptions.iodepth);
-   int done_requests = 0;
-   do {
-      done_requests = io_getevents(aio_context, 0, outstanding, events.get(), NULL);
-   } while (done_requests == -EINTR); // interrupted by user, e.g. in gdb
-   ensure(done_requests >= 0);
-   outstanding -= done_requests;
-   // std::cout << "polled: outstanding: " << request_stack->outstanding() << " done: " << done_requests << " outstanding: " <<
-   // request_stack->outstanding() << std::endl << std::flush; ensure(done_requests == request_stack->outstanding());
-   for (int i = 0; i < done_requests; i++) {
-      auto& event = events[i];
-      ensure(event.res2 == 0);
-      // ensure(event.res == ioOptions.write_back_buffer_size);
-      auto req = reinterpret_cast<RaidRequest<LibaioIoRequest>*>(event.obj);
-      if (event.res != req->base.len) {
-         req->base.print(std::cout);
-         throw std::logic_error("libaio event.res != len: event.res: " + std::to_string((long)event.res) + " len: " + std::to_string(req->base.len));
-      }
-      // eunsure(((char*)req->u.c.buf)[0] == (char)(req->u.c.offset/(16*1024)));
-      req->base.innerCallback.callback(&req->base);
-      // std::cout << "poll done " << event.res << "r2: " << event.res2 << " time: " <<
-      // std::chrono::duration_cast<std::chrono::microseconds>(req->base.completion_time - req->base.push_time).count() << std::endl;
-   }
-   return done_requests;
+   // int done_requests = 0;
+   // do {
+   //    done_requests = io_getevents(aio_context, 0, outstanding, events.get(), NULL);
+   // } while (done_requests == -EINTR); // interrupted by user, e.g. in gdb
+   // ensure(done_requests >= 0);
+   // outstanding -= done_requests;
+   // // std::cout << "polled: outstanding: " << request_stack->outstanding() << " done: " << done_requests << " outstanding: " <<
+   // // request_stack->outstanding() << std::endl << std::flush; ensure(done_requests == request_stack->outstanding());
+   // for (int i = 0; i < done_requests; i++) {
+   //    auto& event = events[i];
+   //    ensure(event.res2 == 0);
+   //    // ensure(event.res == ioOptions.write_back_buffer_size);
+   //    auto req = reinterpret_cast<RaidRequest<LibaioIoRequest>*>(event.obj);
+   //    if (event.res != req->base.len) {
+   //       req->base.print(std::cout);
+   //       throw std::logic_error("libaio event.res != len: event.res: " + std::to_string((long)event.res) + " len: " + std::to_string(req->base.len));
+   //    }
+   //    // eunsure(((char*)req->u.c.buf)[0] == (char)(req->u.c.offset/(16*1024)));
+   //    req->base.innerCallback.callback(&req->base);
+   //    // std::cout << "poll done " << event.res << "r2: " << event.res2 << " time: " <<
+   //    // std::chrono::duration_cast<std::chrono::microseconds>(req->base.completion_time - req->base.push_time).count() << std::endl;
+   // }
+   // return done_requests;
+   return 0;
 }
 /*
    u64 LibaioChannel::_readSync(char* destination, u64 len, u64 addr) override {
