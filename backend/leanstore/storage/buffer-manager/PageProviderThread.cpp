@@ -581,85 +581,85 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
                }
             }
             pages_left_to_iterate_partition--;
-            if (bf.isDirty()) {
-               ensure(partition.outstanding >= 0);
-               if (!mean::exec::ioChannel().writeStackFull() && partition.outstanding < (s64)partition.io_queue.max_size) {
-                  {
-                     ExclusiveGuard ex_guard(o_guard);
-                     assert(!bf.header.isWB);
-                     bf.header.isWB = true;
-                     //pbf.header.state = BufferFrame::STATE::IOCOLD;
-                  }
-                  {
-                     SharedGuard s_guard(o_guard);
-                     PID wb_pid = bf.header.pid;
-                     if (FLAGS_out_of_place) {
-                        wb_pid = partition.nextPID();
-                     }
-                     mean::UserIoCallback cb;
-                     cb.user_data.val.ptr = &bf;
-                     cb.user_data2.val.u = bf.page.GSN;
-                     cb.user_data3.val.ptr = &partition; 
-                     cb.callback = [](mean::IoBaseRequest* req) {
-                        auto& written_bf = *req->user.user_data.as<BufferFrame*>();
-                        auto written_lsn = req->user.user_data2.val.u;
-                        auto& partition = *req->user.user_data3.as<CoolingPartition*>();
-                        while (true) {
-                           jumpmuTry()
-                           {
-                              Guard guard(written_bf.header.latch);
-                              guard.toExclusive();
-                              //written_bf.header.state = BufferFrame::STATE::IOCOLDDONE;
-                              assert(written_bf.header.isWB);
-                              assert(written_bf.header.lastWrittenGSN < written_lsn);
-                              // -------------------------------------------------------------------------------------
-                              if (FLAGS_out_of_place) {
-                                 PID old_pid = written_bf.header.pid;
-                                 auto out_of_place_pid = req->out_of_place_addr;
-                                 written_bf.header.pid = out_of_place_pid;
-                                 partition.freePage(old_pid);
-                              }
-                              written_bf.header.lastWrittenGSN = written_lsn;
-                              written_bf.header.isWB = false;
-                              PPCounters::myCounters().flushed_pages_counter++;
-                              // -------------------------------------------------------------------------------------
-                              guard.unlock();
-                              jumpmu_break;
-                           }
-                           jumpmuCatch() {
-                              std::cout << "pp2 io callback catch: " << (int)written_bf.header.state << std::endl;
-                           }
-                        }
-                        partition.state.done++;
-                        //std::cout << "i: " << &written_bf << std::endl;
-                        partition.io_queue.push_back(&written_bf);
-                        partition.io_queue2.push_back(&written_bf);
-                     };
-                     bf.page.magic_debugging_number = wb_pid;
-                     bf.page.magic_debugging_number_end = wb_pid;
-                     mean::exec::ioChannel().pushWrite(
-                           reinterpret_cast<char*>(&bf.page), PAGE_SIZE * wb_pid, PAGE_SIZE, /*reinterpret_cast<uintptr_t>(&bf), pid,*/ cb, true);
-                     partition.state.submitted++;
-                     partition.outstanding++; // 1
-                     ensure(partition.outstanding <= (s64)partition.io_queue.max_size);
-                     added++;
-                     COUNTERS_BLOCK() { ThreadCounters::myCounters().pp_p2_iopushed++; }
-                  }
-               } else {
-                  partition.cooling_bfs_counter++;
-                  partition.cooling_queue.push_back(&bf);
-                  ensure(partition.cooling_queue.size() == partition.cooling_bfs_counter);
-                  //std::cout << "might be the issue" << std::endl;
-                  jumpmu_break;
-               }
-            } else {
-               __builtin_prefetch(bf.header.optimistic_parent_pointer.child.parent_bf,0,1);
-               evictedCalledd = true;
-               bool p1 = false;
-               bool p2 = false;
-               evict_bf(partition, freed_bfs_batch, bf, o_guard, p1, p2);
-               ensure(p1 && p2);
-            }
+            // if (bf.isDirty()) {
+            //    ensure(partition.outstanding >= 0);
+            //    if (!mean::exec::ioChannel().writeStackFull() && partition.outstanding < (s64)partition.io_queue.max_size) {
+            //       {
+            //          ExclusiveGuard ex_guard(o_guard);
+            //          assert(!bf.header.isWB);
+            //          bf.header.isWB = true;
+            //          //pbf.header.state = BufferFrame::STATE::IOCOLD;
+            //       }
+            //       {
+            //          SharedGuard s_guard(o_guard);
+            //          PID wb_pid = bf.header.pid;
+            //          if (FLAGS_out_of_place) {
+            //             wb_pid = partition.nextPID();
+            //          }
+            //          mean::UserIoCallback cb;
+            //          cb.user_data.val.ptr = &bf;
+            //          cb.user_data2.val.u = bf.page.GSN;
+            //          cb.user_data3.val.ptr = &partition;
+            //          cb.callback = [](mean::IoBaseRequest* req) {
+            //             auto& written_bf = *req->user.user_data.as<BufferFrame*>();
+            //             auto written_lsn = req->user.user_data2.val.u;
+            //             auto& partition = *req->user.user_data3.as<CoolingPartition*>();
+            //             while (true) {
+            //                jumpmuTry()
+            //                {
+            //                   Guard guard(written_bf.header.latch);
+            //                   guard.toExclusive();
+            //                   //written_bf.header.state = BufferFrame::STATE::IOCOLDDONE;
+            //                   assert(written_bf.header.isWB);
+            //                   assert(written_bf.header.lastWrittenGSN < written_lsn);
+            //                   // -------------------------------------------------------------------------------------
+            //                   if (FLAGS_out_of_place) {
+            //                      PID old_pid = written_bf.header.pid;
+            //                      auto out_of_place_pid = req->out_of_place_addr;
+            //                      written_bf.header.pid = out_of_place_pid;
+            //                      partition.freePage(old_pid);
+            //                   }
+            //                   written_bf.header.lastWrittenGSN = written_lsn;
+            //                   written_bf.header.isWB = false;
+            //                   PPCounters::myCounters().flushed_pages_counter++;
+            //                   // -------------------------------------------------------------------------------------
+            //                   guard.unlock();
+            //                   jumpmu_break;
+            //                }
+            //                jumpmuCatch() {
+            //                   std::cout << "pp2 io callback catch: " << (int)written_bf.header.state << std::endl;
+            //                }
+            //             }
+            //             partition.state.done++;
+            //             //std::cout << "i: " << &written_bf << std::endl;
+            //             partition.io_queue.push_back(&written_bf);
+            //             partition.io_queue2.push_back(&written_bf);
+            //          };
+            //          bf.page.magic_debugging_number = wb_pid;
+            //          bf.page.magic_debugging_number_end = wb_pid;
+            //          mean::exec::ioChannel().pushWrite(
+            //                reinterpret_cast<char*>(&bf.page), PAGE_SIZE * wb_pid, PAGE_SIZE, /*reinterpret_cast<uintptr_t>(&bf), pid,*/ cb, true);
+            //          partition.state.submitted++;
+            //          partition.outstanding++; // 1
+            //          ensure(partition.outstanding <= (s64)partition.io_queue.max_size);
+            //          added++;
+            //          COUNTERS_BLOCK() { ThreadCounters::myCounters().pp_p2_iopushed++; }
+            //       }
+            //    } else {
+            //       partition.cooling_bfs_counter++;
+            //       partition.cooling_queue.push_back(&bf);
+            //       ensure(partition.cooling_queue.size() == partition.cooling_bfs_counter);
+            //       //std::cout << "might be the issue" << std::endl;
+            //       jumpmu_break;
+            //    }
+            // } else {
+             __builtin_prefetch(bf.header.optimistic_parent_pointer.child.parent_bf,0,1);
+             evictedCalledd = true;
+             bool p1 = false;
+             bool p2 = false;
+             evict_bf(partition, freed_bfs_batch, bf, o_guard, p1, p2);
+             ensure(p1 && p2);
+            // }
          } else {
             // is already write back, do nothing skip
             //std::cout << "is allready write back" << std::endl;

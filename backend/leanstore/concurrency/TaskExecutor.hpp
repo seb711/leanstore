@@ -57,7 +57,7 @@ class TaskExecutor : public ThreadBase
    s64 pp_required = 0;
    bool local_pause_seen = false;
   public:
-   std::atomic<float> sleep;
+   std::atomic<float> sleep = 0.0;
    //static std::atomic<bool> pause;
    //static std::atomic<int> pause_seen;
    bool disableMessagePoller = false;
