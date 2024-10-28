@@ -12,6 +12,6 @@ int my_memcmp(const void *str1, const void *str2, size_t n) {
    return 0;
 }
 
-int memcmp(const void *s1, const void *s2, size_t n) {
+int __wrap_memcmp(const void *s1, const void *s2, size_t n) {
    return my_memcmp(s1, s2, n);
 }
