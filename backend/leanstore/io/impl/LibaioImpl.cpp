@@ -31,7 +31,7 @@ std::string fileToNGDevice(std::string dev) {
       std::cout << " -> " << p;
    }
    if (p.u8string().find("nvme") == std::string::npos &&
-         p.u8string().find("ng") == std::string::npos) {
+       p.u8string().find("ng") == std::string::npos) {
       ensure(false, "\"" + dev +"\" not a block or character device");
    }
    std::regex r("nvme");
@@ -139,9 +139,9 @@ void LinuxBaseEnv::freeIoMemory(void* ptr, size_t size)
 }
 void LinuxBaseChannel::pushBlocking(IoRequestType type, char* data, s64 addr, u64 len, [[maybe_unused]] bool write_back)
 {
-	int* fd;
-	u64 raidedOffset;
-	raidCtl.calc(addr, len, fd, raidedOffset);
+   int* fd;
+   u64 raidedOffset;
+   raidCtl.calc(addr, len, fd, raidedOffset);
    switch (type) {
       case IoRequestType::Read: {
          s64 ok = pread(*fd, data, len, raidedOffset);
@@ -186,8 +186,8 @@ LibaioChannel::LibaioChannel(RaidController<int>& raidCtl, IoOptions ioOptions) 
    const int ret = io_setup(ioOptions.iodepth, &aio_context);
    if (ret != 0) {
       throw std::logic_error("io_setup failed, ret code = " + std::to_string(ret) + 
-            "\nIff ret code is 11/EAGAIN, this could be cause by a too high iodepth. " + 
-            "See: /proc/sys/fs/aio-max-nr for max number of aio events that can be used.");
+                             "\nIff ret code is 11/EAGAIN, this could be cause by a too high iodepth. " +
+                             "See: /proc/sys/fs/aio-max-nr for max number of aio events that can be used.");
    }
    // -------------------------------------------------------------------------------------
    request_stack.reserve(ioOptions.iodepth);
@@ -202,15 +202,15 @@ LibaioChannel::~LibaioChannel()
 void LibaioChannel::_push(RaidRequest<LibaioIoRequest>* req)
 {
    switch (req->base.type) {
-   case IoRequestType::Write:
-      io_prep_pwrite(&req->impl.aio_iocb, raidCtl.device(req->base.device), req->base.buffer(), req->base.len, req->base.offset);
-      break;
-   case IoRequestType::Read:
-      io_prep_pread(&req->impl.aio_iocb, raidCtl.device(req->base.device), req->base.buffer(), req->base.len, req->base.offset);
-      // std::cout << "read: " << req->aio_fildes << " len: " << req->u.c.nbytes << " addr: " << req->u.c.offset << std::endl;
-      break;
-   default:
-      throw "";
+      case IoRequestType::Write:
+         io_prep_pwrite(&req->impl.aio_iocb, raidCtl.device(req->base.device), req->base.buffer(), req->base.len, req->base.offset);
+         break;
+      case IoRequestType::Read:
+         io_prep_pread(&req->impl.aio_iocb, raidCtl.device(req->base.device), req->base.buffer(), req->base.len, req->base.offset);
+         // std::cout << "read: " << req->aio_fildes << " len: " << req->u.c.nbytes << " addr: " << req->u.c.offset << std::endl;
+         break;
+      default:
+         throw "";
    }
    request_stack.push_back(reinterpret_cast<iocb*>(req));
 }
