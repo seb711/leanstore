@@ -48,7 +48,7 @@ void LinuxBaseEnv::init(IoOptions ioOpts)
    raidCtl->forEach([this](std::string& dev, int& fd) {
       int flags = O_RDWR | O_NOATIME;
       if (!ioOptions.ioUringNVMePassthrough) {
-         flags |= O_DIRECT;
+         // flags |= O_DIRECT;
       } else {
          dev = fileToNGDevice(dev);
       }
