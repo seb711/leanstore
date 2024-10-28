@@ -1,0 +1,12 @@
+/libtbb.so.12: /lib/x86_64-linux-gnu/libtbb.so.12
+/libtbbmalloc.so.2: /lib/x86_64-linux-gnu/libtbbmalloc.so.2
+/libaio.so.1: /lib/x86_64-linux-gnu/libaio.so.1
+/libnvme.so.1: /lib/x86_64-linux-gnu/libnvme.so.1
+/libtpcc_lib.so: ${MODULE_DIR}/build/frontend/libtpcc_lib.so
+/tpcc: ${MODULE_DIR}/build/frontend/tpcc
+/ycsb: ${MODULE_DIR}/build/frontend/ycsb
+/libycsb_lib.so: ${MODULE_DIR}/build/frontend/libycsb_lib.so
+/touch: /usr/bin/touch
+/ls: /usr/bin/ls
+/usr/lib/libpcre2-8.so.0: /lib/x86_64-linux-gnu/libpcre2-8.so.0
+/mkdir: /usr/bin/mkdir
