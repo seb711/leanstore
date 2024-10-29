@@ -79,7 +79,7 @@ BufferManager::BufferManager()
          for (u64 bf_i = bf_b; bf_i < bf_e; bf_i++) {
             BufferFrame* bf = new (bfs + bf_i) BufferFrame();
 
-            bf->header.newPage = true;
+            std::memset(reinterpret_cast<u8*>(&bf->page), 0, PAGE_SIZE);
 
             cooling_partitions[p_i].dram_free_list.push(*bf);
             p_i = (p_i + 1) % cooling_partitions_count;
