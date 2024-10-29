@@ -77,7 +77,11 @@ BufferManager::BufferManager()
       utils::Parallelize::parallelRange(dram_pool_size, [&](u64 bf_b, u64 bf_e) {
          u64 p_i = 0;
          for (u64 bf_i = bf_b; bf_i < bf_e; bf_i++) {
-            cooling_partitions[p_i].dram_free_list.push(*new (bfs + bf_i) BufferFrame());
+            BufferFrame* bf = new (bfs + bf_i) BufferFrame();
+
+            bf->header.newPage = true;
+
+            cooling_partitions[p_i].dram_free_list.push(*bf);
             p_i = (p_i + 1) % cooling_partitions_count;
          }
       });
