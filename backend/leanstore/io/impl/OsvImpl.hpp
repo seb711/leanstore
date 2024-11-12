@@ -1,7 +1,5 @@
 #pragma once
-#if LEANSTORE_INCLUDE_SPDK
-// -------------------------------------------------------------------------------------
-#include "Spdk.hpp"
+#if LEANSTORE_INCLUDE_OSV
 // -------------------------------------------------------------------------------------
 #include "../IoAbstraction.hpp"
 #include "../RequestStack.hpp"
@@ -17,16 +15,16 @@
 namespace mean
 {
 // -------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------------
-class SpdkChannel;
-class SpdkEnv 
+class OsvChannel;
+class OsvEnv
 {
-   std::unique_ptr<NVMeMultiController> controller;
-   std::vector<std::unique_ptr<SpdkChannel>> channels;
+   std::unique<OsvNVMeController> controller;
+   std::vector<std::unique_ptr<OsvChannel>> channels;
+
   public:
-   ~SpdkEnv();
+   ~OsvEnv();
    void init(IoOptions options);
-   SpdkChannel& getIoChannel(int channel);
+   OsvChannel& getIoChannel(int channel);
    void* allocIoMemory(size_t size, size_t align);
    void* allocIoMemoryChecked(size_t size, size_t align);
    void freeIoMemory(void* ptr, size_t size);
@@ -36,37 +34,40 @@ class SpdkEnv
    DeviceInformation getDeviceInfo();
 };
 // -------------------------------------------------------------------------------------
-class SpdkChannel 
+class OsvChannel
 {
-   std::vector<RaidRequest<SpdkIoReq>*> write_request_stack;
+   std::vector<RaidRequest<OsvIoReq>*> write_request_stack;
 
    IoOptions options;
-   NVMeMultiController& controller;
+   OsvNVMeController& controller;
    int queue;
    const int lbaSize;
-   std::vector<spdk_nvme_qpair*> qpairs;
-   std::vector<struct spdk_nvme_ns*> nameSpaces;
-   std::vector<int> outstanding;
+   std::vector<osv_nvme_pair*> qpairs;
+   std::vector<int> outstanding;  // namespaces are in our case all 1 int = namespaces
    // -------------------------------------------------------------------------------------
-   void prepare_request(RaidRequest<SpdkIoReq>* req, SpdkIoReqCallback spdkCb);
+   void prepare_request(RaidRequest<OsvIoReq>* req, OsvIoReqCallback spdkCb);
    // -------------------------------------------------------------------------------------
   public:
-   SpdkChannel(IoOptions options, NVMeMultiController& controller, int queue) ;
-   ~SpdkChannel();
+   OsvChannel(IoOptions options, OsvNVMeController& controller, int queue);
+   ~OsvChannel();
    // -------------------------------------------------------------------------------------
-   void _push(RaidRequest<SpdkIoReq>* req);
+   void _push(RaidRequest<OsvIoReq>* req);
    void pushBlocking(IoRequestType type, char* data, s64 addr, u64 len, bool write_back) { throw std::logic_error("not implemented"); }
    int _submit()
    {
-      for (auto& req: write_request_stack) { // ok but this is done until stack empty 
+      for (auto& req : write_request_stack) {  // ok but this is done until stack empty
          int ret;
          if (true || outstanding[req->base.device] < 5) {
-            ret = SpdkEnvironment::spdk_req_type_fun_lookup[(int)req->impl.type](nameSpaces[req->base.device], qpairs[req->base.device], req->impl.buf, req->impl.lba, req->impl.lba_count, NVMeController::completion, req, 0);
+            // TODO: here we need to insert the correct functions
+            // but i think we do it the same as spdk (-> put the stuff in the correct functions)
+            // ret = OsvEnvironment::spdk_req_type_fun_lookup[(int)req->impl.type](nameSpaces[req->base.device], qpairs[req->base.device],
+            // req->impl.buf, req->impl.lba, req->impl.lba_count, NVMeController::completion, req, 0);
+
             outstanding[req->base.device]++;
             ensure(ret == 0);
             req = nullptr;
          }
-         //controller.submit(req->base.device, queue, reinterpret_cast<SpdkIoReq*>(&req->impl));
+         // controller.submit(req->base.device, queue, reinterpret_cast<SpdkIoReq*>(&req->impl));
       }
       int left = 0;
       for (int i = 0; i < write_request_stack.size(); i++) {
@@ -76,32 +77,18 @@ class SpdkChannel
       }
       int submitted = write_request_stack.size() - left;
       write_request_stack.resize(left);
-      //write_request_stack.clear();
+      // write_request_stack.clear();
       return submitted;
    }
 
    int _poll(int)
    {
       int done = 0;
-      /*
-      bool keepPolling = false;
-      do {
-         for (unsigned int i = 0; i < qpairs.size(); i++) {
-            int ok = spdk_nvme_qpair_process_completions(qpairs[i], 0);
-            outstanding[i] -= ok;
-            ensure(ok >= 0);
-            done += ok;
-         }
-         keepPolling = false;
-         for (auto o: outstanding) {
-            if (o > 5)
-               keepPolling = true;
-         }
-      } while (keepPolling);
-      //done = controller.process(queue, 0);
-      */
+
       for (unsigned int i = 0; i < qpairs.size(); i++) {
-         int ok = spdk_nvme_qpair_process_completions(qpairs[i], 0);
+         // int ok = spdk_nvme_qpair_process_completions(qpairs[i], 0);
+         // TODO: here we need to insert the req_done logic -> here are the requests fetched
+         int ok;
          outstanding[i] -= ok;
          ensure(ok >= 0);
          done += ok;
@@ -111,7 +98,5 @@ class SpdkChannel
    }
    void _printSpecializedCounters(std::ostream& ss);
 };
-// -------------------------------------------------------------------------------------
 }  // namespace mean
-// -------------------------------------------------------------------------------------
 #endif
