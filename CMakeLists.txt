@@ -62,6 +62,21 @@ else()
    # do nothing
 endif(LEANSTORE_INCLUDE_SPDK)
 
+option(LEANSTORE_INCLUDE_OSV "include OSV" OFF) #OFF by default
+if(LEANSTORE_INCLUDE_OSV)
+   message("Including OSV")
+
+   include_directories(
+    ${CMAKE_SOURCE_DIR}/../..
+    ${CMAKE_SOURCE_DIR}/../../include
+   )
+
+   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DLEANSTORE_INCLUDE_OSV")
+else()
+	message("NOT Including OSV")
+   # do nothing
+endif(LEANSTORE_INCLUDE_OSV)
+
 # ---------------------------------------------------------------------------
 # Dependencies
 # ---------------------------------------------------------------------------

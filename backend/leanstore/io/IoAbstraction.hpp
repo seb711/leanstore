@@ -123,6 +123,7 @@ class Raid0Channel : public IoChannel
       }
       ensure(req);
       req->copyFields(usr);
+      // assert(req->type == IoRequestType::Read ||(((BufferFrame::Page*) (req->data))->magic_debugging_number == ((BufferFrame::Page*) (req->data))->magic_debugging_number_end)); 
       pushIoRequest(req);
    }
    // -------------------------------------------------------------------------------------
@@ -396,7 +397,7 @@ class RaidEnv : public RaidEnvironment {
          auto& ch = channels[i];
          if (i < io_env_max_channels) {
             if (io_options.raid5) {
-               throw std::logic_error("not implemented");
+               throw std::logic_error("raid5 not implemented");
                //ch = std::unique_ptr<IoChannel>(new Raid5Channel<TIoEnvironment, TIoChannel, TImplRequest>(*io_env, io_env->getIoChannel(i), io_options, i, io_options.channelCount));
             } else {
                ch = std::unique_ptr<IoChannel>(new Raid0Channel<TIoEnvironment, TIoChannel, TImplRequest>(*io_env, io_env->getIoChannel(i), io_options, i, io_options.channelCount));

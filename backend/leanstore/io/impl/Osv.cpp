@@ -2,9 +2,22 @@
 #include "Osv.hpp"
 #include <cstddef>
 #include <regex>
+#include "drivers/nvme-user-queue.hh"
 
 bool OsvEnvironment::initialized = false;
 cmd_fun OsvEnvironment::osv_req_type_fun_lookup[(int)OsvIoReqType::COUNT + 1];
+
+int OsvEnvironment::osv_nvme_qpair_process_completions(nvme::io_user_queue_pair* qpair, uint32_t max) 
+{
+   // fixme that can be done better
+   return leanstore_osv_nvme_qpair_process_completions(qpair, max);
+}
+void OsvEnvironment::ensureInitialized()
+{
+   if (!isInitialized()) {
+      throw std::logic_error("OsvEnvironment not initialized");
+   }
+}
 bool OsvEnvironment::isInitialized(bool init)
 {
    if (init) {
@@ -12,23 +25,18 @@ bool OsvEnvironment::isInitialized(bool init)
    }
    return initialized;
 };
-void OsvEnvironment::ensureInitialized()
-{
-   if (!isInitialized()) {
-      throw std::logic_error("SpdkEnvironment not initialized");
-   }
-}
 void OsvEnvironment::init()
 {
    if (isInitialized()) {
-      throw std::logic_error("SpdkEnvironment already initialized");
+      throw std::logic_error("OsvEnvironment already initialized");
    }
 
+   std::cout << "set the functions" << std::endl; 
+
    // TODO: these are the functions we need -> therefore it would be really good to have the whole osv_nvme_nvme package importable
-   // SpdkEnvironment::spdk_req_type_fun_lookup[(int)SpdkIoReqType::Read] = &spdk_nvme_ns_cmd_read;
-   // SpdkEnvironment::spdk_req_type_fun_lookup[(int)SpdkIoReqType::Write] = &spdk_nvme_ns_cmd_write;
-   // SpdkEnvironment::spdk_req_type_fun_lookup[(int)SpdkIoReqType::ZnsAppend] = &spdk_nvme_zns_zone_append;
-   // SpdkEnvironment::spdk_req_type_fun_lookup[(int)SpdkIoReqType::COUNT] = nullptr;
+   OsvEnvironment::osv_req_type_fun_lookup[(int)OsvIoReqType::Read] = leanstore_osv_nvme_nv_cmd_read; 
+   OsvEnvironment::osv_req_type_fun_lookup[(int)OsvIoReqType::Write] = leanstore_osv_nvme_nv_cmd_write; 
+   OsvEnvironment::osv_req_type_fun_lookup[(int)OsvIoReqType::COUNT] = nullptr;
    /*
        // TODO: do we need to set env vars in osv?
     struct spdk_env_opts opts;
@@ -90,24 +98,34 @@ NVMeController::~NVMeController()
       spdk_nvme_detach(ctrlr);
    } */
 
-  // TODO: somehow we should see if we release the io_queues but for now we wont do that -> just exit
+   // TODO: somehow we should see if we release the io_queues but for now we wont do that -> just exit
+   for (auto& qpair : qpairs) {
+      remove_io_user_queue(qpair->_id);
+   }
+   qpairs.clear();
 }
 // -------------------------------------------------------------------------------------
 void NVMeController::connect(std::string nvmedev)
 {
-    // in here we should connect to the osv driver
+   // in here we should connect to the osv driver
+   // for now we go with the easiest option and just statically bind to 
+   // the default ones because we also do not have any architecture for nvme mapping
+   remove_io_user_queue = std::bind(leanstore_remove_io_user_queue, std::placeholders::_1);
+   create_io_user_queue = std::bind(leanstore_create_io_user_queue, std::placeholders::_1);
 }
 // -------------------------------------------------------------------------------------
 uint32_t NVMeController::nsLbaDataSize()
 {
    // return spdk_nvme_ns_get_sector_size(nameSpace);
    // TODO: hopefully these can be retrieved by osv driver
+   return 4096; 
 }
 // -------------------------------------------------------------------------------------
 uint64_t NVMeController::nsSize()
 {
    // return spdk_nvme_ns_get_size(nameSpace);
-      // TODO: hopefully these can be retrieved by osv driver
+   // TODO: hopefully these can be retrieved by osv driver
+   return 1 << 14; 
 }
 // -------------------------------------------------------------------------------------
 void NVMeController::allocateQPairs()
@@ -115,51 +133,52 @@ void NVMeController::allocateQPairs()
    allocateQPairs(-1);
 }
 // -------------------------------------------------------------------------------------
-void NVMeController::completion(void* cb_arg, const struct spdk_nvme_cpl* cpl)
-{
-   // yea probably we need that but i do not know when atm 
-    // -> check when implementation is ready what to do here
-};
-// -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 uint32_t NVMeController::numberNamespaces()
 {
    // currently we only have one
-   return 1; 
+   return 1;
 }
 // -------------------------------------------------------------------------------------
 uint64_t NVMeController::nsNumLbas()
 {
    // return spdk_nvme_ns_get_num_sectors(nameSpace);
    // TODO: also i do not know what is needed here -> we need to find that out afterwards
+   return 100000000;  // FIXME idt that we need this
 }
 // -------------------------------------------------------------------------------------
 void NVMeController::allocateQPairs(int number)
 {
-   number = requestMaxQPairs();
+   if (number < 0) {
+      number = 8;
+   }
+
+   for (int i = 0; i < number; i++) {
+      auto* qpair = (nvme::io_user_queue_pair*) create_io_user_queue(i);
+
+      if (!qpair) {
+         throw std::logic_error("ERROR: leanstore_create_io_user_queue() failed\n");
+      }
+
+      qpairs.push_back(qpair);
+   }
 }
+// -------------------------------------------------------------------------------------
+void NVMeController::completion(void* cb_arg, const nvme_sq_entry_t* sqe) {
+   auto request = static_cast<OsvIoReq*>(cb_arg);
+
+   // TODO: WE WOULD NEED ALSO TO CHECK HERE FOR ERRORS -> THIS IS IN CQ ENTRY BUT SHOULD BE OK FOR NOW
+   // yea this shouldnt be casted without any checks -> will be a problem but yea fuck it
+
+	// request->append_lba = ((nvme_command_rw_t*) sqe)->slba; // slba = cdw10 // TODO: DO NOT KNOW WHY WE NEED THIS ATM OG COMMENT: new lba set by zone_append
+   // std::cout << "completion: req: "<< std::hex << (uint64_t)request << " buf: " << (uint64_t) request->buf << std::endl;
+   request->callback(request);
+};
+
 // -------------------------------------------------------------------------------------
 int32_t NVMeController::qpairSize()
 {
    return qpairs.size();
-}
-// -------------------------------------------------------------------------------------
-int NVMeController::requestMaxQPairs()
-{
-   int sub, comp;
-   requestMaxQPairs(sub, comp);
-   assert(sub == comp);
-   return sub;
-}
-// -------------------------------------------------------------------------------------
-void NVMeController::requestMaxQPairs(int32_t& subQs, int32_t& compQs)
-{
-   /* struct spdk_nvme_cpl cpl;
-   requestFeature(SPDK_NVME_FEAT_NUMBER_OF_QUEUES, cpl);
-   int32_t ret = cpl.cdw0;
-   subQs = (ret & 0xFFFF) + 1;
-   compQs = (ret & 0xFFFF0000 >> 16) + 1; */
-   // TODO: just get here all io_queues that were created
 }
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------

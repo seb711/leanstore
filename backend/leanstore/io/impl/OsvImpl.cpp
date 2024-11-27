@@ -3,13 +3,18 @@
 // -------------------------------------------------------------------------------------
 #include <cstring>
 #include "leanstore/io/IoChannel.hpp"
+#include <cstdlib>
+#include <algorithm>
 
 namespace mean
 {
 // -------------------------------------------------------------------------------------
 OsvEnv::~OsvEnv()
 {
+   controller.reset(nullptr);
    //  yes idk what we will do here
+   std::cout << "SpdkEnv deinit" << std::endl;
+   OsvEnvironment::deinit();
 }
 // -------------------------------------------------------------------------------------
 void OsvEnv::init(IoOptions options)
@@ -17,17 +22,14 @@ void OsvEnv::init(IoOptions options)
    // std::thread([] {  // hack so that the spdk pinning has no influence on leanstore threads
    //    SpdkEnvironment::init();
    // }).join();
-   // controller = std::make_unique<NVMeMultiController>();
-   // controller->connect(options.path);
-   // controller->allocateQPairs();
-   // int qs = controller->qpairSize();
-   // for (int i = 0; i < qs; i++) {
-   //   channels.push_back(std::make_unique<SpdkChannel>(options, *controller, i));
-   // }
-
-   // what needs to happen here 
-   // 1. here we need to get the queuepairs of our nvme device
-   // 2. build OsvChannels out of them 
+   OsvEnvironment::init();
+   controller = std::make_unique<NVMeController>();
+   controller->connect(options.path); // path is currently not used -> just use the basic osv
+   controller->allocateQPairs();
+   int qs = controller->qpairSize();
+   for (int i = 0; i < qs; i++) {
+     channels.push_back(std::make_unique<OsvChannel>(options, *controller, i));
+   }
 }
 
 OsvChannel& OsvEnv::getIoChannel(int channel)
@@ -36,11 +38,6 @@ OsvChannel& OsvEnv::getIoChannel(int channel)
    ensure(channel < (int)channels.size(), "There are only " + std::to_string(channels.size()) + " channels available.");
    // std::cout << "getChannel: " << channel << std::endl << std::flush;
    return *channels.at(channel);
-}
-
-int OsvEnv::deviceCount()
-{
-   return controller->deviceCount();
 }
 
 int OsvEnv::channelCount()
@@ -55,27 +52,30 @@ u64 OsvEnv::storageSize()
 
 void* OsvEnv::allocIoMemory(size_t size, size_t align)
 {
-   // return SpdkEnvironment::dma_malloc(size, align);
-
-   // TODO: 
-   // I think we can just use normal memory allocation here
-   // should be pretty easy work 
-   void* mem; 
-   return mem; 
+   std::cout << "allocate " << size << std::endl; 
+   char *buffer = nullptr;
+   posix_memalign((void **)&buffer, std::max(align, (size_t) 4096), size);
+   memset(buffer, 0x0, size); 
+   return buffer;
 }
 
 void* OsvEnv::allocIoMemoryChecked(size_t size, size_t align)
 {
-   // auto mem = SpdkEnvironment::dma_malloc(size, align);
+   char *buffer = nullptr;
+   posix_memalign((void **)&buffer, std::max(align, (size_t) 4096), size);
+   memset(buffer, 0x0, size);
    // TODO: same as allocIoMemory -> should also be straightforward
-   void* mem; 
-   null_check(mem, "Memory allocation failed");
-   return mem;
+   null_check(buffer, "Memory allocation failed");
+   return buffer;
 }
+
 void OsvEnv::freeIoMemory(void* ptr, [[maybe_unused]]size_t size)
 {
-   // SpdkEnvironment::dma_free(ptr);
-   // TODO: just deallocate the memory
+   std::free(ptr);
+}
+
+int OsvEnv::deviceCount() {
+   return 1; 
 }
 
 DeviceInformation OsvEnv::getDeviceInfo() {
@@ -93,16 +93,11 @@ DeviceInformation OsvEnv::getDeviceInfo() {
 // -------------------------------------------------------------------------------------
 // Channel 
 // -------------------------------------------------------------------------------------
-OsvChannel::OsvChannel(IoOptions ioOptions, OsvNVMeController& controller, int queue) 
-   : options(ioOptions), controller(controller), queue(queue), lbaSize(controller.nsLbaDataSize()), outstanding(controller.deviceCount())
+OsvChannel::OsvChannel(IoOptions ioOptions, NVMeController& controller, int queue) 
+   : options(ioOptions), controller(controller), queue(queue), lbaSize(controller.nsLbaDataSize()), outstanding(0)
 {
    write_request_stack.reserve(ioOptions.iodepth);
-   int c = controller.deviceCount();
-   for (int i = 0; i < c; i++) {
-      qpairs.emplace_back(controller.controller[i].qpairs[queue]);
-      // nameSpaces.emplace_back(controller.controller[i].nameSpace);
-      // TODO: check if we can just init to 1
-   }
+   qpair = controller.qpairs[queue]; 
 }
 
 OsvChannel::~OsvChannel()
@@ -115,10 +110,10 @@ void OsvChannel::prepare_request(RaidRequest<OsvIoReq>* req, OsvIoReqCallback os
    // base
    switch (req->base.type) {
       case IoRequestType::Read:
-         // req->impl.type = SpdkIoReqType::Read;
+         req->impl.type = OsvIoReqType::Read;
          break;
       case IoRequestType::Write:
-         // req->impl.type = SpdkIoReqType::Write;
+         req->impl.type = OsvIoReqType::Write;
          break;
       default:
          throw std::logic_error("IoRequestType not supported" + std::to_string((int)req->base.type));
@@ -126,7 +121,10 @@ void OsvChannel::prepare_request(RaidRequest<OsvIoReq>* req, OsvIoReqCallback os
    // TODO: use the things from the microbenchmark 
    req->impl.buf = req->base.buffer();
    req->impl.lba = req->base.offset / lbaSize;
-   req->impl.lba_count = req->base.len / lbaSize;
+   req->impl.lba_count = 1; // FIXME req->base.len / lbaSize ;
+
+   // req->base.print(std::cout); 
+
    req->impl.callback = osvCb;
 }
 
@@ -135,6 +133,7 @@ void OsvChannel::_push(RaidRequest<OsvIoReq>* req)
    req->impl.this_ptr = this;
    prepare_request(req, [](OsvIoReq* io_req) {
          auto req = reinterpret_cast<RaidRequest<OsvIoReq>*>(io_req);
+
          req->base.innerCallback.callback(&req->base);
    });
    write_request_stack.push_back(req);

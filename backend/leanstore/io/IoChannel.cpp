@@ -37,7 +37,7 @@ void IoChannel::pushRead(char* data, s64 addr, u64 len, UserIoCallback cb, bool 
 
 void IoChannel::pushBlocking(IoRequestType type, char* data, s64 addr, u64 len, bool write_back)
 {
-   throw std::logic_error("not implemented");
+   throw std::logic_error("pushBlocking not implemented");
    /*
    std::atomic<int> waitDone = 0;
    push(

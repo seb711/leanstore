@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <thread>
 #include <vector>
+#include "drivers/nvme-user-queue.hh"
 
 // -------------------------------------------------------------------------------------
 #define checkThrow(test, message)         \
@@ -33,6 +34,7 @@
 enum class OsvIoReqType {
    Write = 0,
    Read = 1,
+   // Flush =2, 
    COUNT = 2  // always last
               // Don't forget to add pointers to  spdk_req_type_fun_lookup in SpdkEnv init
 };
@@ -42,9 +44,9 @@ using OsvIoReqCallback = void (*)(OsvIoReq* req);
 struct OsvIoReq {
    char* buf;
    uint64_t lba;
-   uint64_t append_lba;  //
+   uint64_t append_lba; // do not know why we needed that initially
    OsvIoReqCallback callback;
-   osv_nvme_qpair* qpair;
+   void* qpair;
    uint32_t lba_count;
    //
    void* this_ptr;
@@ -52,7 +54,8 @@ struct OsvIoReq {
 };
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
-using cmd_fun = int (*)(int, osv_nvme_qpair*, void*, uint64_t, uint32_t, osv_nvme_cmd_cb, void*, uint32_t);  // FIXME first namespace
+using cmd_fun = std::function<int(int, void*, void*, uint64_t, uint32_t, osv_nvme_cmd_cb, void *, uint32_t)>;  // FIXME first namespace
+
 class OsvEnvironment
 {
    static bool initialized;
@@ -61,6 +64,7 @@ class OsvEnvironment
 
   public:
    static cmd_fun osv_req_type_fun_lookup[(int)OsvIoReqType::COUNT + 1];
+   static int osv_nvme_qpair_process_completions(nvme::io_user_queue_pair* qpair, uint32_t max); 
    static void ensureInitialized();
    static void init();
    static void deinit();
@@ -101,7 +105,7 @@ public:
    // TODO: what is this needed for? this has only the nvme pcie device information in it -> not needed atm 
    // const struct spdk_nvme_ctrlr_data *cdata;
    int maxQPairs = -1;
-   std::vector<osv_nvme_qpair*> qpairs;
+   std::vector<nvme::io_user_queue_pair*> qpairs;
    // the poll groups aren't really used. They're needed to access pci statistics.
    // see printPciQpairStats
    // TODO: do we need the poll groups? 
@@ -119,16 +123,13 @@ public:
    int32_t process(int qpair, int max) {
       int ok = 0;
       if (submitted - dones > 0) {
-         // ok = spdk_nvme_qpair_process_completions(qpairs[qpair], max);
+            ok = OsvEnvironment::osv_nvme_qpair_process_completions(qpairs[qpair], max); // req_page_done function 
          // TODO: check if we call process somewhere
          dones += ok;
          assert(ok >= 0);
       }
       return ok; 
    }
-   // -------------------------------------------------------------------------------------
-   // TODO: what is completion doing anyways? 
-	static void completion(void *cb_arg, const struct spdk_nvme_cpl *cpl);
    // -------------------------------------------------------------------------------------
    void submitCheck(int ret, int submitted, int dones) {
       if (ret == -ENOMEM) {
@@ -145,7 +146,9 @@ public:
       assert(req->lba_count > 0);
       //if (req->lba_count != 1 ) throw "";
       req->qpair = qpairs[qpair];
-      int ret = OsvEnvironment::osv_req_type_fun_lookup[(int)req->type](1, qpairs[qpair], req->buf, req->lba, req->lba_count, completion, req, 0); // TODO: check if namespace is correct
+      int ret = OsvEnvironment::osv_req_type_fun_lookup[(int)req->type](1, (void*) qpairs[qpair], req->buf, req->lba, req->lba_count, completion, req, 0); // TODO: check if namespace is correct
+      
+
       /*
          int ret;
          if (req->type == SpdkIoReqType::Read) {
@@ -160,13 +163,13 @@ public:
       }
       submitted++;
    }
+
+   static void completion(void *cb_arg, const nvme_sq_entry_t *cpl);
+
 	uint32_t numberNamespaces(); 
 	uint64_t nsNumLbas(); 
 	void allocateQPairs(int number); 
 	int32_t qpairSize() override;  
-	int requestMaxQPairs(); 
-	void requestMaxQPairs(int32_t& subQs, int32_t& compQs); 
-
     // TODO: these are all methods that we do not need at the moment -> maybe revisit them later
 	// bool requestFeature(int32_t feature, struct spdk_nvme_cpl& cpl); 
 	// bool pushRawCmd(struct spdk_nvme_cmd& cmd, struct spdk_nvme_cpl& cpl); 
@@ -174,6 +177,11 @@ public:
 	// void setArbitration(int low, int middle, int high); 
 	// void printArbitrationFeatures(); 
 	// void printPciQpairStats(); 
+
+private: 
+   // here we bind the methods from the nvme driver
+   std::function<int(int)> remove_io_user_queue;
+   std::function<void*(int)> create_io_user_queue;
 };
 
 #endif

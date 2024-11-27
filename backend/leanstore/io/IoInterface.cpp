@@ -6,6 +6,7 @@
 #include "impl/LibaioImpl.hpp"
 #include "impl/LiburingImpl.hpp"
 #include "impl/SpdkImpl.hpp"
+#include "impl/OsvImpl.hpp"
 #include "impl/XnvmeImpl.hpp"
 // -------------------------------------------------------------------------------------
 namespace mean
@@ -20,6 +21,10 @@ RaidEnvironment& IoInterface::initInstance(IoOptions ioOptions)
    } else if (ioOptions.engine == "spdk") {
       _instance = std::unique_ptr<RaidEnvironment>(new RaidEnv<SpdkEnv, SpdkChannel, SpdkIoReq>(ioOptions));
 #endif
+#ifdef LEANSTORE_INCLUDE_OSV
+   } else if (ioOptions.engine == "osv") {
+      _instance = std::unique_ptr<RaidEnvironment>(new RaidEnv<OsvEnv, OsvChannel, OsvIoReq>(ioOptions));
+#endif
    } else if (ioOptions.engine == "io_uring") {
       _instance = std::unique_ptr<RaidEnvironment>(new RaidEnv<LiburingEnv, LiburingChannel, LiburingIoRequest>(ioOptions));
 #ifdef LEANSTORE_INCLUDE_XNVME
@@ -27,7 +32,7 @@ RaidEnvironment& IoInterface::initInstance(IoOptions ioOptions)
       _instance = std::unique_ptr<RaidEnvironment>(new RaidEnv<XnvmeEnv, XnvmeChannel, XnvmeRequest>(ioOptions));
 #endif
    } else {
-      throw std::logic_error("not implemented");
+      throw std::logic_error(ioOptions.engine + "not implemented");
    }
    return *_instance;
 }

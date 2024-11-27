@@ -15,7 +15,7 @@ install-dependencies:
 .PHONY: cmake-configure
 cmake-configure:
 	mkdir -p $(BUILD_DIR)
-	cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Release \
+	cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Debug -DLEANSTORE_INCLUDE_OSV=1\
 		-DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12 \
 		-DCMAKE_C_FLAGS="-fPIC" \
 		-DCMAKE_CXX_FLAGS="-fPIC" .. && make -j

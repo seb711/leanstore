@@ -47,6 +47,7 @@ BufferManager::BufferManager()
       dram_pool_size = FLAGS_dram_gib * 1024 * 1024 * 1024 / sizeof(BufferFrame);
       const u64 dram_total_size = sizeof(BufferFrame) * (dram_pool_size + safety_pages);
       bfs = reinterpret_cast<BufferFrame*>(mean::IoInterface::allocIoMemoryChecked(dram_total_size, 512));
+      std::cout << ((u64) bfs ) << std::endl; 
       // reinterpret_cast<BufferFrame*>(mmap(NULL, dram_total_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
 
       // madvise(bfs, dram_total_size, MADV_HUGEPAGE);
@@ -77,6 +78,12 @@ BufferManager::BufferManager()
       utils::Parallelize::parallelRange(dram_pool_size, [&](u64 bf_b, u64 bf_e) {
          u64 p_i = 0;
          for (u64 bf_i = bf_b; bf_i < bf_e; bf_i++) {
+            BufferFrame* t = new (bfs + bf_i) BufferFrame(); // we have a problem here because new uses mmap in the background -> this is shit!!!!!
+
+            // void* t1 = malloc(sizeof(BufferFrame)); 
+            // std::cout << ((u64) t1) << " " << ((u64) t) << std::endl; 
+            // std::cout << ((u64) t ) << std::endl; 
+            // assert((u64) t >= 70368744177664U);
             cooling_partitions[p_i].dram_free_list.push(*new (bfs + bf_i) BufferFrame());
             p_i = (p_i + 1) % cooling_partitions_count;
          }
@@ -280,7 +287,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
             // assumes parent and child are exclusively locked 
             swip_value.bfRef().header.optimistic_parent_pointer.parent.last_swip_invalidation_version = swip_value.bfRef().header.latch.version;
             // hacky, have to find parent bf from swip, pid and  pos. 
-            static_assert(sizeof(BufferFrame) == 512+PAGE_SIZE);
+            // static_assert(sizeof(BufferFrame) == 512+PAGE_SIZE);
             u64 bf_index = ((u64)swip_x_guard.latch - (u64)this->bfs) / sizeof(BufferFrame);
             BufferFrame& parent_bf = this->bfs[bf_index];
             assert(&parent_bf.header.latch == swip_x_guard.latch); // the above calculation is correct
@@ -465,6 +472,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
 void BufferManager::readPageSync(u64 pid, u8* destination)
 {
    assert(u64(destination) % 512 == 0);
+   // assert((u64) destination >= 70368744177664U);
    s64 bytes_left = PAGE_SIZE;
    mean::task::read(reinterpret_cast<char*>(destination), pid * PAGE_SIZE, bytes_left);
    // const int bytes_read = pread(ssd_fd, destination, bytes_left, pid * PAGE_SIZE + (PAGE_SIZE - bytes_left));

@@ -135,6 +135,7 @@ struct CoolingPartition {
       io_queue(max_outsanding_ios ),
       free_bfs_limit(free_bfs_limit), cooling_bfs_limit(cooling_bfs_limit), pid_distance(pid_distance)
    {
+      std::cout << "first pid: " << first_pid << " pid_distance " << pid_distance << std::endl; 
       next_pid = first_pid;
    }
    // -------------------------------------------------------------------------------------

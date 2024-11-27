@@ -14,10 +14,15 @@ namespace storage
 // -------------------------------------------------------------------------------------
 void* malloc_huge(size_t size)
 {
-   void* p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-   madvise(p, size, MADV_HUGEPAGE);
-   memset(p, 0, size);
-   return p;
+   // void* p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+   // madvise(p, size, MADV_HUGEPAGE);
+   // memset(p, 0, size);
+
+   std::cout << "HashTable mmap of size " << size << std::endl; 
+   // mean::IoInterface::allocIoMemoryChecked(dram_total_size, 512)
+
+
+   return mean::IoInterface::allocIoMemoryChecked(size, 512);
 }
 // -------------------------------------------------------------------------------------
 HashTable::Entry::Entry(PID key) : key(key) {}

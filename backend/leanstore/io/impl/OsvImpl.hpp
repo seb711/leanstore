@@ -1,5 +1,6 @@
 #pragma once
 #if LEANSTORE_INCLUDE_OSV
+#include "./Osv.hpp"
 // -------------------------------------------------------------------------------------
 #include "../IoAbstraction.hpp"
 #include "../RequestStack.hpp"
@@ -18,7 +19,7 @@ namespace mean
 class OsvChannel;
 class OsvEnv
 {
-   std::unique<OsvNVMeController> controller;
+   std::unique_ptr<NVMeController> controller;
    std::vector<std::unique_ptr<OsvChannel>> channels;
 
   public:
@@ -39,16 +40,16 @@ class OsvChannel
    std::vector<RaidRequest<OsvIoReq>*> write_request_stack;
 
    IoOptions options;
-   OsvNVMeController& controller;
+   NVMeController& controller;
    int queue;
    const int lbaSize;
-   std::vector<osv_nvme_pair*> qpairs;
-   std::vector<int> outstanding;  // namespaces are in our case all 1 int = namespaces
+   nvme::io_user_queue_pair* qpair;
+   int outstanding; 
    // -------------------------------------------------------------------------------------
    void prepare_request(RaidRequest<OsvIoReq>* req, OsvIoReqCallback spdkCb);
    // -------------------------------------------------------------------------------------
   public:
-   OsvChannel(IoOptions options, OsvNVMeController& controller, int queue);
+   OsvChannel(IoOptions options, NVMeController& controller, int queue);
    ~OsvChannel();
    // -------------------------------------------------------------------------------------
    void _push(RaidRequest<OsvIoReq>* req);
@@ -57,13 +58,12 @@ class OsvChannel
    {
       for (auto& req : write_request_stack) {  // ok but this is done until stack empty
          int ret;
-         if (true || outstanding[req->base.device] < 5) {
+         if (true || outstanding < 5) {
             // TODO: here we need to insert the correct functions
             // but i think we do it the same as spdk (-> put the stuff in the correct functions)
-            // ret = OsvEnvironment::spdk_req_type_fun_lookup[(int)req->impl.type](nameSpaces[req->base.device], qpairs[req->base.device],
-            // req->impl.buf, req->impl.lba, req->impl.lba_count, NVMeController::completion, req, 0);
+            ret = OsvEnvironment::osv_req_type_fun_lookup[(int)req->impl.type](1, qpair, req->impl.buf, req->impl.lba, req->impl.lba_count, NVMeController::completion, req, 0);
 
-            outstanding[req->base.device]++;
+            outstanding++;
             ensure(ret == 0);
             req = nullptr;
          }
@@ -85,14 +85,14 @@ class OsvChannel
    {
       int done = 0;
 
-      for (unsigned int i = 0; i < qpairs.size(); i++) {
-         // int ok = spdk_nvme_qpair_process_completions(qpairs[i], 0);
-         // TODO: here we need to insert the req_done logic -> here are the requests fetched
-         int ok;
-         outstanding[i] -= ok;
-         ensure(ok >= 0);
-         done += ok;
-      }
+      // for (unsigned int i = 0; i < qpairs.size(); i++) {
+      int ok = OsvEnvironment::osv_nvme_qpair_process_completions(qpair, 0);
+      // TODO: here we need to insert the req_done logic -> here are the requests fetched
+      // int ok;
+      outstanding -= ok;
+      ensure(ok >= 0);
+      done += ok;
+      // }
       assert(done >= 0);
       return done;
    }
