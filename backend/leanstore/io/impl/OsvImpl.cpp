@@ -5,6 +5,7 @@
 #include "leanstore/io/IoChannel.hpp"
 #include <cstdlib>
 #include <algorithm>
+#include <sys/mman.h>
 
 namespace mean
 {
@@ -23,8 +24,8 @@ void OsvEnv::init(IoOptions options)
    //    SpdkEnvironment::init();
    // }).join();
    OsvEnvironment::init();
-   controller = std::make_unique<NVMeController>();
-   controller->connect(options.path); // path is currently not used -> just use the basic osv
+   controller = std::make_unique<NVMeMultiController>();
+   controller->connect("test"); // path is currently not used -> just use the basic osv
    controller->allocateQPairs();
    int qs = controller->qpairSize();
    for (int i = 0; i < qs; i++) {
@@ -50,20 +51,35 @@ u64 OsvEnv::storageSize()
    return controller->nsSize();
 }
 
+#define MAP_UNINITIALIZED 0x4000000
+
 void* OsvEnv::allocIoMemory(size_t size, size_t align)
 {
+   /*char *buffer = nullptr;
+   int t = posix_memalign((void **)&buffer, std::max(align, (size_t) 4096), size);
+   memset(buffer, 0x0, size);
    std::cout << "allocate " << size << std::endl; 
-   char *buffer = nullptr;
-   posix_memalign((void **)&buffer, std::max(align, (size_t) 4096), size);
+   // char *buffer = nullptr;
+   // int t = posix_memalign((void **)&buffer, std::max(align, (size_t) 4096), size);*/   
+   void* buffer = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+
+   null_check(buffer, "Memory allocation failed");   
+   
+   madvise(buffer, size, MADV_NOHUGEPAGE); 
+
    memset(buffer, 0x0, size); 
    return buffer;
 }
 
 void* OsvEnv::allocIoMemoryChecked(size_t size, size_t align)
 {
-   char *buffer = nullptr;
-   posix_memalign((void **)&buffer, std::max(align, (size_t) 4096), size);
-   memset(buffer, 0x0, size);
+    /*char *buffer = nullptr;
+   int t = posix_memalign((void **)&buffer, std::max(align, (size_t) 4096), size);
+   memset(buffer, 0x0, size);*/
+  void* buffer = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+
+   assert(buffer != MAP_FAILED); 
+   madvise(buffer, size, MADV_NOHUGEPAGE); 
    // TODO: same as allocIoMemory -> should also be straightforward
    null_check(buffer, "Memory allocation failed");
    return buffer;
@@ -93,11 +109,14 @@ DeviceInformation OsvEnv::getDeviceInfo() {
 // -------------------------------------------------------------------------------------
 // Channel 
 // -------------------------------------------------------------------------------------
-OsvChannel::OsvChannel(IoOptions ioOptions, NVMeController& controller, int queue) 
-   : options(ioOptions), controller(controller), queue(queue), lbaSize(controller.nsLbaDataSize()), outstanding(0)
+OsvChannel::OsvChannel(IoOptions ioOptions, NVMeMultiController& controller, int queue) 
+   : options(ioOptions), controller(controller), queue(queue), lbaSize(controller.nsLbaDataSize()), outstanding(controller.deviceCount())
 {
    write_request_stack.reserve(ioOptions.iodepth);
-   qpair = controller.qpairs[queue]; 
+    int c = controller.deviceCount();
+   for (int i = 0; i < c; i++) {
+      qpairs.emplace_back(controller.controller[i].qpairs[queue]);
+   }
 }
 
 OsvChannel::~OsvChannel()
@@ -120,11 +139,11 @@ void OsvChannel::prepare_request(RaidRequest<OsvIoReq>* req, OsvIoReqCallback os
    }
    // TODO: use the things from the microbenchmark 
    req->impl.buf = req->base.buffer();
-   req->impl.lba = req->base.offset / lbaSize;
-   req->impl.lba_count = 1; // FIXME req->base.len / lbaSize ;
+   req->impl.lba = req->base.offset; // FIXME this is the storage::PAGE_SIZE
+   req->impl.lba_count = req->base.len;
 
    // req->base.print(std::cout); 
-
+   
    req->impl.callback = osvCb;
 }
 

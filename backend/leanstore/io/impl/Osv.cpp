@@ -31,8 +31,6 @@ void OsvEnvironment::init()
       throw std::logic_error("OsvEnvironment already initialized");
    }
 
-   std::cout << "set the functions" << std::endl; 
-
    // TODO: these are the functions we need -> therefore it would be really good to have the whole osv_nvme_nvme package importable
    OsvEnvironment::osv_req_type_fun_lookup[(int)OsvIoReqType::Read] = leanstore_osv_nvme_nv_cmd_read; 
    OsvEnvironment::osv_req_type_fun_lookup[(int)OsvIoReqType::Write] = leanstore_osv_nvme_nv_cmd_write; 
@@ -100,32 +98,28 @@ NVMeController::~NVMeController()
 
    // TODO: somehow we should see if we release the io_queues but for now we wont do that -> just exit
    for (auto& qpair : qpairs) {
-      remove_io_user_queue(qpair->_id);
+      assert(device_id != -1); 
+      leanstore_remove_io_user_queue(device_id, qpair->_id);
    }
    qpairs.clear();
-}
-// -------------------------------------------------------------------------------------
-void NVMeController::connect(std::string nvmedev)
-{
-   // in here we should connect to the osv driver
-   // for now we go with the easiest option and just statically bind to 
-   // the default ones because we also do not have any architecture for nvme mapping
-   remove_io_user_queue = std::bind(leanstore_remove_io_user_queue, std::placeholders::_1);
-   create_io_user_queue = std::bind(leanstore_create_io_user_queue, std::placeholders::_1);
 }
 // -------------------------------------------------------------------------------------
 uint32_t NVMeController::nsLbaDataSize()
 {
    // return spdk_nvme_ns_get_sector_size(nameSpace);
    // TODO: hopefully these can be retrieved by osv driver
-   return 4096; 
+   return 512; 
 }
 // -------------------------------------------------------------------------------------
 uint64_t NVMeController::nsSize()
 {
    // return spdk_nvme_ns_get_size(nameSpace);
    // TODO: hopefully these can be retrieved by osv driver
-   return 1 << 14; 
+   return 1ull << 32ull; 
+}
+// -------------------------------------------------------------------------------------
+uint32_t  NVMeController::queueDepth() {
+   return 32; 
 }
 // -------------------------------------------------------------------------------------
 void NVMeController::allocateQPairs()
@@ -144,17 +138,22 @@ uint64_t NVMeController::nsNumLbas()
 {
    // return spdk_nvme_ns_get_num_sectors(nameSpace);
    // TODO: also i do not know what is needed here -> we need to find that out afterwards
-   return 100000000;  // FIXME idt that we need this
+   return 1 << (32-9);  // FIXME idt that we need this
+}
+uint32_t NVMeController::requestMaxQPairs() {
+   return 8; 
 }
 // -------------------------------------------------------------------------------------
 void NVMeController::allocateQPairs(int number)
 {
-   if (number < 0) {
-      number = 8;
+    if (number < 0) {
+      number = requestMaxQPairs();
    }
 
    for (int i = 0; i < number; i++) {
-      auto* qpair = (nvme::io_user_queue_pair*) create_io_user_queue(i);
+      assert(device_id != -1); 
+
+      auto* qpair = (nvme::io_user_queue_pair*) leanstore_create_io_user_queue(device_id, queueDepth());
 
       if (!qpair) {
          throw std::logic_error("ERROR: leanstore_create_io_user_queue() failed\n");
@@ -176,9 +175,58 @@ void NVMeController::completion(void* cb_arg, const nvme_sq_entry_t* sqe) {
 };
 
 // -------------------------------------------------------------------------------------
+int NVMeMultiController::deviceCount() {
+   return controller.size();
+}
+// -------------------------------------------------------------------------------------
 int32_t NVMeController::qpairSize()
 {
    return qpairs.size();
+}
+// -------------------------------------------------------------------------------------
+void NVMeMultiController::connect(std::string connectionString)  {
+   std::vector<int> ids = leanstore_get_available_ssds();
+   
+   controller.resize(ids.size());
+   for (unsigned int i = 0; i < ids.size(); i++) {
+      controller[i].setDeviceId(ids[i]);
+   }
+}
+// -------------------------------------------------------------------------------------
+void NVMeMultiController::allocateQPairs()  {
+   for (auto& c: controller) {
+      c.allocateQPairs();
+   }
+}
+// -------------------------------------------------------------------------------------
+int32_t NVMeMultiController::qpairSize()  {
+   int32_t min = std::numeric_limits<int32_t>::max();
+   for (auto& c: controller) {
+      min = std::min(min, c.qpairSize());
+   }
+   if (min <= 0 || min == std::numeric_limits<int32_t>::max()) {
+      throw std::logic_error("could not get qpair size");
+   }
+   return min;
+}
+// -------------------------------------------------------------------------------------
+// OPTIMIZE
+uint32_t NVMeMultiController::nsLbaDataSize()  {
+   uint32_t dataSize = controller[0].nsLbaDataSize();
+   for (auto& c: controller) {
+      if (dataSize != c.nsLbaDataSize()) {
+         throw std::logic_error("lba size must be equal for all devices");
+      }
+   }
+   return dataSize;
+}
+// -------------------------------------------------------------------------------------
+uint64_t NVMeMultiController::nsSize()  {
+   uint64_t size = std::numeric_limits<uint64_t>::max();
+   for (auto& c: controller) {
+      size = std::min(size, c.nsSize());
+   }
+   return size;
 }
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------

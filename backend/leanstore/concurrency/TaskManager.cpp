@@ -300,7 +300,7 @@ void TaskManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
    cb.callback =  [](IoBaseRequest* req) {
            auto this_task = reinterpret_cast<Task*>(req->user.user_data2.val.ptr);
               // std::cout << "completion addr: " << req->addr <<  std::endl << std::flush;
-              assert(TaskExecutor::localExec().id() == req->user.user_data.val.s);  //
+              assert(TaskExecutor::localExec().id() == req->user.user_data.val.s);  
               TaskExecutor::localExec().moveReady(this_task);
               // TODO maybe push Task to top.
            },

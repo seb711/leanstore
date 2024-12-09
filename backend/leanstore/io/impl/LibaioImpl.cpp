@@ -67,7 +67,7 @@ void LinuxBaseEnv::init(IoOptions ioOpts)
             posix_check(ret == gib_size);
          }
          freeIoMemory(dummy_data);
-         // fsync(fd);
+         fsync(fd);
       }
       ensure(fcntl(fd, F_GETFL) != -1);
       std::cout << "connected to: " << dev << std::endl;

@@ -117,7 +117,7 @@ struct BufferFrame {
       // -------------------------------------------------------------------------------------
       u64 debug;
    };
-   struct alignas(PAGE_SIZE) Page {
+   struct alignas(512) Page {
       u64 GSN = 0;
       DTID dt_id = 9999;                                                                // INIT: datastructure id
       u64 magic_debugging_number;                                                       // ATTENTION

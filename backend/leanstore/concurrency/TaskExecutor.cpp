@@ -155,7 +155,7 @@ void TaskExecutor::cycle()
       // good for ycsb 60 thr: p: 2, pp: 32, d: 0
       constexpr int everyPoll = 64;
       constexpr int everyPP = 32;
-      constexpr int delaySubmit = 32;
+      constexpr int delaySubmit = 0;
       DEBUG_TASK_COUNTERS_BLOCK(
          const auto ioPollEnd = readTSC(); counters.ioPollDuration += ioPollEnd - lastCycle; pushCyTrace('i', ioPollEnd);
          counters.taskCount = tasks.size(); counters.taskWaitingCount = waitingTaskCount;

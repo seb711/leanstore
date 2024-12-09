@@ -114,10 +114,14 @@ public:
    NVMeController();
    ~NVMeController() override; 
    // -------------------------------------------------------------------------------------
-   void connect(std::string pciefile) override; 
+   void setDeviceId(int id) {
+      device_id =id; 
+   }; 
+   void connect(std::string pciefile) override {};
    uint32_t nsLbaDataSize() override; 
    uint64_t nsSize() override; 
 	void allocateQPairs() override; 
+   uint32_t requestMaxQPairs(); 
    // -------------------------------------------------------------------------------------
     // TODO: what is process doing anyways? 
    int32_t process(int qpair, int max) {
@@ -166,6 +170,7 @@ public:
 
    static void completion(void *cb_arg, const nvme_sq_entry_t *cpl);
 
+   uint32_t queueDepth(); 
 	uint32_t numberNamespaces(); 
 	uint64_t nsNumLbas(); 
 	void allocateQPairs(int number); 
@@ -180,8 +185,30 @@ public:
 
 private: 
    // here we bind the methods from the nvme driver
-   std::function<int(int)> remove_io_user_queue;
-   std::function<void*(int)> create_io_user_queue;
+   int device_id = -1; 
 };
-
+// -------------------------------------------------------------------------------------
+class NVMeMultiController {
+public:
+	std::vector<NVMeController> controller;
+	void connect(std::string connectionString) ; 
+	void allocateQPairs() ; 
+	int32_t qpairSize() ; 
+	// OPTIMIZE
+   uint32_t nsLbaDataSize() ; 
+   uint64_t nsSize() ; 
+   int deviceCount(); 
+   // -------------------------------------------------------------------------------------
+   void submit(int device, int queue, OsvIoReq* req)  {
+      controller[device].submit(queue, req);
+   }
+   // -------------------------------------------------------------------------------------
+   int32_t process(int queue, int max)  {
+      int32_t done = 0;
+      for (auto& c: controller) {
+         done += c.process(queue, max);
+      }
+      return done;
+   }
+};
 #endif
