@@ -35,6 +35,9 @@ void OsvEnvironment::init()
    OsvEnvironment::osv_req_type_fun_lookup[(int)OsvIoReqType::Read] = leanstore_osv_nvme_nv_cmd_read; 
    OsvEnvironment::osv_req_type_fun_lookup[(int)OsvIoReqType::Write] = leanstore_osv_nvme_nv_cmd_write; 
    OsvEnvironment::osv_req_type_fun_lookup[(int)OsvIoReqType::COUNT] = nullptr;
+
+   available_ssd_ids = leanstore_get_available_ssds();
+
    /*
        // TODO: do we need to set env vars in osv?
     struct spdk_env_opts opts;
@@ -189,6 +192,7 @@ void NVMeMultiController::connect(std::string connectionString)  {
    
    controller.resize(ids.size());
    for (unsigned int i = 0; i < ids.size(); i++) {
+      std::cout << "controller idx=" << i << " with id " << ids[i] << std::endl; 
       controller[i].setDeviceId(ids[i]);
    }
 }

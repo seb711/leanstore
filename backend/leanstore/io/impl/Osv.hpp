@@ -60,14 +60,15 @@ class OsvEnvironment
 {
    static bool initialized;
    static bool isInitialized(bool init = false);
-   ;
 
   public:
+   static std::vector<int> available_ssd_ids; 
    static cmd_fun osv_req_type_fun_lookup[(int)OsvIoReqType::COUNT + 1];
    static int osv_nvme_qpair_process_completions(nvme::io_user_queue_pair* qpair, uint32_t max); 
    static void ensureInitialized();
    static void init();
    static void deinit();
+
 
    // TODO: dont think that we need them here
    // static void* dma_malloc(size_t size, size_t alignment = 0, uint64_t* phys_addr = nullptr);

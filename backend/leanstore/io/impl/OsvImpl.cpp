@@ -61,7 +61,7 @@ void* OsvEnv::allocIoMemory(size_t size, size_t align)
    std::cout << "allocate " << size << std::endl; 
    // char *buffer = nullptr;
    // int t = posix_memalign((void **)&buffer, std::max(align, (size_t) 4096), size);*/   
-   void* buffer = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+   void* buffer = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_UNINITIALIZED, -1, 0);
 
    null_check(buffer, "Memory allocation failed");   
    
@@ -91,21 +91,9 @@ void OsvEnv::freeIoMemory(void* ptr, [[maybe_unused]]size_t size)
 }
 
 int OsvEnv::deviceCount() {
-   return 1; 
+   return OsvEnvironment::available_ssd_ids.size(); 
 }
 
-DeviceInformation OsvEnv::getDeviceInfo() {
-   DeviceInformation d;
-   d.devices.resize(deviceCount());
-   // for (unsigned int i = 0; i < controller->controller.size(); i++) {
-   //    d.devices[i].id = i;
-   //    d.devices[i].name = controller->controller[i].pciefile;
-   // }
-   // TODO: first check if we really need that function
-   // then just do something i guess not too important for now
-
-   return d;
-}
 // -------------------------------------------------------------------------------------
 // Channel 
 // -------------------------------------------------------------------------------------

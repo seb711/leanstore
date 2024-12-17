@@ -197,12 +197,12 @@ void LeanStore::startProfilingThread()
          if (FLAGS_print_tx_console) {
             
             tabulate::Table table;
-            table.add_row({"t", "wt","TX P [M]", "TX A", "TX C", "W MiB", "R MiB", "Instrs/TX", "Cycles/TX", "CPUs", "L1/TX", "WAL T", "WAL R G", "WAL W G",
+            table.add_row({"t", "wt","TX P [M]", "TX A", "TX C", "W MiB", "R MiB", "Writes", "Reads","Instrs/TX", "Cycles/TX", "CPUs", "L1/TX", "WAL T", "WAL R G", "WAL W G",
                            "GCT Rounds"});
             table.add_row({std::to_string(seconds),
                            std::to_string(mean::timePointDifferenceMs(mean::getTimePoint(), lastTimePrint)/(float)1000),
                            std::to_string(stol(cr_table.get("0", "tx"))/(float)1000/1000), cr_table.get("0", "tx_abort"), cr_table.get("0", "gct_committed_tx"),
-                           bm_table.get("0", "w_mib"), bm_table.get("0", "r_mib"), std::to_string(instr_per_tx), std::to_string(cycles_per_tx),
+                           bm_table.get("0", "w_mib"), bm_table.get("0", "r_mib"), ssd_table.get("0", "writes_k"), ssd_table.get("0", "reads_k"),std::to_string(instr_per_tx), std::to_string(cycles_per_tx),
                            std::to_string(cpu_table.workers_agg_events["CPU"]), std::to_string(l1_per_tx), cr_table.get("0", "wal_total"),
                            cr_table.get("0", "wal_read_gib"), cr_table.get("0", "wal_write_gib"), cr_table.get("0", "gct_rounds")});
             lastTimePrint = mean::getTimePoint();
