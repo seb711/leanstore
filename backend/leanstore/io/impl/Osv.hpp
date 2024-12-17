@@ -117,6 +117,9 @@ public:
    void setDeviceId(int id) {
       device_id =id; 
    }; 
+   int getDeviceId() {
+      return device_id; 
+   }; 
    void connect(std::string pciefile) override {};
    uint32_t nsLbaDataSize() override; 
    uint64_t nsSize() override; 

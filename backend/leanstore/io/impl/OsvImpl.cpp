@@ -26,6 +26,8 @@ void OsvEnv::init(IoOptions options)
    OsvEnvironment::init();
    controller = std::make_unique<NVMeMultiController>();
    controller->connect("test"); // path is currently not used -> just use the basic osv
+
+   //allocates for every NVMController queues
    controller->allocateQPairs();
    int qs = controller->qpairSize();
    for (int i = 0; i < qs; i++) {
@@ -91,11 +93,16 @@ void OsvEnv::freeIoMemory(void* ptr, [[maybe_unused]]size_t size)
 }
 
 int OsvEnv::deviceCount() {
-   return controller->qpairSize(); 
+   return controller->controller.size(); 
 }
 
 DeviceInformation OsvEnv::getDeviceInfo() {
    DeviceInformation d;
+
+   d.devices.resize(controller->controller.size()); 
+  for (size_t t = 0; t < controller->controller.size(); t++) {
+      d.devices[t].id = controller->controller[t].getDeviceId(); 
+  }
 
    return d;
 }
@@ -107,9 +114,9 @@ OsvChannel::OsvChannel(IoOptions ioOptions, NVMeMultiController& controller, int
    : options(ioOptions), controller(controller), queue(queue), lbaSize(controller.nsLbaDataSize()), outstanding(controller.deviceCount())
 {
    write_request_stack.reserve(ioOptions.iodepth);
-    int c = controller.deviceCount();
+   int c = controller.deviceCount();
    for (int i = 0; i < c; i++) {
-      qpairs.emplace_back(controller.controller[i].qpairs[queue]);
+      qpairs.emplace_back(controller.controller[i].qpairs[0]);
    }
 }
 

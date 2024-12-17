@@ -189,6 +189,8 @@ void NVMeMultiController::connect(std::string connectionString)  {
    std::vector<int> ids = leanstore_get_available_ssds();
    
    controller.resize(ids.size());
+   std::cout << "NVMeMultiController has size=" << ids.size() << std::endl; 
+
    for (unsigned int i = 0; i < ids.size(); i++) {
       std::cout << "controller idx=" << i << " with id " << ids[i] << std::endl; 
       controller[i].setDeviceId(ids[i]);
