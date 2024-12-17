@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include <sys/mman.h>
-
+#include <string>
 namespace mean
 {
 // -------------------------------------------------------------------------------------
@@ -91,7 +91,13 @@ void OsvEnv::freeIoMemory(void* ptr, [[maybe_unused]]size_t size)
 }
 
 int OsvEnv::deviceCount() {
-   return OsvEnvironment::available_ssd_ids.size(); 
+   return controller->qpairSize(); 
+}
+
+DeviceInformation OsvEnv::getDeviceInfo() {
+   DeviceInformation d;
+
+   return d;
 }
 
 // -------------------------------------------------------------------------------------

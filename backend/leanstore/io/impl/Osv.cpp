@@ -36,8 +36,6 @@ void OsvEnvironment::init()
    OsvEnvironment::osv_req_type_fun_lookup[(int)OsvIoReqType::Write] = leanstore_osv_nvme_nv_cmd_write; 
    OsvEnvironment::osv_req_type_fun_lookup[(int)OsvIoReqType::COUNT] = nullptr;
 
-   available_ssd_ids = leanstore_get_available_ssds();
-
    /*
        // TODO: do we need to set env vars in osv?
     struct spdk_env_opts opts;

@@ -62,7 +62,6 @@ class OsvEnvironment
    static bool isInitialized(bool init = false);
 
   public:
-   static std::vector<int> available_ssd_ids; 
    static cmd_fun osv_req_type_fun_lookup[(int)OsvIoReqType::COUNT + 1];
    static int osv_nvme_qpair_process_completions(nvme::io_user_queue_pair* qpair, uint32_t max); 
    static void ensureInitialized();
