@@ -116,7 +116,7 @@ OsvChannel::OsvChannel(IoOptions ioOptions, NVMeMultiController& controller, int
    write_request_stack.reserve(ioOptions.iodepth);
    int c = controller.deviceCount();
    for (int i = 0; i < c; i++) {
-      qpairs.emplace_back(controller.controller[i].qpairs[0]);
+      qpairs.emplace_back(controller.controller[i].qpairs[queue]);
    }
 }
 
