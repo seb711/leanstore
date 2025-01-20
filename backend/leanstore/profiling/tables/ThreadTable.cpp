@@ -57,7 +57,7 @@ void ThreadTable::next()
 {
    clear();
    for (auto& c: ThreadCounters::thread_counters) {
-      counter = &c;
+      counter = &(*c);
       for (auto& c : columns) {
          c.second.generator(c.second);
       }

@@ -183,7 +183,7 @@ void run_tpcc()
            }
            WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
            WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
-           WorkerCounters::myCounters().tx++;
+           ++(WorkerCounters::myCounters().tx);
            ThreadCounters::myCounters().tx++;
            while (i < bb.end && keep_running) {
               mean::task::yield();

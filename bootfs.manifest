@@ -2,6 +2,8 @@
 /libtbbmalloc.so: /lib/x86_64-linux-gnu/libtbbmalloc.so
 /tpcc: ${MODULE_DIR}/build/frontend/tpcc
 /ycsb: ${MODULE_DIR}/build/frontend/ycsb
+/ycsb_minimal: ${MODULE_DIR}/build/frontend/ycsb_minimal
+
 /touch: /usr/bin/touch
 /usr/lib/libpcre2-8.so.0: /lib/x86_64-linux-gnu/libpcre2-8.so.0
 /ls: /usr/bin/ls

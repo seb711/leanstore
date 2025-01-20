@@ -78,29 +78,6 @@ void CRTable::open()
    columns.emplace("wal_total", [&](Column& col) { col << wal_total; });
 }
 // -------------------------------------------------------------------------------------
-template<typename Container, typename FieldAccessor>
-u64 getPercentileOfField(Container &worker_counters, FieldAccessor field_accessor, int percentile) {
-    u64 max = 0;
-    for (typename Container::iterator i = worker_counters.begin(); i != worker_counters.end(); ++i) {
-        max = std::max(max, field_accessor(*i).getPercentile(percentile));
-    }
-    return max;
-   /*j
-   int s = worker_counters.size();
-    std::vector<u64> med(s);
-
-    int idx = 0;
-    for (typename Container::iterator i = worker_counters.begin(); idx < s; ++i) {
-        med.at(idx++) = field_accessor(*i).getPercentile(percentile);
-    }
-
-    auto m = med.begin() + med.size() / 2;
-    std::nth_element(med.begin(), m, med.end());
-
-    return *m;
-    */
-}
-// -------------------------------------------------------------------------------------
 void CRTable::next()
 {
    wal_hits = sum(WorkerCounters::worker_counters, &WorkerCounters::wal_buffer_hit);
@@ -116,39 +93,13 @@ void CRTable::next()
 
    local_tx = sum(WorkerCounters::worker_counters, &WorkerCounters::tx);
    int counters = 0;
-   //lat10p = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> const auto& { return wc.tx_latency_hist; }, 10);
-   local_tx_lat10p_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist); }, 10);
-   local_tx_lat25p_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist); }, 25);
-   local_tx_lat50p_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist); }, 50);
-   local_tx_lat95p_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist); }, 95);
-   local_tx_lat99p_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist); }, 99);
-   local_tx_lat99p9_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist); }, 99.9);
-   local_tx_lat99p99_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist); }, 99.99);
-
-   local_tx_lat10pi_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist_incwait); }, 10);
-   local_tx_lat25pi_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist_incwait); }, 25);
-   local_tx_lat50pi_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist_incwait); }, 50);
-   local_tx_lat95pi_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist_incwait); }, 95);
-   local_tx_lat99pi_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist_incwait); }, 99);
-   local_tx_lat99pi9_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist_incwait); }, 99.9);
-   local_tx_lat99pi99_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist_incwait); }, 99.99);
-
-
-    local_ssd_read_lat50p_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.ssd_read_latency); }, 50);
-    local_ssd_read_lat99p_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.ssd_read_latency); }, 99);
-    local_ssd_read_lat99p9_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.ssd_read_latency); }, 99.9);
-    local_ssd_read_lat99p99_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.ssd_read_latency); }, 99.99);
-
-   local_ssd_write_lat50p_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.ssd_write_latency); }, 50);
-   local_ssd_write_lat99p_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.ssd_write_latency); }, 99);
-   local_ssd_write_lat99p9_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.ssd_write_latency); }, 99.9);
-   local_ssd_write_lat99p99_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.ssd_write_latency); }, 99.99);
+   //lat10p = getPercentileOfField(WorkerCounters::worker_counters, [](WorkerCounters &wc) -> const auto& { return wc.tx_latency_hist; }, 10);
 
    for (typename decltype(WorkerCounters::worker_counters)::iterator i = WorkerCounters::worker_counters.begin(); i != WorkerCounters::worker_counters.end(); ++i) {
-      i->tx_latency_hist.resetData();
-      i->tx_latency_hist_incwait.resetData();
-      i->ssd_read_latency.resetData();
-      i->ssd_write_latency.resetData();
+      (*i)->tx_latency_hist.resetData();
+       (*i)->tx_latency_hist_incwait.resetData();
+       (*i)->ssd_read_latency.resetData();
+       (*i)->ssd_write_latency.resetData();
       counters++;
    }
 

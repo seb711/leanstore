@@ -1,8 +1,6 @@
 #pragma once
 #include "Units.hpp"
 // -------------------------------------------------------------------------------------
-#include <tbb/enumerable_thread_specific.h>
-
 #include "PerfEvent.hpp"
 #include "leanstore/utils/Hist.hpp"
 // -------------------------------------------------------------------------------------
@@ -11,6 +9,8 @@
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {
+
+
 struct WorkerCounters {
    static constexpr u64 max_researchy_counter = 10;
    static constexpr u64 max_dt_id = 20;
@@ -66,11 +66,19 @@ struct WorkerCounters {
    atomic<u64> submit_calls = 0;
    atomic<u64> submitted = 0;
    // -------------------------------------------------------------------------------------
-   WorkerCounters() { t_id = workers_counter++; }
+   WorkerCounters() { 
+      t_id = workers_counter++;  
+      WorkerCounters::worker_counters_mut.lock(); 
+      WorkerCounters::worker_counters.push_back(this); 
+      WorkerCounters::worker_counters_mut.unlock(); 
+   }
    // -------------------------------------------------------------------------------------
    static atomic<u64> workers_counter;
-   static tbb::enumerable_thread_specific<WorkerCounters> worker_counters;
-   static tbb::enumerable_thread_specific<WorkerCounters>::reference myCounters() { return worker_counters.local(); }
+   // static tbb::enumerable_thread_specific<WorkerCounters> worker_counters;
+   static std::vector<WorkerCounters*> worker_counters;
+   static std::mutex worker_counters_mut;
+   static WorkerCounters& myCounters(); 
+   // static tbb::enumerable_thread_specific<WorkerCounters>::reference myCounters() { return worker_counters.local(); }
 };
 }  // namespace leanstore
 // -------------------------------------------------------------------------------------

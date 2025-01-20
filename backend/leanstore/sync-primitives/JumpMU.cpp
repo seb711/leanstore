@@ -5,5 +5,5 @@
 // -------------------------------------------------------------------------------------
 namespace jumpmu
 {
-__thread JumpMUContext* thread_local_jumpmu_ctx __attribute__ ((tls_model("initial-exec"))) = nullptr;
+__thread JumpMUContext* thread_local_jumpmu_ctx __attribute__ ((tls_model("local-exec"))) = nullptr;
 }  // namespace jumpmu

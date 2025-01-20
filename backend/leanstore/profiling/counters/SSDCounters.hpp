@@ -1,12 +1,11 @@
 #pragma once
 #include "Units.hpp"
 // -------------------------------------------------------------------------------------
-#include <tbb/enumerable_thread_specific.h>
-
 #include "PerfEvent.hpp"
 #include "leanstore/utils/Hist.hpp"
 // -------------------------------------------------------------------------------------
 #include <atomic>
+#include <mutex>
 #include <unordered_map>
 // -------------------------------------------------------------------------------------
 namespace leanstore
@@ -30,10 +29,18 @@ struct SSDCounters {
    atomic<u64> writes[max_ssds] = {0};
    atomic<u64> reads[max_ssds] = {0};
    // -------------------------------------------------------------------------------------
-   SSDCounters() { }
+   SSDCounters() { 
+      t_id = ssds_counter++;  
+      SSDCounters::ssd_counters_mut.lock(); 
+      SSDCounters::ssd_counters.push_back(this); 
+      SSDCounters::ssd_counters_mut.unlock(); 
+   }
    // -------------------------------------------------------------------------------------
-   static tbb::enumerable_thread_specific<SSDCounters> ssd_counters;
-   static tbb::enumerable_thread_specific<SSDCounters>::reference myCounters() { return ssd_counters.local(); }
+   static atomic<u64> ssds_counter;
+   // static tbb::enumerable_thread_specific<WorkerCounters> worker_counters;
+   static std::vector<SSDCounters*> ssd_counters;
+   static std::mutex ssd_counters_mut;
+   static SSDCounters& myCounters(); 
 };
 }  // namespace leanstore
 // -------------------------------------------------------------------------------------

@@ -16,7 +16,7 @@ endif ()
 # ---------------------------------------------------------------------------
 add_library(leanstore STATIC ${LEANSTORE_CC})
 target_link_libraries(leanstore gflags Threads::Threads aio tbb atomic tabluate nvme custom_memcmp) #tbb
-target_link_options(leanstore PRIVATE -Wl,-wrap,memcmp)
+target_link_options(leanstore PRIVATE -Wl,-wrap,memcmp -Wl,-wrap,memcpy)
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
