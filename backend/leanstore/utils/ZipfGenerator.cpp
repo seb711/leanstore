@@ -27,6 +27,23 @@ double ZipfGenerator::zeta(u64 n, double theta)
    return ans;
 }
 // -------------------------------------------------------------------------------------
+template <typename T>
+T custom_pow(T base, int exponent) {
+    T result = 1;
+    bool isNegative = exponent < 0;
+    exponent = abs(exponent);
+
+    // Calculate base^exponent using a loop
+    for (int i = 0; i < exponent; ++i) {
+        result *= base;
+    }
+
+    // Handle negative exponents
+    if (isNegative) {
+        return static_cast<T>(1) / result;
+    }
+    return result;
+}
 uint64_t ZipfGenerator::rand()
 {
    double constant = 1000000000000000000.0;
@@ -37,9 +54,9 @@ uint64_t ZipfGenerator::rand()
    if (uz < 1) {
       return 1;
    }
-   if (uz < (1 + std::pow(0.5, theta)))
+   if (uz < (1 + custom_pow(0.5, theta)))
       return 2;
-   u64 ret = 1 + (long)(n * pow(eta * u - eta + 1, alpha));
+   u64 ret = 1 + (long)(n * custom_pow(eta * u - eta + 1, alpha));
    return ret;
 }
 // -------------------------------------------------------------------------------------

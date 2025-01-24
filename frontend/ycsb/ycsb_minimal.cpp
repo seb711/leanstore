@@ -61,8 +61,42 @@ void run_ycsb() {
                                     ? FLAGS_ycsb_tuple_count
                                     : FLAGS_target_gib * 1024 * 1024 * 1024 * 1.0 / 2.0 / (sizeof(YCSBKey) + sizeof(YCSBPayload));
 
-   db.startProfilingThread();
-   // -------------------------------------------------------------------------------------
+// Insert values
+   {
+      const u64 n = ycsb_tuple_count;
+      cout << "-------------------------------------------------------------------------------------" << endl;
+      cout << "Inserting values" << endl;
+      begin = chrono::high_resolution_clock::now();
+
+      mean::BlockedRange bb(0, (u64)n);
+      ensure((bool)((bb.end - bb.begin) > 1));
+      auto ycsb_insert_fun = [&](mean::BlockedRange bb, std::atomic<bool>&) {
+         // vector<u64> keys(range.size());
+         // std::iota(keys.begin(), keys.end(), range.begin());
+         // std::random_shuffle(keys.begin(), keys.end());
+         for (u64 t_i = bb.begin; t_i < bb.end; t_i++) {
+            YCSBPayload payload;
+            utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
+            auto& key = t_i;
+            table.insert(key, payload);
+            YCSBPayload result; /// FIXME remove this check
+            table.lookup(t_i, result);
+            // ensure(result == payload);
+
+            mean::task::yield();
+         }
+      };
+      mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks, 100000);
+      end = chrono::high_resolution_clock::now();
+      cout << "time elapsed = " << (chrono::duration_cast<chrono::microseconds>(end - begin).count() / 1000000.0) << endl;
+      cout << calculateMTPS(begin, end, n) << " M tps" << endl;
+      // -------------------------------------------------------------------------------------
+      const u64 written_pages = db.getBufferManager().consumedPages();
+      const u64 mib = written_pages * PAGE_SIZE / 1024 / 1024;
+      cout << "Inserted volume: (pages, MiB) = (" << written_pages << ", " << mib << ")" << endl;
+      cout << "-------------------------------------------------------------------------------------" << endl;
+   }
+   db.startProfilingThread();   // -------------------------------------------------------------------------------------
    auto zipf_random = std::make_unique<utils::ScrambledZipfGenerator>(0, ycsb_tuple_count, FLAGS_zipf_factor);
    cout << setprecision(4);
    // -----------------------------------------------------------------------------------
@@ -95,9 +129,9 @@ void run_ycsb() {
       u64 end = 1000000000000ul; 
       running_threads_counter++;
       while (i < end) {
-         // key = zipf_random->rand();
-         // assert(key < ycsb_tuple_count);
-         // table.lookup(key, result);
+         key = zipf_random->rand();
+         assert(key < ycsb_tuple_count);
+         table.lookup(key, result);
          WorkerCounters::myCounters().tx++;
          i++;
       }
