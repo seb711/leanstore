@@ -63,7 +63,7 @@ void* OsvEnv::allocIoMemory(size_t size, size_t align)
    std::cout << "allocate " << size << std::endl; 
    // char *buffer = nullptr;
    // int t = posix_memalign((void **)&buffer, std::max(align, (size_t) 4096), size);*/   
-   void* buffer = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_UNINITIALIZED, -1, 0);
+   void* buffer = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
 
    null_check(buffer, "Memory allocation failed");   
    

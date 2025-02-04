@@ -501,3 +501,30 @@ void *__wrap_memcpy(void *dest, const void *src, size_t n) {
     // Call the original memcpy
     return rte_memcpy(dest, src, n);
 }
+
+void *my_memmove(void *dest, const void *src, size_t n) {
+    unsigned char *d = (unsigned char *)dest;
+    const unsigned char *s = (const unsigned char *)src;
+
+    if (d < s) {
+        // Copy forward
+        for (size_t i = 0; i < n; i++)
+            d[i] = s[i];
+    } else if (d > s) {
+        // Copy backward
+        for (size_t i = n; i > 0; i--)
+            d[i - 1] = s[i - 1];
+    }
+    
+    return dest;
+}
+
+void *__wrap_memmove(void *dest, const void *src, size_t n) {
+    // Example: Busy-wait loop for delay
+    // clock_t start = clock();
+    // while ((double)(clock() - start) / CLOCKS_PER_SEC < 0.000002) {
+    //     // Intentional busy-wait for ~2 microseconds
+    // }
+    // Call the original memcpy
+    return my_memmove(dest, src, n);
+}

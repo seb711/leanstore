@@ -80,7 +80,7 @@ void run_ycsb() {
             table.insert(key, payload);
             YCSBPayload result; /// FIXME remove this check
             table.lookup(t_i, result);
-            // ensure(result == payload);
+            ensure(result == payload);
 
             mean::task::yield();
          }
@@ -133,12 +133,20 @@ void run_ycsb() {
    {
       auto start = mean::getSeconds();
       auto ycsb_tx = [&](mean::BlockedRange bb, std::atomic<bool>& cancelled){
-        u64 i = bb.begin;
+
+       thread_local auto nextStartTime = mean::readTSC();
+       thread_local u64 longLat = 0;
+       auto tx_start_time = nextStartTime;
+       const float rate = FLAGS_tx_rate / mean::env::workerCount();
+       std::random_device rd;
+       std::mt19937 gen(rd());
+       std::exponential_distribution<> expDist(rate);
+       volatile u64 i = bb.begin;
 
          running_threads_counter++;
-         YCSBPayload result;
          int timeCheck = 0;
          while (i < bb.end && keep_running) {
+            auto before = mean::readTSC();
             timeCheck++;
             if (timeCheck % 32 == 0 && mean::getSeconds() - start > FLAGS_run_for_seconds) {
                cancelled = true;
@@ -146,12 +154,27 @@ void run_ycsb() {
             }
             YCSBKey key = zipf_random->rand();
             assert(key < ycsb_tuple_count);
+            YCSBPayload result;
+            if (FLAGS_ycsb_read_ratio == 100 || utils::RandomGenerator::getRandU64(0, 100) < FLAGS_ycsb_read_ratio) {
                table.lookup(key, result);
-
+            } else {
+               YCSBPayload payload;
+               utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
+               table.update(key, payload);
+            }
            i++;
-           
+           auto now = mean::readTSC();
+           auto timeDiff = mean::tscDifferenceUs(now, before);
+           auto timeDiffIncWait = mean::tscDifferenceUs(now, tx_start_time);
+           WorkerCounters::myCounters().total_tx_time += timeDiff;
+           WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
+           if (timeDiffIncWait < 10000000) {
+              WorkerCounters::myCounters().total_tx_time_inc_wait += timeDiffIncWait;
+           }
+           WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
            WorkerCounters::myCounters().tx++;
-           /* while (i < bb.end && keep_running) {
+           ThreadCounters::myCounters().tx++;
+           while (i < bb.end && keep_running) {
               mean::task::yield();
               now = mean::readTSC();
               if (rate == 0) break;
@@ -170,14 +193,14 @@ void run_ycsb() {
                   //std::cout << "next: " << nextStartTime << std::flush << std::endl;
                   break;
               }
-           } */
+           }
          }
          running_threads_counter--;
       };
       mean::BlockedRange bb(0, (u64)1000000000000ul);
       auto startTsc = mean::readTSC();
       auto startTP = mean::getTimePoint();
-      mean::task::parallelFor(bb, ycsb_tx, FLAGS_worker_tasks, 1000000);
+      mean::task::parallelFor(bb, ycsb_tx, FLAGS_worker_tasks, 100000);
       auto diffTSC = mean::tscDifferenceNs(mean::readTSC(), startTsc) / 1e9;
       auto diffTP = mean::timePointDifference(mean::getTimePoint(), startTP) / 1e9;
       std::cout << "done: time: " << diffTP << " tsc: " << diffTSC << std::endl;
@@ -200,7 +223,6 @@ int main(int argc, char** argv)
    ioOptions.ioUringPollMode = FLAGS_io_uring_poll_mode;
    ioOptions.ioUringShareWq = FLAGS_io_uring_share_wq;
    ioOptions.raid5 = FLAGS_raid5;
-   ioOptions.truncate = true;
    ioOptions.iodepth = (FLAGS_async_batch_size + FLAGS_worker_tasks)*2; // hacky, how to take into account for remotes 
    // -------------------------------------------------------------------------------------
    if (FLAGS_nopp) {
