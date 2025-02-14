@@ -115,7 +115,7 @@ LeanStore::LeanStore()
 void LeanStore::startProfilingThread()
 {
    std::thread profiling_thread([&]() {
-      utils::pinThisThread(((FLAGS_pin_threads) ? FLAGS_worker_threads : 0) + FLAGS_wal + FLAGS_pp_threads);
+      // utils::pinThisThread(((FLAGS_pin_threads) ? FLAGS_worker_threads : 0) + FLAGS_wal + FLAGS_pp_threads);
       if (FLAGS_root) {
          posix_check(setpriority(PRIO_PROCESS, 0, -20) == 0);
       }
