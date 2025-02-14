@@ -267,7 +267,7 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
       evict_candidate_bfs.clear();
       // -------------------------------------------------------------------------------------
       // Phase 3:
-      if (async_write_buffer.submit()) {
+      /* if (async_write_buffer.submit()) {
          const u32 polled_events = async_write_buffer.pollEventsSync();
          async_write_buffer.getWrittenBfs(
              [&](BufferFrame& written_bf, u64 written_lsn, PID out_of_place_pid) {
@@ -309,7 +309,7 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
                 }
              },
              polled_events);
-      }
+      } */
       if (freed_bfs_batch.size()) {
          freed_bfs_batch.push(current_partition);
       }
