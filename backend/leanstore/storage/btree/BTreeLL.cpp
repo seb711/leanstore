@@ -150,10 +150,10 @@ OP_RESULT BTreeLL::scanDesc(u8* start_key, u16 key_length, std::function<bool(co
 // -------------------------------------------------------------------------------------
 OP_RESULT BTreeLL::insert(u8* o_key, u16 o_key_length, u8* o_value, u16 o_value_length)
 {
-   cr::activeTX().markAsWrite();
-   if (config.enable_wal) {
-      cr::Worker::my().logging.walEnsureEnoughSpace(PAGE_SIZE * 1);
-   }
+   // cr::activeTX().markAsWrite();
+   // if (config.enable_wal) {
+   //    cr::Worker::my().logging.walEnsureEnoughSpace(PAGE_SIZE * 1);
+   // }
    const Slice key(o_key, o_key_length);
    const Slice value(o_value, o_value_length);
    jumpmuTry()
