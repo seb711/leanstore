@@ -110,11 +110,14 @@ struct WorkerCounters {
    atomic<u64> wal_buffer_hit = 0;
    atomic<u64> wal_buffer_miss = 0;
    // -------------------------------------------------------------------------------------
-   WorkerCounters() { t_id = workers_counter++; }
+   explicit WorkerCounters(int core) : core_id(core), t_id(workers_counter++) {}
    // -------------------------------------------------------------------------------------
-   static atomic<u64> workers_counter;
-   static tbb::enumerable_thread_specific<WorkerCounters> worker_counters;
-   static tbb::enumerable_thread_specific<WorkerCounters>::reference myCounters() { return worker_counters.local(); }
+   static std::atomic<uint64_t> workers_counter;
+   static std::atomic<WorkerCounters*> worker_counters[MAX_CORES]; // Per-core storage
+   static std::mutex worker_counters_mut; // Fallback mutex
+   static WorkerCounters& myCounters(); 
+
+   int core_id;
 };
 }  // namespace leanstore
 // -------------------------------------------------------------------------------------

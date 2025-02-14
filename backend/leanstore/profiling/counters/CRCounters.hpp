@@ -59,10 +59,15 @@ struct CRCounters {
    atomic<u64> cc_rfa_ms_commit_latency[latency_tx_capacity] = {0};
    atomic<u64> cc_rfa_latency_cursor = {0};
    // -------------------------------------------------------------------------------------
-   CRCounters() {}
+   explicit CRCounters(int core) : core_id(core), t_id(cr_counter++) {}
    // -------------------------------------------------------------------------------------
-   static tbb::enumerable_thread_specific<CRCounters> cr_counters;
-   static tbb::enumerable_thread_specific<CRCounters>::reference myCounters() { return cr_counters.local(); }
+   static std::atomic<uint64_t> cr_counter;
+   static std::atomic<CRCounters*> cr_counters[MAX_CORES]; // Per-core storage
+   static std::mutex cr_counters_mut; // Fallback mutex
+   static CRCounters& myCounters(); 
+
+   int core_id;
+   int t_id;
 };
 }  // namespace leanstore
 // -------------------------------------------------------------------------------------

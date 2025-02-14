@@ -25,7 +25,15 @@ struct PPCounters {
    atomic<u64> flushed_pages_counter = 0;
    atomic<u64> unswizzled_pages_counter = 0;
    // -------------------------------------------------------------------------------------
-   static tbb::enumerable_thread_specific<PPCounters> pp_counters;
-   static tbb::enumerable_thread_specific<PPCounters>::reference myCounters() { return pp_counters.local(); }
+   explicit PPCounters(int core) : core_id(core), t_id(pp_counter++) {}
+   // -------------------------------------------------------------------------------------
+   static std::atomic<uint64_t> pp_counter;
+   static std::atomic<PPCounters*> pp_counters[MAX_CORES]; // Per-core storage
+   static std::mutex pp_counters_mut; // Fallback mutex
+   static PPCounters& myCounters(); 
+
+   int core_id;
+   int t_id;
+
 };
 }  // namespace leanstore

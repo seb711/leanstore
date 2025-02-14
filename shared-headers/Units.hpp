@@ -40,6 +40,7 @@ using WORKERID = u16;
 using TXID = u64;
 using COMMANDID = u32;
 #define TYPE_MSB(TYPE) (1ull << ((sizeof(TYPE) * 8) - 1))
+#define MAX_CORES 4
 // -------------------------------------------------------------------------------------
 using TINYINT = s8;
 using SMALLINT = s16;

@@ -32,7 +32,9 @@ void LatencyTable::next()
 {
    clear();
    // -------------------------------------------------------------------------------------
-   for (auto w_i = CRCounters::cr_counters.begin(); w_i != CRCounters::cr_counters.end(); ++w_i) {
+   for (auto core_id = 0; core_id < MAX_CORES; ++core_id) {
+      if (!CRCounters::cr_counters[core_id]) continue; 
+      CRCounters* w_i = CRCounters::cr_counters[core_id].load(); 
       if (w_i->worker_id.load() != -1) {
          continue;
       }
