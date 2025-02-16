@@ -1,6 +1,5 @@
 #include "BufferManager.hpp"
 
-#include "AsyncWriteBuffer.hpp"
 #include "BufferFrame.hpp"
 #include "Exceptions.hpp"
 #include "leanstore/Config.hpp"

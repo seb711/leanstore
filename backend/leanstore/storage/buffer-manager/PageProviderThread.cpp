@@ -1,4 +1,4 @@
-#include "AsyncWriteBuffer.hpp"
+#include "leanstore/storage/buffer-manager/async-write-buffer/LibaioAsyncWriteBuffer.hpp"
 #include "BufferFrame.hpp"
 #include "BufferManager.hpp"
 #include "Exceptions.hpp"
@@ -34,7 +34,48 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
    leanstore::cr::CRManager::global->registerMeAsSpecialWorker();
    // -------------------------------------------------------------------------------------
    // Init AIO Context
-   AsyncWriteBuffer async_write_buffer(ssd_fd, PAGE_SIZE, FLAGS_write_buffer_size);
+   LibaioAsyncWriteBuffer async_write_buffer(ssd_fd, PAGE_SIZE, FLAGS_write_buffer_size);
+
+   std::function<void(leanstore::storage::BufferFrame &bf, leanstore::storage::BMOptimisticGuard &c_guard)> evict_bf; 
+   auto evict_io_cb_fn = [&](BufferFrame& written_bf, u64 written_lsn, PID out_of_place_pid) {
+         jumpmuTry()
+         {
+            // When the written back page is being exclusively locked, we should rather waste the write and move on to another page
+            // Instead of waiting on its latch because of the likelihood that a data structure implementation keeps holding a parent latch
+            // while trying to acquire a new page
+            {
+               BMOptimisticGuard o_guard(written_bf.header.latch);
+               BMExclusiveGuard ex_guard(o_guard);
+               ensure(written_bf.header.is_being_written_back);
+               ensure(written_bf.header.last_written_plsn < written_lsn);
+               // -------------------------------------------------------------------------------------
+               if (FLAGS_out_of_place) {  // For recovery, so much has to be done here...
+                  getPartition(getPartitionID(written_bf.header.pid)).freePage(written_bf.header.pid);
+                  written_bf.header.pid = out_of_place_pid;
+               }
+               written_bf.header.last_written_plsn = written_lsn;
+               written_bf.header.is_being_written_back = false;
+               PPCounters::myCounters().flushed_pages_counter++;
+            }
+         }
+         jumpmuCatch()
+         {
+            written_bf.header.crc = 0;
+            written_bf.header.is_being_written_back.store(false, std::memory_order_release);
+         }
+         // -------------------------------------------------------------------------------------
+         {
+            jumpmuTry()
+            {
+               BMOptimisticGuard o_guard(written_bf.header.latch);
+               if (written_bf.header.state == BufferFrame::STATE::COOL && !written_bf.header.is_being_written_back && !written_bf.isDirty()) {
+                  evict_bf(written_bf, o_guard);
+               }
+            }
+            jumpmuCatch() {}
+         }
+      }; 
+
    std::vector<BufferFrame*> cool_candidate_bfs, evict_candidate_bfs;
    // -------------------------------------------------------------------------------------
    auto next_bf_range = [&]() {
@@ -168,7 +209,7 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
       // -------------------------------------------------------------------------------------
       // Phase 2:
       FreedBfsBatch freed_bfs_batch;
-      auto evict_bf = [&](BufferFrame& bf, BMOptimisticGuard& c_guard) {
+      evict_bf = [&](BufferFrame& bf, BMOptimisticGuard& c_guard) {
          DTID dt_id = bf.page.dt_id;
          c_guard.recheck();
          ParentSwipHandler parent_handler = getDTRegistry().findParent(dt_id, bf);
@@ -217,7 +258,7 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
          // -------------------------------------------------------------------------------------
          COUNTERS_BLOCK() { PPCounters::myCounters().evicted_pages++; }
       };
-      // -------------------------------------------------------------------------------------
+      // -----------------------------------------------------------------------------------
       for (volatile const auto& cooled_bf : evict_candidate_bfs) {
          jumpmuTry()
          {
@@ -253,7 +294,7 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
                         paranoid(getPartitionID(cooled_bf->header.pid) == p_i);
                         paranoid(getPartitionID(wb_pid) == p_i);
                      }
-                     async_write_buffer.add(*cooled_bf, wb_pid);
+                     async_write_buffer.add(*cooled_bf, evict_io_cb_fn, wb_pid);
                   }
                } else {
                   jumpmu_break;
@@ -267,49 +308,9 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
       evict_candidate_bfs.clear();
       // -------------------------------------------------------------------------------------
       // Phase 3:
-      /* if (async_write_buffer.submit()) {
-         const u32 polled_events = async_write_buffer.pollEventsSync();
-         async_write_buffer.getWrittenBfs(
-             [&](BufferFrame& written_bf, u64 written_lsn, PID out_of_place_pid) {
-                jumpmuTry()
-                {
-                   // When the written back page is being exclusively locked, we should rather waste the write and move on to another page
-                   // Instead of waiting on its latch because of the likelihood that a data structure implementation keeps holding a parent latch
-                   // while trying to acquire a new page
-                   {
-                      BMOptimisticGuard o_guard(written_bf.header.latch);
-                      BMExclusiveGuard ex_guard(o_guard);
-                      ensure(written_bf.header.is_being_written_back);
-                      ensure(written_bf.header.last_written_plsn < written_lsn);
-                      // -------------------------------------------------------------------------------------
-                      if (FLAGS_out_of_place) {  // For recovery, so much has to be done here...
-                         getPartition(getPartitionID(written_bf.header.pid)).freePage(written_bf.header.pid);
-                         written_bf.header.pid = out_of_place_pid;
-                      }
-                      written_bf.header.last_written_plsn = written_lsn;
-                      written_bf.header.is_being_written_back = false;
-                      PPCounters::myCounters().flushed_pages_counter++;
-                   }
-                }
-                jumpmuCatch()
-                {
-                   written_bf.header.crc = 0;
-                   written_bf.header.is_being_written_back.store(false, std::memory_order_release);
-                }
-                // -------------------------------------------------------------------------------------
-                {
-                   jumpmuTry()
-                   {
-                      BMOptimisticGuard o_guard(written_bf.header.latch);
-                      if (written_bf.header.state == BufferFrame::STATE::COOL && !written_bf.header.is_being_written_back && !written_bf.isDirty()) {
-                         evict_bf(written_bf, o_guard);
-                      }
-                   }
-                   jumpmuCatch() {}
-                }
-             },
-             polled_events);
-      } */
+      if (async_write_buffer.submit()) {
+         const u32 polled_events = async_write_buffer.pollSync();
+      }
       if (freed_bfs_batch.size()) {
          freed_bfs_batch.push(current_partition);
       }

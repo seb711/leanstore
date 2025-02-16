@@ -1,5 +1,5 @@
-#include "AsyncWriteBuffer.hpp"
-#include "Tracing.hpp"
+#include "LibaioAsyncWriteBuffer.hpp"
+#include "leanstore/storage/buffer-manager/Tracing.hpp"
 
 #include "Exceptions.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
@@ -17,7 +17,7 @@ namespace leanstore
 namespace storage
 {
 // -------------------------------------------------------------------------------------
-AsyncWriteBuffer::AsyncWriteBuffer(int fd, u64 page_size, u64 batch_max_size) : fd(fd), page_size(page_size), batch_max_size(batch_max_size)
+LibaioAsyncWriteBuffer::LibaioAsyncWriteBuffer(int fd, u64 page_size, u64 batch_max_size) : fd(fd), page_size(page_size), batch_max_size(batch_max_size)
 {
    write_buffer = make_unique<BufferFrame::Page[]>(batch_max_size);
    write_buffer_commands = make_unique<WriteCommand[]>(batch_max_size);
@@ -32,7 +32,7 @@ AsyncWriteBuffer::AsyncWriteBuffer(int fd, u64 page_size, u64 batch_max_size) : 
    }
 }
 // -------------------------------------------------------------------------------------
-bool AsyncWriteBuffer::full()
+bool LibaioAsyncWriteBuffer::full()
 {
    if (pending_requests >= batch_max_size - 2) {
       return true;
@@ -41,7 +41,7 @@ bool AsyncWriteBuffer::full()
    }
 }
 // -------------------------------------------------------------------------------------
-void AsyncWriteBuffer::add(BufferFrame& bf, PID pid)
+void LibaioAsyncWriteBuffer::add(BufferFrame& bf, std::function<void(BufferFrame&, u64, PID)> callback, PID pid)
 {
    assert(!full());
    assert(u64(&bf.page) % 512 == 0);
@@ -62,6 +62,7 @@ void AsyncWriteBuffer::add(BufferFrame& bf, PID pid)
    // -------------------------------------------------------------------------------------
    auto slot = pending_requests++;
    write_buffer_commands[slot].bf = &bf;
+   write_buffer_commands[slot].callback = callback;
    write_buffer_commands[slot].pid = pid;
    bf.page.magic_debugging_number = pid;
    std::memcpy(&write_buffer[slot], bf.page, page_size);
@@ -71,7 +72,7 @@ void AsyncWriteBuffer::add(BufferFrame& bf, PID pid)
    iocbs_ptr[slot] = &iocbs[slot];
 }
 // -------------------------------------------------------------------------------------
-u64 AsyncWriteBuffer::submit()
+u64 LibaioAsyncWriteBuffer::submit()
 {
    if (pending_requests > 0) {
       int ret_code = io_submit(aio_context, pending_requests, iocbs_ptr.get());
@@ -81,7 +82,7 @@ u64 AsyncWriteBuffer::submit()
    return 0;
 }
 // -------------------------------------------------------------------------------------
-u64 AsyncWriteBuffer::pollEventsSync()
+u64 LibaioAsyncWriteBuffer::pollSync()
 {
    if (pending_requests > 0) {
       const int done_requests = io_getevents(aio_context, pending_requests, pending_requests, events.get(), NULL);
@@ -91,23 +92,19 @@ u64 AsyncWriteBuffer::pollEventsSync()
          ensure(false);
       }
       pending_requests = 0;
-      return done_requests;
-   }
-   return 0;
-}
-// -------------------------------------------------------------------------------------
-void AsyncWriteBuffer::getWrittenBfs(std::function<void(BufferFrame&, u64, PID)> callback, u64 n_events)
-{
-   for (u64 i = 0; i < n_events; i++) {
+      
+     for (u64 i = 0; i < done_requests; i++) {
       const auto slot = (u64(events[i].data) - u64(write_buffer.get())) / page_size;
       // -------------------------------------------------------------------------------------
       ensure(events[i].res == page_size);
       explainIfNot(events[i].res2 == 0);
       auto written_lsn = write_buffer[slot].PLSN;
-      callback(*write_buffer_commands[slot].bf, written_lsn, write_buffer_commands[slot].pid);
+      write_buffer_commands[slot].callback(*write_buffer_commands[slot].bf, written_lsn, write_buffer_commands[slot].pid);
    }
+   }
+   return 0;
+
 }
-// -------------------------------------------------------------------------------------
 }  // namespace storage
 }  // namespace leanstore
    // -------------------------------------------------------------------------------------
