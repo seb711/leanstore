@@ -10,7 +10,7 @@ DEFINE_bool(worker_page_eviction, false, "");
 DEFINE_string(csv_path, "./log", "");
 DEFINE_bool(csv_truncate, false, "");
 DEFINE_string(ssd_path, "./leanstore", "Position of SSD, gets persisted");
-DEFINE_uint32(write_buffer_size, 1024, "");
+DEFINE_uint32(write_buffer_size, 128, "");
 DEFINE_bool(trunc, false, "Truncate file");
 DEFINE_uint32(falloc, 0, "Preallocate GiB");
 // -------------------------------------------------------------------------------------

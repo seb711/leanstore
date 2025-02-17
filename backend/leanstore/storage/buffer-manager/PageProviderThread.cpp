@@ -1,4 +1,6 @@
 #include "leanstore/storage/buffer-manager/async-write-buffer/LibaioAsyncWriteBuffer.hpp"
+#include "leanstore/storage/buffer-manager/async-write-buffer/OsvAsyncWriteBuffer.hpp"
+
 #include "BufferFrame.hpp"
 #include "BufferManager.hpp"
 #include "Exceptions.hpp"
@@ -34,7 +36,7 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
    leanstore::cr::CRManager::global->registerMeAsSpecialWorker();
    // -------------------------------------------------------------------------------------
    // Init AIO Context
-   LibaioAsyncWriteBuffer async_write_buffer(ssd_fd, PAGE_SIZE, FLAGS_write_buffer_size);
+   OsvAsyncWriteBuffer async_write_buffer(PAGE_SIZE, FLAGS_write_buffer_size);
 
    std::function<void(leanstore::storage::BufferFrame &bf, leanstore::storage::BMOptimisticGuard &c_guard)> evict_bf; 
    auto evict_io_cb_fn = [&](BufferFrame& written_bf, u64 written_lsn, PID out_of_place_pid) {

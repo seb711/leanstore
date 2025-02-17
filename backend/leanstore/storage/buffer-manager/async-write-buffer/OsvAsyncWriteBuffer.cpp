@@ -71,7 +71,7 @@ void OsvAsyncWriteBuffer::add(BufferFrame& bf, std::function<void(BufferFrame&, 
    void* write_buffer_slot_ptr = &write_buffer[slot];
    
    // TODO: here we need to call osv_nvme_io_queue_write
-   auto ret = osv_nvme_nv_cmd_write(0, queue, &write_buffer[slot], page_size * pid, page_size, osv_nvme_callback, &iocbs[slot], 0);
+   auto ret = osv_nvme_nv_cmd_write(1, queue, &write_buffer[slot], page_size * pid, page_size, osv_nvme_callback, &iocbs[slot], 0);
    assert(ret == 0); 
 }
 // -------------------------------------------------------------------------------------
