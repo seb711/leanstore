@@ -23,7 +23,7 @@ class OsvAsyncWriteBuffer : public AsyncWriteBuffer
    u64 pending_requests = 0;
 
   public:
-   osv_nvme_cmd_cb callback = [](void *ctx, const nvme_sq_entry_t* cpl)->void {
+   osv_nvme_cmd_cb osv_nvme_callback = [](void *ctx, const nvme_sq_entry_t* cpl)->void {
     CallbackArguments* args = (CallbackArguments*) ctx; 
     args->callback(*args->bf, (*args->bf).page.PLSN, args->pid); 
    }; 
