@@ -37,7 +37,7 @@ class OsvAsyncWriteBuffer : public AsyncWriteBuffer
    // -------------------------------------------------------------------------------------
    OsvAsyncWriteBuffer(u64 page_size, u64 batch_max_size);
    // Caller takes care of sync
-   bool full();
+   virtual bool full() override;
    virtual void add(BufferFrame& bf, std::function<void(BufferFrame&, u64, PID)> callback, PID pid) override;
    virtual u64 submit() override;
    virtual u64 pollSync() override;

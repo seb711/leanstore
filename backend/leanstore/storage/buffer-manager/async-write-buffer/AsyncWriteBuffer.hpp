@@ -13,6 +13,7 @@ namespace storage
 class AsyncWriteBuffer
 {
   public:
+  virtual bool full() = 0; 
    virtual void add(BufferFrame& bf, std::function<void(BufferFrame&, u64, PID)> callback, PID pid) = 0;
    virtual u64 submit() = 0;
    virtual u64 pollSync() = 0;

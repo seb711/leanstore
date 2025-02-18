@@ -11,8 +11,6 @@
 #include <cstring>
 #include <osv/nvme.hh>
 // -------------------------------------------------------------------------------------
-DEFINE_uint32(insistence_limit, 1, "");
-// -------------------------------------------------------------------------------------
 namespace leanstore
 {
 namespace storage
@@ -26,7 +24,7 @@ OsvAsyncWriteBuffer::OsvAsyncWriteBuffer(u64 page_size, u64 batch_max_size) : pa
    const uint32_t queue_size = 128; 
    
    // TODO: assert or guarantee that the batch_max_size is smaller than the io queue otherwise it will deadlock
-   assert(batch_max_size < queue_size); 
+   assert(batch_max_size <= queue_size); 
 
    // TODO: here we need to create a ioqueue of OSv
    auto ssds = osv_get_available_ssds(); 
@@ -84,15 +82,17 @@ u64 OsvAsyncWriteBuffer::submit()
 u64 OsvAsyncWriteBuffer::pollSync()
 {
    // TODO: here we just need to process the queue items in a busy loop until we processed all bufferframes
-   int outstanding = pending_requests; 
    size_t tries = 0;
-   while (outstanding > 0 && tries++ < 2000) {
+   size_t done_requests = 0; 
+   while (pending_requests > 0 && tries++ < 200) {
       int ok = osv_nvme_qpair_process_completions(queue, 32);
-      outstanding -= ok;
-      usleep(5); // FIXME: this is just for testing purposes we need to take this out at a later point
+      pending_requests -= ok;
+      done_requests += ok; 
+      usleep(5000); // FIXME: this is just for testing purposes we need to take this out at a later point
    }
-   assert(outstanding == 0); 
-   return outstanding; 
+   // printf("pending reqs: %u done_requests: %u\n", pending_requests, done_requests); 
+   assert(pending_requests == 0); 
+   return done_requests; 
 }
 }  // namespace storage
 }  // namespace leanstore

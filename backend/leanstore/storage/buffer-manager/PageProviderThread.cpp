@@ -36,7 +36,13 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
    leanstore::cr::CRManager::global->registerMeAsSpecialWorker();
    // -------------------------------------------------------------------------------------
    // Init AIO Context
-   OsvAsyncWriteBuffer async_write_buffer(PAGE_SIZE, FLAGS_write_buffer_size);
+   std::unique_ptr<AsyncWriteBuffer> async_write_buffer;
+   if (FLAGS_is_linux) {
+      async_write_buffer = std::make_unique<LibaioAsyncWriteBuffer>(ssd_fd, PAGE_SIZE, FLAGS_write_buffer_size);
+   } else {
+      async_write_buffer = std::make_unique<OsvAsyncWriteBuffer>(PAGE_SIZE, FLAGS_write_buffer_size);
+   }
+   
 
    std::function<void(leanstore::storage::BufferFrame &bf, leanstore::storage::BMOptimisticGuard &c_guard)> evict_bf; 
    auto evict_io_cb_fn = [&](BufferFrame& written_bf, u64 written_lsn, PID out_of_place_pid) {
@@ -281,7 +287,7 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
                }
             }
             if (cooled_bf->isDirty()) {
-               if (!async_write_buffer.full()) {
+               if (!async_write_buffer.get()->full()) {
                   {
                      BMExclusiveGuard ex_guard(o_guard);
                      paranoid(!cooled_bf->header.is_being_written_back);
@@ -296,7 +302,7 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
                         paranoid(getPartitionID(cooled_bf->header.pid) == p_i);
                         paranoid(getPartitionID(wb_pid) == p_i);
                      }
-                     async_write_buffer.add(*cooled_bf, evict_io_cb_fn, wb_pid);
+                     async_write_buffer->add(*cooled_bf, evict_io_cb_fn, wb_pid);
                   }
                } else {
                   jumpmu_break;
@@ -310,8 +316,9 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
       evict_candidate_bfs.clear();
       // -------------------------------------------------------------------------------------
       // Phase 3:
-      if (async_write_buffer.submit()) {
-         const u32 polled_events = async_write_buffer.pollSync();
+      if (async_write_buffer->submit()) {
+         const u32 polled_events = async_write_buffer->pollSync();
+         // printf("polled events: %u\n", polled_events); 
       }
       if (freed_bfs_batch.size()) {
          freed_bfs_batch.push(current_partition);

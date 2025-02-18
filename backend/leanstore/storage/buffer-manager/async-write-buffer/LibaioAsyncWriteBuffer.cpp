@@ -10,14 +10,13 @@
 
 #include <cstring>
 // -------------------------------------------------------------------------------------
-DEFINE_uint32(insistence_limit, 1, "");
-// -------------------------------------------------------------------------------------
 namespace leanstore
 {
 namespace storage
 {
 // -------------------------------------------------------------------------------------
-LibaioAsyncWriteBuffer::LibaioAsyncWriteBuffer(int fd, u64 page_size, u64 batch_max_size) : fd(fd), page_size(page_size), batch_max_size(batch_max_size)
+LibaioAsyncWriteBuffer::LibaioAsyncWriteBuffer(int fd, u64 page_size, u64 batch_max_size)
+    : fd(fd), page_size(page_size), batch_max_size(batch_max_size)
 {
    write_buffer = make_unique<BufferFrame::Page[]>(batch_max_size);
    write_buffer_commands = make_unique<WriteCommand[]>(batch_max_size);
@@ -46,7 +45,10 @@ void LibaioAsyncWriteBuffer::add(BufferFrame& bf, std::function<void(BufferFrame
    assert(!full());
    assert(u64(&bf.page) % 512 == 0);
    assert(pending_requests <= batch_max_size);
-   COUNTERS_BLOCK() { WorkerCounters::myCounters().dt_page_writes[bf.page.dt_id]++; }
+   COUNTERS_BLOCK()
+   {
+      WorkerCounters::myCounters().dt_page_writes[bf.page.dt_id]++;
+   }
    // -------------------------------------------------------------------------------------
    PARANOID_BLOCK()
    {
@@ -92,18 +94,19 @@ u64 LibaioAsyncWriteBuffer::pollSync()
          ensure(false);
       }
       pending_requests = 0;
-      
-     for (u64 i = 0; i < done_requests; i++) {
-      const auto slot = (u64(events[i].data) - u64(write_buffer.get())) / page_size;
-      // -------------------------------------------------------------------------------------
-      ensure(events[i].res == page_size);
-      explainIfNot(events[i].res2 == 0);
-      auto written_lsn = write_buffer[slot].PLSN;
-      write_buffer_commands[slot].callback(*write_buffer_commands[slot].bf, written_lsn, write_buffer_commands[slot].pid);
-   }
+
+      for (u64 i = 0; i < done_requests; i++) {
+         const auto slot = (u64(events[i].data) - u64(write_buffer.get())) / page_size;
+         // -------------------------------------------------------------------------------------
+         ensure(events[i].res == page_size);
+         explainIfNot(events[i].res2 == 0);
+         auto written_lsn = write_buffer[slot].PLSN;
+         write_buffer_commands[slot].callback(*write_buffer_commands[slot].bf, written_lsn, write_buffer_commands[slot].pid);
+      }
+
+      return done_requests;
    }
    return 0;
-
 }
 }  // namespace storage
 }  // namespace leanstore
