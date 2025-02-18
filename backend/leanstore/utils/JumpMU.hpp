@@ -5,7 +5,7 @@
 #include <cassert>
 #include <utility>
 
-#define JUMPMU_STACK_SIZE 100
+#define JUMPMU_STACK_SIZE 20
 namespace jumpmu
 {
 extern __thread int checkpoint_counter;

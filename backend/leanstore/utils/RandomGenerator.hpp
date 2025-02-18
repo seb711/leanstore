@@ -29,8 +29,8 @@ class MersenneTwister
 }  // namespace utils
 }  // namespace leanstore
 // -------------------------------------------------------------------------------------
-static thread_local leanstore::utils::MersenneTwister mt_generator;
-static thread_local std::mt19937 random_generator;
+static leanstore::utils::MersenneTwister mt_generator;
+static std::mt19937 random_generator;
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {
