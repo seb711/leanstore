@@ -13,7 +13,7 @@ build-shared:
 .PHONY: install-dependencies
 install-dependencies:
 	sudo apt-get update
-	sudo apt-get install -y cmake libtbb-dev libaio-dev libsnappy-dev zlib1g-dev \
+	sudo apt-get install -y cmake libaio-dev libsnappy-dev zlib1g-dev \
 		libbz2-dev liblz4-dev libzstd-dev librocksdb-dev liblmdb-dev \
 		libwiredtiger-dev liburing-dev
 
