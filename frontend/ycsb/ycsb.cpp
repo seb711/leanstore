@@ -166,10 +166,8 @@ int main(int argc, char** argv)
    // TODO: how to translate it in leanstore?
    //          - for now we can just execute them in a loop with a nsleep in between
 
-#ifdef OSV
+if (FLAGS_is_linux) {
    for (u64 t_i = 0; t_i < exec_threads - ((FLAGS_ycsb_sleepy_thread) ? 1 : 0); t_i++) {
-      crm.scheduleJobAsync(t_i, [&]() {
-         running_threads_counter++;
          while (keep_running) {
             jumpmuTry()
             {
@@ -181,20 +179,8 @@ int main(int argc, char** argv)
                }
                assert(key < ycsb_tuple_count);
                YCSBPayload result;
-               cr::Worker::my().startTX(tx_type, isolation_level);
-               for (u64 op_i = 0; op_i < FLAGS_ycsb_ops_per_tx; op_i++) {
-                  if (FLAGS_ycsb_read_ratio == 100 || utils::RandomGenerator::getRandU64(0, 100) < FLAGS_ycsb_read_ratio) {
-                     table.lookup1({key}, [&](const KVTable&) {});         // result = record.my_payload;
-                     leanstore::storage::BMC::global_bf->evictLastPage();  // to ignore the replacement strategy effect on MVCC experiment
-                  } else {
-                     UpdateDescriptorGenerator1(tabular_update_descriptor, KVTable, my_payload);
-                     utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&result), sizeof(YCSBPayload));
-                     // -------------------------------------------------------------------------------------
-                     table.update1({key}, [&](KVTable& rec) { rec.my_payload = result; }, tabular_update_descriptor);
-                     leanstore::storage::BMC::global_bf->evictLastPage();  // to ignore the replacement strategy effect on MVCC experiment
-                  }
-               }
-               cr::Worker::my().commitTX();
+               table.lookup1({key}, [&](const KVTable&) {});         // result = record.my_payload;
+               leanstore::storage::BMC::global_bf->evictLastPage();  // to ignore the replacement strategy effect on MVCC experiment
                WorkerCounters::myCounters().tx++;
             }
             jumpmuCatch()
@@ -202,11 +188,8 @@ int main(int argc, char** argv)
                WorkerCounters::myCounters().tx_abort++;
             }
          }
-         running_threads_counter--;
-      });
    }
-
-#else
+} else {
    struct YCSBArgs {
       LeanStoreAdapter<KVTable>* table;
       YCSBKey key;
@@ -243,7 +226,7 @@ int main(int argc, char** argv)
          WorkerCounters::myCounters().tx_abort++;
       }
    }
-#endif
+}   
    // -------------------------------------------------------------------------------------
 
    // -------------------------------------------------------------------------------------
