@@ -83,6 +83,7 @@ DECLARE_string(isolation_level);
 DECLARE_bool(mv);
 DECLARE_uint64(si_refresh_rate);
 DECLARE_bool(todo);
+DECLARE_bool(is_linux);
 // -------------------------------------------------------------------------------------
 DECLARE_bool(vi);
 DECLARE_bool(vi_delta);

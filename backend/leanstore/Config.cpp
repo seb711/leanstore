@@ -89,6 +89,7 @@ DEFINE_string(isolation_level, "si", "options: ru (READ_UNCOMMITTED), rc (READ_C
 DEFINE_bool(mv, true, "Multi-version");
 DEFINE_uint64(si_refresh_rate, 0, "");
 DEFINE_bool(todo, true, "");
+DEFINE_bool(is_linux, true, "");
 // -------------------------------------------------------------------------------------
 DEFINE_bool(vi, true, "BTree with SI using in-place version");
 DEFINE_bool(vi_delta, true, "");
