@@ -210,22 +210,22 @@ int main(int argc, char** argv)
       // tx_latency_hist.printHeader();
 
       while (keep_running) {
-         jumpmuTry()
-         {
-            YCSBKey key;
-            if (FLAGS_zipf_factor == 0) {
-               key = utils::RandomGenerator::getRandU64(0, ycsb_tuple_count);
-            } else {
-               key = zipf_random->rand();
-            }
-            assert(key < ycsb_tuple_count);
-            YCSBPayload result;
-            // cr::Worker::my().startTX(tx_type, isolation_level);
-            // TODO args should be in some kind of pool but works for now
-            YCSBArgs* a = new YCSBArgs{&table, key, readTSC()};
+         YCSBKey key;
+         if (FLAGS_zipf_factor == 0) {
+            key = utils::RandomGenerator::getRandU64(0, ycsb_tuple_count);
+         } else {
+            key = zipf_random->rand();
+         }
+         assert(key < ycsb_tuple_count);
+         YCSBPayload result;
+         // cr::Worker::my().startTX(tx_type, isolation_level);
+         // TODO args should be in some kind of pool but works for now
+         YCSBArgs* a = new YCSBArgs{&table, key, readTSC()};
 
-            if (!osv_task_enqueue(
-                    [](void* args) {
+         if (!osv_task_enqueue(
+                 [](void* args) {
+                    jumpmuTry()
+                    {
                        YCSBArgs* ycsb_args = (YCSBArgs*)args;
 
                        ycsb_args->table->lookup1({ycsb_args->key}, [&](const KVTable&) {});  // result = record.my_payload;
@@ -236,36 +236,36 @@ int main(int argc, char** argv)
                        auto timeDiff = tscDifferenceUs(now, ycsb_args->start);
                        WorkerCounters::myCounters().total_tx_time += timeDiff;
                        WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
-                       // delete ycsb_args; 
-                     },
-                    a)) {
-               std::cerr << "osv_task_enqueue failed" << std::endl;
-               return EXIT_FAILURE;
-            }
+                       // delete ycsb_args;
+                       WorkerCounters::myCounters().tx++;
+                    }
+                    jumpmuCatch()
+                    {
+                       WorkerCounters::myCounters().tx_abort++;
+                    }
+                 },
+                 a)) {
+            std::cerr << "osv_task_enqueue failed" << std::endl;
+            return EXIT_FAILURE;
+         }
 
-            usleep(100000);
+         usleep(100000);
 
-            /* if (++it % 500 == 0) {
-               tx_latency_hist.resetData();
+         /* if (++it % 500 == 0) {
+            tx_latency_hist.resetData();
 
-               for (int i = 0; i < MAX_CORES; i++) {
-                  if (WorkerCounters::worker_counters[i].load()) {
-                     Hist<int, u64>& hist = (WorkerCounters::worker_counters[i].load())->tx_latency_hist;
-                     for (int ti = 0; ti < hist.size; ti++) {
-                        tx_latency_hist.histData[ti] += hist.histData[ti];
-                     }
+            for (int i = 0; i < MAX_CORES; i++) {
+               if (WorkerCounters::worker_counters[i].load()) {
+                  Hist<int, u64>& hist = (WorkerCounters::worker_counters[i].load())->tx_latency_hist;
+                  for (int ti = 0; ti < hist.size; ti++) {
+                     tx_latency_hist.histData[ti] += hist.histData[ti];
                   }
                }
-               tx_latency_hist.print();
-            } */
+            }
+            tx_latency_hist.print();
+         } */
 
-            // cr::Worker::my().commitTX();
-            WorkerCounters::myCounters().tx++;
-         }
-         jumpmuCatch()
-         {
-            WorkerCounters::myCounters().tx_abort++;
-         }
+         // cr::Worker::my().commitTX();
       }
    }
    // -------------------------------------------------------------------------------------
