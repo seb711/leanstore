@@ -1,5 +1,6 @@
 #include "../shared/LeanStoreAdapter.hpp"
 #include "../shared/Schema.hpp"
+#include "Time.hpp"
 #include "Units.hpp"
 #include "leanstore/Config.hpp"
 #include "leanstore/LeanStore.hpp"
@@ -166,8 +167,8 @@ int main(int argc, char** argv)
    // TODO: how to translate it in leanstore?
    //          - for now we can just execute them in a loop with a nsleep in between
 
-if (FLAGS_is_linux) {
-   for (u64 t_i = 0; t_i < exec_threads - ((FLAGS_ycsb_sleepy_thread) ? 1 : 0); t_i++) {
+   if (FLAGS_is_linux) {
+      for (u64 t_i = 0; t_i < exec_threads - ((FLAGS_ycsb_sleepy_thread) ? 1 : 0); t_i++) {
          while (keep_running) {
             jumpmuTry()
             {
@@ -179,8 +180,15 @@ if (FLAGS_is_linux) {
                }
                assert(key < ycsb_tuple_count);
                YCSBPayload result;
+               auto before = readTSC();
                table.lookup1({key}, [&](const KVTable&) {});         // result = record.my_payload;
                leanstore::storage::BMC::global_bf->evictLastPage();  // to ignore the replacement strategy effect on MVCC experiment
+
+               auto now = readTSC();
+               auto timeDiff = tscDifferenceUs(now, before);
+               WorkerCounters::myCounters().total_tx_time += timeDiff;
+               WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
+
                WorkerCounters::myCounters().tx++;
             }
             jumpmuCatch()
@@ -188,45 +196,78 @@ if (FLAGS_is_linux) {
                WorkerCounters::myCounters().tx_abort++;
             }
          }
-   }
-} else {
-   struct YCSBArgs {
-      LeanStoreAdapter<KVTable>* table;
-      YCSBKey key;
-   };
-
-   while (keep_running) {
-      jumpmuTry()
-      {
+      }
+   } else {
+      struct YCSBArgs {
+         LeanStoreAdapter<KVTable>* table;
          YCSBKey key;
-         if (FLAGS_zipf_factor == 0) {
-            key = utils::RandomGenerator::getRandU64(0, ycsb_tuple_count);
-         } else {
-            key = zipf_random->rand();
-         }
-         assert(key < ycsb_tuple_count);
-         YCSBPayload result;
-         YCSBArgs* a = new YCSBArgs{&table, key};
-         // cr::Worker::my().startTX(tx_type, isolation_level);
-         for (u64 op_i = 0; op_i < FLAGS_ycsb_ops_per_tx; op_i++) {
-            osv_task_enqueue(
-                [](void* args) {
-                   YCSBArgs* ycsb_args = (YCSBArgs*)args;
+         u64 start;
+      };
 
-                   ycsb_args->table->lookup1({ycsb_args->key}, [&](const KVTable&) {});  // result = record.my_payload;
-                   leanstore::storage::BMC::global_bf->evictLastPage();  // to ignore the replacement strategy effect on MVCC experiment
-                }, a);
-                usleep(10000); 
+      size_t it = 0;
+
+      Hist<int, u64> tx_latency_hist{50, 0, 50};
+      tx_latency_hist.printHeader();
+
+      while (keep_running) {
+         jumpmuTry()
+         {
+            YCSBKey key;
+            if (FLAGS_zipf_factor == 0) {
+               key = utils::RandomGenerator::getRandU64(0, ycsb_tuple_count);
+            } else {
+               key = zipf_random->rand();
+            }
+            assert(key < ycsb_tuple_count);
+            YCSBPayload result;
+            // cr::Worker::my().startTX(tx_type, isolation_level);
+            // TODO args should be in some kind of pool but works for now
+            YCSBArgs* a = new YCSBArgs{&table, key, readTSC()};
+
+            if (!osv_task_enqueue(
+                    [](void* args) {
+                       YCSBArgs* ycsb_args = (YCSBArgs*)args;
+
+                       ycsb_args->table->lookup1({ycsb_args->key}, [&](const KVTable&) {});  // result = record.my_payload;
+                       //  printf("finished1 on cpu: %u\n", sched_getcpu());
+                       leanstore::storage::BMC::global_bf->evictLastPage();  // to ignore the replacement strategy effect on MVCC experiment
+                       auto now = readTSC();
+                       // printf("finished2 on cpu: %u\n", sched_getcpu());
+                       auto timeDiff = tscDifferenceUs(now, ycsb_args->start);
+                       WorkerCounters::myCounters().total_tx_time += timeDiff;
+                       WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
+                       // delete ycsb_args; 
+                     },
+                    a)) {
+               std::cerr << "osv_task_enqueue failed" << std::endl;
+               return EXIT_FAILURE;
+            }
+
+            usleep(100000);
+
+            /* if (++it % 500 == 0) {
+               tx_latency_hist.resetData();
+
+               for (int i = 0; i < MAX_CORES; i++) {
+                  if (WorkerCounters::worker_counters[i].load()) {
+                     Hist<int, u64>& hist = (WorkerCounters::worker_counters[i].load())->tx_latency_hist;
+                     for (int ti = 0; ti < hist.size; ti++) {
+                        tx_latency_hist.histData[ti] += hist.histData[ti];
+                     }
+                  }
+               }
+               tx_latency_hist.print();
+            } */
+
+            // cr::Worker::my().commitTX();
+            WorkerCounters::myCounters().tx++;
          }
-         // cr::Worker::my().commitTX();
-         WorkerCounters::myCounters().tx++;
-      }
-      jumpmuCatch()
-      {
-         WorkerCounters::myCounters().tx_abort++;
+         jumpmuCatch()
+         {
+            WorkerCounters::myCounters().tx_abort++;
+         }
       }
    }
-}   
    // -------------------------------------------------------------------------------------
 
    // -------------------------------------------------------------------------------------

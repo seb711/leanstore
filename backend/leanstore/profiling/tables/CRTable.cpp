@@ -8,6 +8,8 @@
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 using leanstore::utils::threadlocal::sum;
+using leanstore::utils::threadlocal::mean;
+
 namespace leanstore
 {
 namespace profiling
@@ -31,6 +33,8 @@ void CRTable::open()
    columns.emplace("tx", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::tx); });
    columns.emplace("tx_abort", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::tx_abort); });
    columns.emplace("olap_tx", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::olap_tx); });
+   columns.emplace("total_tx_time", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::total_tx_time); });
+   columns.emplace("avg_tx_time", [](Column& col) { col << mean(WorkerCounters::worker_counters, &WorkerCounters::total_tx_time); });
    columns.emplace("olap_scanned_tuples", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::olap_scanned_tuples); });
    columns.emplace("olap_tx_abort", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::olap_tx_abort); });
    columns.emplace("rfa_committed_tx", [&](Column& col) { col << sum(CRCounters::cr_counters, &CRCounters::rfa_committed_tx); });

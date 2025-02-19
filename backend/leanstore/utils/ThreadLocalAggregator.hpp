@@ -1,4 +1,5 @@
 #pragma once
+#include <Units.hpp>
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
@@ -43,6 +44,48 @@ T sum(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c, u64 
       }
    }
    return local_c;
+}
+// -------------------------------------------------------------------------------------
+template <class CountersClass, class CounterType, typename T = u64>
+T mean(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c)
+{
+   T local_c = 0;
+   u64 count = 0;
+   for (size_t t = 0; t < MAX_CORES; t++) {
+      if (counters[t]) {
+         local_c += ((*counters[t]).*c).exchange(0);
+         count++;
+      }
+   }
+   return (count > 0) ? (local_c / count) : 0;
+}
+// -------------------------------------------------------------------------------------
+template <class CountersClass, class CounterType, typename T = u64>
+T mean(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c, u64 index)
+{
+   T local_c = 0;
+   u64 count = 0;
+   for (size_t t = 0; t < MAX_CORES; t++) {
+      if (counters[t]) {
+         local_c += ((*counters[t]).*c)[index].exchange(0);
+         count++;
+      }
+   }
+   return (count > 0) ? (local_c / count) : 0;
+}
+// -------------------------------------------------------------------------------------
+template <class CountersClass, class CounterType, typename T = u64>
+T mean(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c, u64 row, u64 col)
+{
+   T local_c = 0;
+   u64 count = 0;
+   for (size_t t = 0; t < MAX_CORES; t++) {
+      if (counters[t]) {
+         local_c += ((*counters[t]).*c)[row][col].exchange(0);
+         count++;
+      }
+   }
+   return (count > 0) ? (local_c / count) : 0;
 }
 // -------------------------------------------------------------------------------------
 template <class CountersClass, class CounterType, typename T = u64>

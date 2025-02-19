@@ -1,5 +1,6 @@
 #pragma once
 #include "Units.hpp"
+#include "leanstore/utils/Hist.hpp"
 // -------------------------------------------------------------------------------------
 #include "PerfEvent.hpp"
 // -------------------------------------------------------------------------------------
@@ -28,6 +29,9 @@ struct WorkerCounters {
    atomic<u64> tx_abort = 0;
    atomic<u64> olap_tx_abort = 0;
    atomic<u64> tmp = 0;
+   atomic<u64> total_tx_time = 0;
+   atomic<u64> total_tx_time_inc_wait = 0;
+   Hist<int, u64> tx_latency_hist{50, 0, 50};
    // -------------------------------------------------------------------------------------
    // Space and contention management
    atomic<u64> contention_split_succ_counter[max_dt_id] = {0};
