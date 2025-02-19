@@ -206,8 +206,8 @@ int main(int argc, char** argv)
 
       size_t it = 0;
 
-      Hist<int, u64> tx_latency_hist{50, 0, 50};
-      tx_latency_hist.printHeader();
+      // Hist<int, u64> tx_latency_hist{50, 0, 50};
+      // tx_latency_hist.printHeader();
 
       while (keep_running) {
          jumpmuTry()
