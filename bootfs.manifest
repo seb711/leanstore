@@ -1,10 +1,2 @@
-/libtbb.so: /lib/x86_64-linux-gnu/libtbb.so
-/libtbbmalloc.so: /lib/x86_64-linux-gnu/libtbbmalloc.so
 /tpcc: ${MODULE_DIR}/build/frontend/tpcc
 /ycsb: ${MODULE_DIR}/build/frontend/ycsb
-/testfile: ${MODULE_DIR}/testfile
-
-/touch: /usr/bin/touch
-/usr/lib/libpcre2-8.so.0: /lib/x86_64-linux-gnu/libpcre2-8.so.0
-/ls: /usr/bin/ls
-/mkdir: /usr/bin/mkdir
