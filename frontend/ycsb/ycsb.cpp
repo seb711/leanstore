@@ -36,6 +36,24 @@ using YCSBKey = u64;
 using YCSBPayload = BytesPayload<8>;
 using KVTable = Relation<YCSBKey, YCSBPayload>;
 // -------------------------------------------------------------------------------------
+template<class Fn>
+void parallel_for(uint64_t begin, uint64_t end, uint64_t nthreads, Fn fn) {
+   std::vector<std::thread> threads;
+   uint64_t n = end-begin;
+   if (n<nthreads)
+      nthreads = n;
+   uint64_t perThread = n/nthreads;
+   for (unsigned i=0; i<nthreads; i++) {
+      threads.emplace_back([&,i]() {
+         uint64_t b = (perThread*i) + begin;
+         uint64_t e = (i==(nthreads-1)) ? end : ((b+perThread) + begin);
+         fn(i, b, e);
+      });
+   }
+   for (auto& t : threads)
+      t.join();
+}
+
 double calculateMTPS(chrono::high_resolution_clock::time_point begin, chrono::high_resolution_clock::time_point end, u64 factor)
 {
    double tps = ((factor * 1.0 / (chrono::duration_cast<chrono::microseconds>(end - begin).count() / 1000000.0)));
@@ -66,30 +84,6 @@ int main(int argc, char** argv)
                                     : FLAGS_target_gib * 1024 * 1024 * 1024 * 1.0 / 2.0 / (sizeof(YCSBKey) + sizeof(YCSBPayload));
    // Insert values
    const u64 n = ycsb_tuple_count;
-   // -------------------------------------------------------------------------------------
-   if (FLAGS_tmp4) {
-      // -------------------------------------------------------------------------------------
-      std::ofstream csv;
-      csv.open("zipf.csv", ios::trunc);
-      csv.seekp(0, ios::end);
-      csv << std::setprecision(2) << std::fixed;
-      std::unordered_map<u64, u64> ht;
-      auto zipf_random = std::make_unique<utils::ScrambledZipfGenerator>(0, ycsb_tuple_count, FLAGS_zipf_factor);
-      for (u64 t_i = 0; t_i < (FLAGS_tmp4 ? FLAGS_tmp4 : 1e6); t_i++) {
-         u64 key = zipf_random->rand();
-         if (ht.find(key) == ht.end()) {
-            ht[key] = 0;
-         } else {
-            ht[key]++;
-         }
-      }
-      csv << "key,count" << endl;
-      for (auto& [key, value] : ht) {
-         csv << key << "," << value << endl;
-      }
-      cout << ht.size() << endl;
-      return 0;
-   }
    // -------------------------------------------------------------------------------------
 
    cout << "Inserting " << ycsb_tuple_count << " values" << endl;
@@ -132,15 +126,16 @@ int main(int argc, char** argv)
 
    // FIXME: in the future this should be distributed to multiple threads
    // FIXME: WAL things are currently not used
-   for (u64 i = 0; i < n; i++) {
-      YCSBPayload payload;
-      utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
-      YCSBKey key = i;
-      // cr::Worker::my().startTX(tx_type, leanstore::TX_ISOLATION_LEVEL::SNAPSHOT_ISOLATION);
-      table.insert({key}, {payload});
-      WorkerCounters::myCounters().tx++;
-      // cr::Worker::my().commitTX();
-   }
+      parallel_for(0, n, 2, [&](u64 thread_id, u64 begin, u64 end) {
+         for (u64 i = begin; i < end; i++) {
+            YCSBPayload payload;
+            utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
+            YCSBKey key = i;
+            // cr::Worker::my().startTX(tx_type, leanstore::TX_ISOLATION_LEVEL::SNAPSHOT_ISOLATION);
+            table.insert({key}, {payload});
+            // cr::Worker::my().commitTX();
+         }
+      });
 
    end = chrono::high_resolution_clock::now();
    cout << "time elapsed = " << (chrono::duration_cast<chrono::microseconds>(end - begin).count() / 1000000.0) << endl;
@@ -206,9 +201,6 @@ int main(int argc, char** argv)
 
       size_t it = 0;
 
-      // Hist<int, u64> tx_latency_hist{50, 0, 50};
-      // tx_latency_hist.printHeader();
-
       while (keep_running) {
          YCSBKey key;
          if (FLAGS_zipf_factor == 0) {
@@ -221,7 +213,36 @@ int main(int argc, char** argv)
          // cr::Worker::my().startTX(tx_type, isolation_level);
          // TODO args should be in some kind of pool but works for now
          YCSBArgs* a = new YCSBArgs{&table, key, readTSC()};
+#ifdef OSV_ENQUEUE
 
+         std::thread(
+             [](void* args) {
+                jumpmuTry()
+                {
+                   YCSBArgs* ycsb_args = (YCSBArgs*)args;
+
+                   ycsb_args->table->lookup1({ycsb_args->key}, [&](const KVTable&) {});  // result = record.my_payload;
+                   // leanstore::storage::BMC::global_bf->evictLastPage();  // to ignore the replacement strategy effect on MVCC experiment
+                   auto now = readTSC();
+                   // printf("finished2 on cpu: %u\n", sched_getcpu());
+                   auto timeDiff = tscDifferenceUs(now, ycsb_args->start);
+                   WorkerCounters::myCounters().total_tx_time += timeDiff;
+                   WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
+                   WorkerCounters::myCounters().tx++;
+
+                   printf("finished %u on cpu: %u in %u\n", ycsb_args->it, sched_getcpu(), timeDiff);
+
+                   // delete ycsb_args;
+                }
+                jumpmuCatch()
+                {
+                   WorkerCounters::myCounters().tx_abort++;
+                }
+             },
+             a)
+             .detach();
+
+#else
          if (!osv_task_enqueue(
                  [](void* args) {
                     jumpmuTry()
@@ -229,15 +250,15 @@ int main(int argc, char** argv)
                        YCSBArgs* ycsb_args = (YCSBArgs*)args;
 
                        ycsb_args->table->lookup1({ycsb_args->key}, [&](const KVTable&) {});  // result = record.my_payload;
-                       //  printf("finished1 on cpu: %u\n", sched_getcpu());
-                       leanstore::storage::BMC::global_bf->evictLastPage();  // to ignore the replacement strategy effect on MVCC experiment
+                       // leanstore::storage::BMC::global_bf->evictLastPage();  // to ignore the replacement strategy effect on MVCC experiment
                        auto now = readTSC();
                        // printf("finished2 on cpu: %u\n", sched_getcpu());
                        auto timeDiff = tscDifferenceUs(now, ycsb_args->start);
                        WorkerCounters::myCounters().total_tx_time += timeDiff;
                        WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
-                       // delete ycsb_args;
                        WorkerCounters::myCounters().tx++;
+
+                       // delete ycsb_args;
                     }
                     jumpmuCatch()
                     {
@@ -248,24 +269,12 @@ int main(int argc, char** argv)
             std::cerr << "osv_task_enqueue failed" << std::endl;
             return EXIT_FAILURE;
          }
+#endif
 
-         usleep(100000);
-
-         /* if (++it % 500 == 0) {
-            tx_latency_hist.resetData();
-
-            for (int i = 0; i < MAX_CORES; i++) {
-               if (WorkerCounters::worker_counters[i].load()) {
-                  Hist<int, u64>& hist = (WorkerCounters::worker_counters[i].load())->tx_latency_hist;
-                  for (int ti = 0; ti < hist.size; ti++) {
-                     tx_latency_hist.histData[ti] += hist.histData[ti];
-                  }
-               }
-            }
-            tx_latency_hist.print();
-         } */
+         usleep(60000);
 
          // cr::Worker::my().commitTX();
+
       }
    }
    // -------------------------------------------------------------------------------------
