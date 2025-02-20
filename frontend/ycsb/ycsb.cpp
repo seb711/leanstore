@@ -35,24 +35,80 @@ using namespace leanstore;
 using YCSBKey = u64;
 using YCSBPayload = BytesPayload<8>;
 using KVTable = Relation<YCSBKey, YCSBPayload>;
+
+#define POOL_SIZE 1000
 // -------------------------------------------------------------------------------------
-template<class Fn>
-void parallel_for(uint64_t begin, uint64_t end, uint64_t nthreads, Fn fn) {
+template <class Fn>
+void parallel_for(uint64_t begin, uint64_t end, uint64_t nthreads, Fn fn)
+{
    std::vector<std::thread> threads;
-   uint64_t n = end-begin;
-   if (n<nthreads)
+   uint64_t n = end - begin;
+   if (n < nthreads)
       nthreads = n;
-   uint64_t perThread = n/nthreads;
-   for (unsigned i=0; i<nthreads; i++) {
-      threads.emplace_back([&,i]() {
-         uint64_t b = (perThread*i) + begin;
-         uint64_t e = (i==(nthreads-1)) ? end : ((b+perThread) + begin);
+   uint64_t perThread = n / nthreads;
+   for (unsigned i = 0; i < nthreads; i++) {
+      threads.emplace_back([&, i]() {
+         uint64_t b = (perThread * i) + begin;
+         uint64_t e = (i == (nthreads - 1)) ? end : ((b + perThread) + begin);
          fn(i, b, e);
       });
    }
    for (auto& t : threads)
       t.join();
 }
+
+// good for now
+// TODO: queue is not mt safe
+template <typename T, size_t PoolSize>
+class LockFreeObjectPool
+{
+  public:
+   struct Node {
+      T object;
+      std::atomic<Node*> next;
+      u32 idx = 0; 
+
+      T* getObject() { return &object; };
+   };
+
+  private:
+   alignas(64) std::vector<std::unique_ptr<Node>> storage;
+   std::atomic<Node*> free_list;
+
+  public:
+   LockFreeObjectPool()
+   {
+      storage.resize(PoolSize);
+      for (size_t i = 0; i < PoolSize; i++) {
+         storage[PoolSize - i - 1] = std::make_unique<Node>();
+         storage[PoolSize - i - 1]->idx = i; 
+         storage[PoolSize - i - 1]->next = (PoolSize - i < PoolSize) ? storage[PoolSize - i].get() : nullptr;
+
+      }
+      free_list.store(storage[0].get());
+   }
+
+   Node* acquire()
+   {
+      Node* node; 
+      do {
+         node = free_list.load();
+         if (node == nullptr) return nullptr; 
+      }
+      while (!free_list.compare_exchange_weak(node, node->next.load()));
+      return node;
+   }
+
+   void release(Node* node)
+   {
+      assert(node); 
+      Node* old_head; 
+      do {
+         old_head = free_list.load();
+         node->next.store(old_head);
+      } while (!free_list.compare_exchange_weak(old_head, node));
+   }
+};
 
 double calculateMTPS(chrono::high_resolution_clock::time_point begin, chrono::high_resolution_clock::time_point end, u64 factor)
 {
@@ -126,16 +182,16 @@ int main(int argc, char** argv)
 
    // FIXME: in the future this should be distributed to multiple threads
    // FIXME: WAL things are currently not used
-      parallel_for(0, n, 2, [&](u64 thread_id, u64 begin, u64 end) {
-         for (u64 i = begin; i < end; i++) {
-            YCSBPayload payload;
-            utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
-            YCSBKey key = i;
-            // cr::Worker::my().startTX(tx_type, leanstore::TX_ISOLATION_LEVEL::SNAPSHOT_ISOLATION);
-            table.insert({key}, {payload});
-            // cr::Worker::my().commitTX();
-         }
-      });
+   parallel_for(0, n, 2, [&](u64 thread_id, u64 begin, u64 end) {
+      for (u64 i = begin; i < end; i++) {
+         YCSBPayload payload;
+         utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
+         YCSBKey key = i;
+         // cr::Worker::my().startTX(tx_type, leanstore::TX_ISOLATION_LEVEL::SNAPSHOT_ISOLATION);
+         table.insert({key}, {payload});
+         // cr::Worker::my().commitTX();
+      }
+   });
 
    end = chrono::high_resolution_clock::now();
    cout << "time elapsed = " << (chrono::duration_cast<chrono::microseconds>(end - begin).count() / 1000000.0) << endl;
@@ -196,10 +252,11 @@ int main(int argc, char** argv)
       struct YCSBArgs {
          LeanStoreAdapter<KVTable>* table;
          YCSBKey key;
+         LockFreeObjectPool<YCSBArgs, POOL_SIZE>* pool;
          u64 start;
       };
 
-      size_t it = 0;
+      LockFreeObjectPool<YCSBArgs, POOL_SIZE> pool{};
 
       while (keep_running) {
          YCSBKey key;
@@ -212,7 +269,7 @@ int main(int argc, char** argv)
          YCSBPayload result;
          // cr::Worker::my().startTX(tx_type, isolation_level);
          // TODO args should be in some kind of pool but works for now
-         YCSBArgs* a = new YCSBArgs{&table, key, readTSC()};
+
 #ifdef OSV_ENQUEUE
 
          std::thread(
@@ -243,12 +300,23 @@ int main(int argc, char** argv)
              .detach();
 
 #else
+
+         auto* node = pool.acquire();
+         if (node == nullptr) {
+            // printf("Pool filled up...\n");
+            usleep(50000);
+            continue;
+         }
+
+         YCSBArgs* args = new (node->getObject()) YCSBArgs{&table, key, &pool, readTSC()};
+
          if (!osv_task_enqueue(
                  [](void* args) {
+                    auto* node = (LockFreeObjectPool<YCSBArgs, POOL_SIZE>::Node*)args;
+                    YCSBArgs* ycsb_args = (YCSBArgs*)node->getObject();
+
                     jumpmuTry()
                     {
-                       YCSBArgs* ycsb_args = (YCSBArgs*)args;
-
                        ycsb_args->table->lookup1({ycsb_args->key}, [&](const KVTable&) {});  // result = record.my_payload;
                        // leanstore::storage::BMC::global_bf->evictLastPage();  // to ignore the replacement strategy effect on MVCC experiment
                        auto now = readTSC();
@@ -257,24 +325,20 @@ int main(int argc, char** argv)
                        WorkerCounters::myCounters().total_tx_time += timeDiff;
                        WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
                        WorkerCounters::myCounters().tx++;
-
-                       // delete ycsb_args;
                     }
                     jumpmuCatch()
                     {
                        WorkerCounters::myCounters().tx_abort++;
                     }
+                    ycsb_args->pool->release(node);
                  },
-                 a)) {
+                 node)) {
             std::cerr << "osv_task_enqueue failed" << std::endl;
             return EXIT_FAILURE;
          }
+         usleep(100); 
 #endif
-
-         usleep(60000);
-
          // cr::Worker::my().commitTX();
-
       }
    }
    // -------------------------------------------------------------------------------------
