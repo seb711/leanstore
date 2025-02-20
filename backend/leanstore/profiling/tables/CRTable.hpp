@@ -10,7 +10,7 @@ namespace profiling
 class CRTable : public ProfilingTable
 {
   private:
-   u64 wal_hits, wal_miss;
+   u64 wal_hits, wal_miss, local_tx;
    double p1, p2, total, write, wal_total, wal_hit_pct, wal_miss_pct;
 
   public:

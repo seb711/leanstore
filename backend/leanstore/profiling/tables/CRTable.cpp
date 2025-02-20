@@ -30,11 +30,11 @@ void CRTable::open()
    columns.emplace("gct_write_pct", [&](Column& col) { col << 100.0 * write / total; });
    columns.emplace("gct_committed_tx", [&](Column& col) { col << sum(CRCounters::cr_counters, &CRCounters::gct_committed_tx); });
    columns.emplace("gct_rounds", [&](Column& col) { col << sum(CRCounters::cr_counters, &CRCounters::gct_rounds); });
-   columns.emplace("tx", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::tx); });
+   columns.emplace("tx", [&](Column& col) { col << local_tx; });
    columns.emplace("tx_abort", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::tx_abort); });
    columns.emplace("olap_tx", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::olap_tx); });
    columns.emplace("total_tx_time", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::total_tx_time); });
-   columns.emplace("avg_tx_time", [](Column& col) { col << mean(WorkerCounters::worker_counters, &WorkerCounters::total_tx_time); });
+   columns.emplace("avg_tx_time", [&](Column& col) { col <<  (local_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_tx_time) / local_tx : 0); });
    columns.emplace("olap_scanned_tuples", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::olap_scanned_tuples); });
    columns.emplace("olap_tx_abort", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::olap_tx_abort); });
    columns.emplace("rfa_committed_tx", [&](Column& col) { col << sum(CRCounters::cr_counters, &CRCounters::rfa_committed_tx); });
@@ -86,6 +86,8 @@ void CRTable::next()
    wal_total = wal_hits + wal_miss;
    wal_hit_pct = wal_hits * 1.0 / wal_total;
    wal_miss_pct = wal_miss * 1.0 / wal_total;
+
+   local_tx = sum(WorkerCounters::worker_counters, &WorkerCounters::tx);
    // -------------------------------------------------------------------------------------
    p1 = sum(CRCounters::cr_counters, &CRCounters::gct_phase_1_ms);
    p2 = sum(CRCounters::cr_counters, &CRCounters::gct_phase_2_ms);

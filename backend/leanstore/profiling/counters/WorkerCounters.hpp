@@ -31,7 +31,7 @@ struct WorkerCounters {
    atomic<u64> tmp = 0;
    atomic<u64> total_tx_time = 0;
    atomic<u64> total_tx_time_inc_wait = 0;
-   Hist<int, u64> tx_latency_hist{50, 0, 50};
+   Hist<int, u64> tx_latency_hist{250, 0, 20000};
    // -------------------------------------------------------------------------------------
    // Space and contention management
    atomic<u64> contention_split_succ_counter[max_dt_id] = {0};
