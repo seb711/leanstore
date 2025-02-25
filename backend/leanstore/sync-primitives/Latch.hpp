@@ -1,7 +1,7 @@
 #pragma once
 #include "Units.hpp"
 #include "leanstore/Config.hpp"
-#include "leanstore/utils/JumpMU.hpp"
+#include <osv/jumpmu.hh>
 #include "leanstore/utils/RandomGenerator.hpp"
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------

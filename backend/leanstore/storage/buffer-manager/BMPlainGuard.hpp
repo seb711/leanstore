@@ -2,7 +2,7 @@
 #include "Units.hpp"
 #include "leanstore/Config.hpp"
 #include "leanstore/sync-primitives/Latch.hpp"
-#include "leanstore/utils/JumpMU.hpp"
+#include <osv/jumpmu.hh>
 #include "leanstore/utils/RandomGenerator.hpp"
 // -------------------------------------------------------------------------------------
 namespace leanstore
