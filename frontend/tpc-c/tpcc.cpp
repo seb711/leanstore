@@ -95,18 +95,15 @@ void run_tpcc()
          //cr::Worker::my().commitTX();
       });
 
-      auto load_fun = [](mean::BlockedRange bb, std::atomic<bool>&) {
-         ensure(bb.begin < 1000000);
-         for (u64 w_id = bb.begin; w_id < bb.end; w_id += 1) {
-            //cr::Worker::my().startTX();
-            loadStock(w_id);
-            loadDistrinct(w_id);
-            for (Integer d_id = 1; d_id <= 10; d_id++) {
-               loadCustomer(w_id, d_id);
-               loadOrders(w_id, d_id);
-            }
-            //cr::Worker::my().commitTX();
+      auto load_fun = [](u64 w_id, std::atomic<bool>&) {
+         //cr::Worker::my().startTX();
+         loadStock(w_id);
+         loadDistrinct(w_id);
+         for (Integer d_id = 1; d_id <= 10; d_id++) {
+            loadCustomer(w_id, d_id);
+            loadOrders(w_id, d_id);
          }
+         //cr::Worker::my().commitTX();
       };
       mean::BlockedRange bb(1, (u64)FLAGS_tpcc_warehouse_count + 1);
       ensure((bool)((bb.end - bb.begin) > 0));
@@ -122,35 +119,20 @@ void run_tpcc()
    cout << "data loaded - consumed space in GiB = " << gib << endl;
    mean::task::scheduleTaskSync([&]() { cout << "Warehouse pages = " << warehouse.btree->countPages() << endl; });
    // -------------------------------------------------------------------------------------
-   atomic<u64> keep_running = true;
-   atomic<u64> running_threads_counter = 0;
+   atomic<u64> keep_running = {true};
+   atomic<u64> running_threads_counter = {0};
    vector<thread> threads;
    auto random = std::make_unique<leanstore::utils::ZipfGenerator>(FLAGS_tpcc_warehouse_count, FLAGS_zipf_factor);
    mean::env::adjustWorkerCount(FLAGS_worker_threads);
    //u64 tx_per_thread[FLAGS_worker_threads];
    auto start = mean::getSeconds();
-   auto tpcc_fun = [&running_threads_counter, &keep_running, &start](mean::BlockedRange bb, std::atomic<bool>& cancelled) {
-       thread_local auto nextStartTime = mean::readTSC();
-       auto tx_start_time = nextStartTime;
-       const float rate = FLAGS_tx_rate / mean::env::workerCount();
-       std::random_device rd;
-       std::mt19937 gen(rd());
-       std::exponential_distribution<> expDist(rate);
-
-       int thr = running_threads_counter++;
-       volatile u64 tx_acc = 0;
-       //cr::Worker::my().refreshSnapshot();
-       volatile u64 i = bb.begin;
+   auto tpcc_fun = [&running_threads_counter, &keep_running, &start](u64 _, std::atomic<bool>& cancelled) {
+      int thr = running_threads_counter++;
 
        //u64 rateLimitngEveryNs =  1;///3*1000*1000;
        //u64 lastTsc = mean::readTSC();
 
        //std::cout << "w_i: " << id << " to: " << id+wc << std::endl;
-       while (i < bb.end && keep_running) {
-          if (mean::getSeconds() - start > FLAGS_run_for_seconds) {
-             cancelled = true;
-             break;
-          }
            auto before = mean::readTSC();
            jumpmuTry()
            {
@@ -170,48 +152,21 @@ void run_tpcc()
               } else {
                  //cr::Worker::my().commitTX();
               }
-              tx_acc++;
            }
            jumpmuCatch() { WorkerCounters::myCounters().tx_abort++; ThreadCounters::myCounters().tx_abort++; }
-           i++;
            auto now = mean::readTSC();
            auto timeDiff = mean::tscDifferenceUs(now, before);
-           auto timeDiffIncWait = mean::tscDifferenceUs(now, tx_start_time);
+           // auto timeDiffIncWait = mean::tscDifferenceUs(now, tx_start_time);
            WorkerCounters::myCounters().total_tx_time += timeDiff;
-           if (timeDiffIncWait < 10000000) {
-              WorkerCounters::myCounters().total_tx_time_inc_wait += timeDiffIncWait;
-           }
+           // if (timeDiffIncWait < 10000000) {
+           //    WorkerCounters::myCounters().total_tx_time_inc_wait += timeDiffIncWait;
+           // }
            WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
-           WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
+           // WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
            WorkerCounters::myCounters().tx++;
            ThreadCounters::myCounters().tx++;
-           while (i < bb.end && keep_running) {
-              mean::task::yield();
-              now = mean::readTSC();
-              if (rate == 0) break;
-              if (now >= nextStartTime) {
-                 if (mean::tscDifferenceS(now, nextStartTime) > 5) {
-                    nextStartTime = now;
-                    std::cout << "reset start time" << std::endl;
-                 }
-                 auto d = expDist(gen);
-                 tx_start_time = nextStartTime;
-                  nextStartTime += mean::nsToTSC(d*1e9);
-                  //std::cout << "next: " << nextStartTime << std::flush << std::endl;
-                  break;
-              }
-           }
-           /*
-           while (true) { 
-              mean::task::yield();
-              u64 now = mean::readTSC();
-              if ((now - lastTsc) / 2 > rateLimitngEveryNs) {
-                 lastTsc = now;
-                 break;
-              }
-           }
-           */
-       }
+           mean::task::yield();
+       
      //tx_per_thread[t_i] = tx_acc; // fixme
      running_threads_counter--;
    };

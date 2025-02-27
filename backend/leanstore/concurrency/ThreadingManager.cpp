@@ -164,14 +164,14 @@ void ThreadingManager::registerPoller([[maybe_unused]] int to, TaskFunction poll
    registerExclusiveThread("poller", -1, poller);
 }
 // -------------------------------------------------------------------------------------
-void ThreadingManager::parallelFor(BlockedRange bb, std::function<void(BlockedRange, std::atomic<bool>& cancelable)> fun, const int tasks, s64 bbgranularity)
+void ThreadingManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>& cancelable)> fun, const int tasks, s64 bbgranularity)
 {
    ensure(tasks > 0);
    std::mutex allDoneMutex;
    std::condition_variable allDone;
-   std::atomic<int> threadsDone = 0;
+   std::atomic<int> threadsDone = {0};
    const int threads = workerCount();
-   std::atomic<bool> cancelable = false;
+   std::atomic<bool> cancelable = {false};
    u64 range = (bb.end - bb.begin) / threads;
    u64 remaining = (bb.end - bb.begin) % threads;
    if (range == 0) {
@@ -188,7 +188,9 @@ void ThreadingManager::parallelFor(BlockedRange bb, std::function<void(BlockedRa
       }
       // rangePart = bb;
       all_threads.at(thr + max_exclusive_threads)->sendTask([&threadsDone, &allDone, threads, fun, rangePart, &cancelable] {
-        fun(rangePart, cancelable);
+        for (u64 id = rangePart.begin; id < rangePart.end; id++) {
+         fun(id, cancelable);
+        }
         threadsDone++;
         if (threadsDone == threads) {
            allDone.notify_one();

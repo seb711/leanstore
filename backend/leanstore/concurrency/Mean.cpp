@@ -96,7 +96,7 @@ void registerPoller(int to, TaskFunction poller)
 {
    env::_instance.registerPoller(to, poller);
 }
-void parallelFor(BlockedRange bb, std::function<void(BlockedRange,std::atomic<bool>&)> fun, int tasks, s64 granularity)
+void parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>&)> fun, int tasks, s64 granularity)
 {
    env::_instance.parallelFor(bb, fun, tasks, granularity);
 }

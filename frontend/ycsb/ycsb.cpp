@@ -69,21 +69,19 @@ void run_ycsb() {
 
       mean::BlockedRange bb(0, (u64)n);
       ensure((bool)((bb.end - bb.begin) > 1));
-      auto ycsb_insert_fun = [&](mean::BlockedRange bb, std::atomic<bool>&) {
+      auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>&) {
          // vector<u64> keys(range.size());
          // std::iota(keys.begin(), keys.end(), range.begin());
          // std::random_shuffle(keys.begin(), keys.end());
-         for (u64 t_i = bb.begin; t_i < bb.end; t_i++) {
-            YCSBPayload payload;
-            utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
-            auto& key = t_i;
-            table.insert(key, payload);
-            YCSBPayload result; /// FIXME remove this check
-            table.lookup(t_i, result);
-            ensure(result == payload);
+         YCSBPayload payload;
+         utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
+         auto& key = t_i;
+         table.insert(key, payload);
+         YCSBPayload result; /// FIXME remove this check
+         table.lookup(t_i, result);
+         ensure(result == payload);
 
             mean::task::yield();
-         }
       };
       mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks, 100000);
       end = chrono::high_resolution_clock::now();
@@ -109,12 +107,10 @@ void run_ycsb() {
          begin = chrono::high_resolution_clock::now();
          mean::BlockedRange bb(0, (u64)n);
          ensure((bool)((bb.end - bb.begin) > 1));
-         auto ycsb_fun = [&](mean::BlockedRange bb, std::atomic<bool>&) {
-            for (u64 i = bb.begin; i < bb.end; i++) {
+         auto ycsb_fun = [&](u64 i, std::atomic<bool>&) {
                YCSBPayload result;
                table.lookup(i, result);
                mean::task::yield();
-            }
          };
          mean::task::parallelFor(bb, ycsb_fun, FLAGS_worker_tasks, 100000);
          end = chrono::high_resolution_clock::now();
@@ -128,30 +124,15 @@ void run_ycsb() {
    // -------------------------------------------------------------------------------------
    cout << "-------------------------------------------------------------------------------------" << endl;
    cout << "~Transactions" << endl;
-   atomic<bool> keep_running = true;
+   atomic<bool> keep_running = {true};
    atomic<u64> running_threads_counter = 0;
    {
       auto start = mean::getSeconds();
-      auto ycsb_tx = [&](mean::BlockedRange bb, std::atomic<bool>& cancelled){
-
-       thread_local auto nextStartTime = mean::readTSC();
-       thread_local u64 longLat = 0;
-       auto tx_start_time = nextStartTime;
-       const float rate = FLAGS_tx_rate / mean::env::workerCount();
-       std::random_device rd;
-       std::mt19937 gen(rd());
-       std::exponential_distribution<> expDist(rate);
-       volatile u64 i = bb.begin;
+      auto ycsb_tx = [&](u64 i, std::atomic<bool>& cancelled){
 
          running_threads_counter++;
-         int timeCheck = 0;
-         while (i < bb.end && keep_running) {
+
             auto before = mean::readTSC();
-            timeCheck++;
-            if (timeCheck % 32 == 0 && mean::getSeconds() - start > FLAGS_run_for_seconds) {
-               cancelled = true;
-               break;
-            }
             YCSBKey key = zipf_random->rand();
             assert(key < ycsb_tuple_count);
             YCSBPayload result;
@@ -165,36 +146,16 @@ void run_ycsb() {
            i++;
            auto now = mean::readTSC();
            auto timeDiff = mean::tscDifferenceUs(now, before);
-           auto timeDiffIncWait = mean::tscDifferenceUs(now, tx_start_time);
+           // auto timeDiffIncWait = mean::tscDifferenceUs(now, tx_start_time);
            WorkerCounters::myCounters().total_tx_time += timeDiff;
            WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
-           if (timeDiffIncWait < 10000000) {
-              WorkerCounters::myCounters().total_tx_time_inc_wait += timeDiffIncWait;
-           }
-           WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
+           // if (timeDiffIncWait < 10000000) {
+           //   WorkerCounters::myCounters().total_tx_time_inc_wait += timeDiffIncWait;
+           // }
+           // WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
            WorkerCounters::myCounters().tx++;
            ThreadCounters::myCounters().tx++;
-           while (i < bb.end && keep_running) {
-              mean::task::yield();
-              now = mean::readTSC();
-              if (rate == 0) break;
-              if (now >= nextStartTime) {
-                 if (mean::tscDifferenceS(now, nextStartTime) > 5) {
-                     longLat++;
-                     nextStartTime = now;
-                     std::cout << "reset start time" << std::endl;
-                     if (longLat % 100000 == 0) {
-                        //std::cout << "thr: " << mean::exec::getId() << " long latency: " << longLat << std::endl;
-                    }
-                 }
-                 auto d = expDist(gen);
-                 tx_start_time = nextStartTime;
-                  nextStartTime += mean::nsToTSC(d*1e9);
-                  //std::cout << "next: " << nextStartTime << std::flush << std::endl;
-                  break;
-              }
-           }
-         }
+           mean::task::yield();
          running_threads_counter--;
       };
       mean::BlockedRange bb(0, (u64)1000000000000ul);
