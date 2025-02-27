@@ -145,4 +145,3 @@ void OsvChannel::_printSpecializedCounters(std::ostream& ss)
 }
 
 }  // namespace mean
-#endif

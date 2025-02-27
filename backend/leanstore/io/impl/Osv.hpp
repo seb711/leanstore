@@ -61,7 +61,7 @@ class OsvEnvironment
 
   public:
    static cmd_fun osv_req_type_fun_lookup[(int)OsvIoReqType::COUNT + 1];
-   static int osv_nvme_qpair_process_completions(void* qpair, uint32_t max);
+   static int qpair_process_completions(void* qpair, uint32_t max);
    static void ensureInitialized();
    static void init();
    static void deinit();
@@ -115,7 +115,7 @@ class NVMeController : public NVMeInterface
    {
       int ok = 0;
       if (submitted - dones > 0) {
-         ok = OsvEnvironment::osv_nvme_qpair_process_completions(qpairs[qpair], max);  // req_page_done function
+         ok = OsvEnvironment::qpair_process_completions(qpairs[qpair], max);  // req_page_done function
          // TODO: check if we call process somewhere
          dones += ok;
          assert(ok >= 0);

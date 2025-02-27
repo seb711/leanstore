@@ -79,10 +79,10 @@ void CRTable::open()
 }
 // -------------------------------------------------------------------------------------
 template<typename Container, typename FieldAccessor>
-u64 getPercentileOfField(Container &worker_counters, FieldAccessor field_accessor, int percentile) {
+u64 getPercentileOfField(Container counters, FieldAccessor field_accessor, int percentile) {
     u64 max = 0;
-    for (typename Container::iterator i = worker_counters.begin(); i != worker_counters.end(); ++i) {
-        max = std::max(max, field_accessor(*i).getPercentile(percentile));
+    for (size_t t = 0; t < MAX_CORES; t++) {
+      max = std::max(max, field_accessor(*counters[t]).getPercentile(percentile));
     }
     return max;
    /*j
@@ -144,11 +144,13 @@ void CRTable::next()
    local_ssd_write_lat99p9_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.ssd_write_latency); }, 99.9);
    local_ssd_write_lat99p99_us = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.ssd_write_latency); }, 99.99);
 
-   for (typename decltype(WorkerCounters::worker_counters)::iterator i = WorkerCounters::worker_counters.begin(); i != WorkerCounters::worker_counters.end(); ++i) {
-      i->tx_latency_hist.resetData();
-      i->tx_latency_hist_incwait.resetData();
-      i->ssd_read_latency.resetData();
-      i->ssd_write_latency.resetData();
+   // for (typename decltype(WorkerCounters::worker_counters)::iterator i = WorkerCounters::worker_counters.begin(); i != WorkerCounters::worker_counters.end(); ++i) {
+   for (size_t t = 0; t < MAX_CORES; t++) {
+   
+      WorkerCounters::worker_counters[t].load()->tx_latency_hist.resetData();
+      WorkerCounters::worker_counters[t].load()->tx_latency_hist_incwait.resetData();
+      WorkerCounters::worker_counters[t].load()->ssd_read_latency.resetData();
+      WorkerCounters::worker_counters[t].load()->ssd_write_latency.resetData();
       counters++;
    }
 

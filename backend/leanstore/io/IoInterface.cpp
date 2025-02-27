@@ -7,6 +7,7 @@
 #include "impl/LiburingImpl.hpp"
 #include "impl/SpdkImpl.hpp"
 #include "impl/XnvmeImpl.hpp"
+#include "impl/OsvImpl.hpp"
 // -------------------------------------------------------------------------------------
 namespace mean
 {

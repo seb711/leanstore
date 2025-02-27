@@ -4,7 +4,8 @@
 #include "leanstore/Config.hpp"
 #include "leanstore/utils/RandomGenerator.hpp"
 // -------------------------------------------------------------------------------------
-#include "JumpMU.hpp"
+#include <osv/jumpmu.hh>
+
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {

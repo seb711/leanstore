@@ -6,10 +6,11 @@
 bool OsvEnvironment::initialized = false;
 cmd_fun OsvEnvironment::osv_req_type_fun_lookup[(int)OsvIoReqType::COUNT + 1];
 
-int OsvEnvironment::osv_nvme_qpair_process_completions(void* qpair, uint32_t max)
+int OsvEnvironment::qpair_process_completions(void* qpair, uint32_t max)
 {
    // fixme that can be done better
-   return leanstore_osv_nvme_qpair_process_completions(qpair, max);
+   assert(qpair); 
+   return osv_nvme_qpair_process_completions(qpair, max);
 }
 void OsvEnvironment::ensureInitialized()
 {
@@ -57,7 +58,7 @@ NVMeController::~NVMeController()
    // TODO: somehow we should see if we release the io_queues but for now we wont do that -> just exit
    for (auto& qpair : qpairs) {
       assert(device_id != -1);
-      leanstore_remove_io_user_queue(device_id, qpair);
+      osv_remove_io_user_queue(device_id, qpair);
    }
    qpairs.clear();
 }

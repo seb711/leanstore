@@ -2,7 +2,7 @@
 // -------------------------------------------------------------------------------------
 #include <atomic>
 #include <cassert>
-#include "leanstore/sync-primitives/JumpMU.hpp"
+#include <osv/jumpmu.hh>
 #include <emmintrin.h>
 // -------------------------------------------------------------------------------------
 namespace mean
@@ -54,7 +54,7 @@ class SharedYieldLock
       while (!try_lock()) {
          spin++;
          if (spin > 40) {
-            jumpmu::jump(leanstore::UserJumpReason::Lock);
+            jumpmu::jump(jumpmu::UserJumpReason::Lock);
          }
          _mm_pause();
          _mm_pause();

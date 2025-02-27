@@ -119,11 +119,11 @@ void LeanStore::startProfilingThread()
       auto thread = pthread_self();
       int s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
       if (s != 0) {
-         ensure(false, "Affinity could not be set.");
+         ensure(false, "[startProfilingThread] Affinity could not be set.");
       }
       s = pthread_getaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
       if (s != 0) {
-         ensure(false, "Affinity could not be set.");
+         ensure(false, "[startProfilingThread] Affinity could not be set.");
       }
 
       posix_check(pthread_setname_np(pthread_self(), "profiling") == 0);

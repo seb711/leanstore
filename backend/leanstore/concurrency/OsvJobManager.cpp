@@ -167,7 +167,7 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       // the taskmanager dont has this problem because one task is just a userthread that does the same as a thread -> there is not a task per query
       // (i guess that was somehow the idea but was not feasible)
 
-      Job* job = pool.construct(Job{fun, JobArguments{id, cancelable, &pool}});
+      Job* job = pool.construct(Job{fun, JobArguments{&pool, id, cancelable}});
 
       if (!osv_task_enqueue(
               [](void* args) {
@@ -177,11 +177,10 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
 
                  job->fun(job->args.key, job->args.cancleable);
 
-                 job->pool->detroy(job);
+                 job->args.pool->destroy(job);
               },
               job)) {
          std::cerr << "osv_task_enqueue failed" << std::endl;
-         return EXIT_FAILURE;
       }
 
       // FIXME: for now this is ok; but later we need to check how and when to assign the 

@@ -42,7 +42,7 @@ class OsvChannel
    NVMeMultiController& controller;
    int queue;
    const int lbaSize;
-   std::vector<nvme::io_user_queue_pair*> qpairs;
+   std::vector<void*> qpairs;
    std::vector<int> outstanding;
    // -------------------------------------------------------------------------------------
    void prepare_request(RaidRequest<OsvIoReq>* req, OsvIoReqCallback spdkCb);
@@ -90,7 +90,7 @@ class OsvChannel
       int done = 0;
 
       for (unsigned int i = 0; i < qpairs.size(); i++) {
-         int ok = OsvEnvironment::osv_nvme_qpair_process_completions(qpairs[i], 32);
+         int ok = OsvEnvironment::qpair_process_completions(qpairs[i], 32);
          outstanding[i] -= ok;
          ensure(ok >= 0);
          done += ok;

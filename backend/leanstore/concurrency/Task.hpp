@@ -2,7 +2,7 @@
 // -------------------------------------------------------------------------------------
 #include "MessageHandler.hpp"
 #include "leanstore/io/IoAbstraction.hpp"
-#include "leanstore/sync-primitives/JumpMU.hpp"
+#include <osv/jumpmu.hh>
 // -------------------------------------------------------------------------------------
 #include "boost/context/continuation.hpp"
 #include "boost/context/continuation_fcontext.hpp"

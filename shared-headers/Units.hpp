@@ -69,3 +69,4 @@ constexpr double MILLI = 1e-3;
 constexpr double MICRO = 1e-6;
 constexpr double NANO = 1e-9;
 // -------------------------------------------------------------------------------------
+constexpr u64 MAX_CORES = 12ll;

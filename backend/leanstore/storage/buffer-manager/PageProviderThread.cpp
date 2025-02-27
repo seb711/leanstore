@@ -11,7 +11,7 @@
 #include "leanstore/storage/buffer-manager/DTRegistry.hpp"
 #include "leanstore/storage/buffer-manager/Partition.hpp"
 #include "leanstore/storage/buffer-manager/Swip.hpp"
-#include "leanstore/sync-primitives/JumpMU.hpp"
+#include <osv/jumpmu.hh>
 #include "leanstore/utils/FVector.hpp"
 #include "leanstore/utils/Misc.hpp"
 #include "leanstore/utils/Parallelize.hpp"

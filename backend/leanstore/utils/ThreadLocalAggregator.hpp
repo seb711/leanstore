@@ -1,7 +1,7 @@
 #pragma once
+#include <Units.hpp>
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
-#include <tbb/enumerable_thread_specific.h>
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 namespace leanstore
@@ -11,49 +11,67 @@ namespace utils
 namespace threadlocal
 {
 template <class CountersClass, class CounterType, typename T = u64>
-T sum(tbb::enumerable_thread_specific<CountersClass>& counters, CounterType CountersClass::*c)
+T sum(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c)
 {
    T local_c = 0;
-   for (typename tbb::enumerable_thread_specific<CountersClass>::iterator i = counters.begin(); i != counters.end(); ++i) {
-      local_c += ((*i).*c).exchange(0);
+   for (size_t t = 0; t < MAX_CORES; t++) {
+      if (counters[t]) {
+         local_c += ((*counters[t]).*c).exchange(0);
+      }
    }
    return local_c;
 }
 // -------------------------------------------------------------------------------------
 template <class CountersClass, class CounterType, typename T = u64>
-T sum(tbb::enumerable_thread_specific<CountersClass>& counters, CounterType CountersClass::*c, u8 index)
+T sum(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c, u64 index)
 {
    T local_c = 0;
-   for (typename tbb::enumerable_thread_specific<CountersClass>::iterator i = counters.begin(); i != counters.end(); ++i) {
-      local_c += ((*i).*c)[index].exchange(0);
-   }
-   return local_c;
-}
-template <class CountersClass, class CounterType, typename T = u64>
-T thr_aggr_max(tbb::enumerable_thread_specific<CountersClass>& counters, CounterType CountersClass::*c)
-{
-   T local_c = 0;
-   for (typename tbb::enumerable_thread_specific<CountersClass>::iterator i = counters.begin(); i != counters.end(); ++i) {
-      local_c = std::max(local_c, ((*i).*c).exchange(0));
-   }
-   return local_c;
-}
-template <class CountersClass, class CounterType, typename T = u64>
-T thr_aggr_max(tbb::enumerable_thread_specific<CountersClass>& counters, CounterType CountersClass::*c, u8 index)
-{
-   T local_c = 0;
-   for (typename tbb::enumerable_thread_specific<CountersClass>::iterator i = counters.begin(); i != counters.end(); ++i) {
-      local_c = std::max(local_c, ((*i).*c)[index].exchange(0));
+   for (size_t t = 0; t < MAX_CORES; t++) {
+      if (counters[t]) {
+         local_c += ((*counters[t]).*c)[index].exchange(0);
+      }
    }
    return local_c;
 }
 // -------------------------------------------------------------------------------------
 template <class CountersClass, class CounterType, typename T = u64>
-T sum(tbb::enumerable_thread_specific<CountersClass>& counters, CounterType CountersClass::*c, u8 row, u8 col)
+T sum(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c, u64 row, u64 col)
 {
    T local_c = 0;
-   for (typename tbb::enumerable_thread_specific<CountersClass>::iterator i = counters.begin(); i != counters.end(); ++i) {
-      local_c += ((*i).*c)[row][col].exchange(0);
+   for (size_t t = 0; t < MAX_CORES; t++) {
+      if (counters[t]) {
+         local_c += ((*counters[t]).*c)[row][col].exchange(0);
+      }
+   }
+   return local_c;
+}
+// -------------------------------------------------------------------------------------
+template <class CountersClass, class CounterType, typename T = u64>
+T max(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c, u64 row)
+{
+   T local_c = 0;
+   for (size_t t = 0; t < MAX_CORES; t++) {
+      if (counters[t]) {
+         local_c = std::max<T>(((*counters[t]).*c)[row].exchange(0), local_c);
+      }
+   }
+   return local_c;
+}
+template <class CountersClass, class CounterType, typename T = u64>
+T thr_aggr_max(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c)
+{
+   T local_c = 0;
+   for (size_t t = 0; t < MAX_CORES; t++) {
+      local_c = std::max(local_c, ((*counters[t]).*c).exchange(0));
+   }
+   return local_c;
+}
+template <class CountersClass, class CounterType, typename T = u64>
+T thr_aggr_max(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c, u8 index)
+{
+   T local_c = 0;
+   for (size_t t = 0; t < MAX_CORES; t++) {
+      local_c = std::max(local_c, ((*counters[t]).*c)[index].exchange(0));
    }
    return local_c;
 }

@@ -15,7 +15,7 @@ endif ()
 # Library
 # ---------------------------------------------------------------------------
 add_library(leanstore STATIC ${LEANSTORE_CC})
-target_link_libraries(leanstore gflags Threads::Threads aio tbb atomic tabluate nvme) #tbb
+target_link_libraries(leanstore gflags Threads::Threads aio atomic tabluate nvme fakeosv) #tbb
 
 
 # ---------------------------------------------------------------------------
@@ -55,8 +55,6 @@ if(LEANSTORE_INCLUDE_SPDK)
 	target_link_libraries(leanstore -luuid -lnuma -lrt -lcrypto -laio)
 	target_link_libraries(leanstore -L${ISAL_LIBRARY_PATH} -lisal )
 endif()
-
-target_link_libraries(leanstore ${TBB_LIBRARIES})
 
 #add_dependencies(leanstore boost)
 #target_link_libraries(leanstore -L${Boost_LIBRARY_DIR} ${Boost_LIBRARY_DIR}/libboost_context.a)

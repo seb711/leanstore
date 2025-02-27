@@ -5,8 +5,7 @@
 #include "leanstore/utils/RandomGenerator.hpp"
 #include "leanstore/concurrency/YieldLock.hpp"
 // -------------------------------------------------------------------------------------
-#include "JumpMU.hpp"
-#include "leanstore/utils/UserJumpReasons.hpp"
+#include <osv/jumpmu.hh>
 // -------------------------------------------------------------------------------------
 #ifdef __x86_64__
 #include <emmintrin.h>
@@ -27,9 +26,9 @@ namespace storage
 #define MAX_BACKOFF FLAGS_backoff  // FLAGS_x
 #define BACKOFF_STRATEGIES()                                                        \
    if (FLAGS_nopp                                                                   \
-         && (jumpmu::user_jump_reason() == UserJumpReason::NoFreePages              \
-            || jumpmu::user_jump_reason() == UserJumpReason::Lock)) {               \
-      if (jumpmu::user_jump_reason() == UserJumpReason::NoFreePages) {              \
+         && (jumpmu::user_jump_reason() == jumpmu::UserJumpReason::NoFreePages              \
+            || jumpmu::user_jump_reason() == jumpmu::UserJumpReason::Lock)) {               \
+      if (jumpmu::user_jump_reason() == jumpmu::UserJumpReason::NoFreePages) {              \
          mean::task::yield(mean::TaskState::ReadyMem);                              \
       } else {                                                                      \
          mean::task::yield(mean::TaskState::ReadyJumpLock);                         \

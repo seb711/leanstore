@@ -34,6 +34,7 @@ class ThreadBase
       while (_wait_for_init) { } // wait until parent thread is done creating this thread
       _this_thread = this;
       setNameThisThread(name);
+      printf("set cpu appfinity %u\n", cpuAffinity); 
       setCpuAffinityThisThread(cpuAffinity);
       int pid = getpid();
       int which = PRIO_PROCESS;
@@ -112,11 +113,11 @@ class ThreadBase
          }
          int s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
          if (s != 0) {
-            ensure(false, "Affinity could not be set.");
+            ensure(false, "[setCpuAffinityThisThread] Affinity could not be set.");
          }
          s = pthread_getaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
          if (s != 0) {
-            ensure(false, "Affinity could not be set.");
+            ensure(false, "[setCpuAffinityThisThread] Affinity could not be set.");
          }
       }
    }

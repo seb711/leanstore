@@ -1,7 +1,6 @@
 #pragma once
 #include "Units.hpp"
 // -------------------------------------------------------------------------------------
-#include <tbb/enumerable_thread_specific.h>
 
 #include "PerfEvent.hpp"
 #include "leanstore/utils/Hist.hpp"
@@ -30,10 +29,15 @@ struct SSDCounters {
    atomic<u64> writes[max_ssds] = {0};
    atomic<u64> reads[max_ssds] = {0};
    // -------------------------------------------------------------------------------------
-   SSDCounters() { }
+   explicit SSDCounters(int core) : core_id(core), ti_id(ssd_counter++) {}
    // -------------------------------------------------------------------------------------
-   static tbb::enumerable_thread_specific<SSDCounters> ssd_counters;
-   static tbb::enumerable_thread_specific<SSDCounters>::reference myCounters() { return ssd_counters.local(); }
+   static std::atomic<uint64_t> ssd_counter;
+   static std::atomic<SSDCounters*> ssd_counters[MAX_CORES]; // Per-core storage
+   static std::mutex ssd_counters_mut; // Fallback mutex
+   static SSDCounters& myCounters(); 
+
+   int core_id;
+   int ti_id;
 };
 }  // namespace leanstore
 // -------------------------------------------------------------------------------------

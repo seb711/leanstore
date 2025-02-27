@@ -3,7 +3,7 @@
 
 #include "Exceptions.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
-#include "leanstore/utils/UserJumpReasons.hpp"
+#include <osv/jumpmu.hh>
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
@@ -48,7 +48,7 @@ struct BufferFrame& FreeList::tryPop(JMUW<std::unique_lock<mean::mutex>>& lock)
       }
    } else {
       lock->unlock();
-      jumpmu::jump(UserJumpReason::NoFreePages);
+      jumpmu::jump(jumpmu::UserJumpReason::NoFreePages);
    }
    return *free_bf;
 }
@@ -78,7 +78,7 @@ struct BufferFrame& FreeList::pop()
    }
    // WorkerCounters::myCounters().dt_researchy_2[0]++;
    WorkerCounters::myCounters().free_list_pop_failed++;
-   jumpmu::jump(UserJumpReason::NoFreePages);
+   jumpmu::jump(jumpmu::UserJumpReason::NoFreePages);
    return *free_bf;  // unreachable
 }
 // -------------------------------------------------------------------------------------

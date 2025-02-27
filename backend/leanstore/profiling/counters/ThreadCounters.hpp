@@ -1,8 +1,6 @@
 #pragma once
 #include "Units.hpp"
 // -------------------------------------------------------------------------------------
-#include <tbb/enumerable_thread_specific.h>
-
 #include "leanstore/concurrency/Mean.hpp"
 #include "leanstore/utils/Hist.hpp"
 // -------------------------------------------------------------------------------------
@@ -35,10 +33,15 @@ struct ThreadCounters {
    atomic<u64> pp_p23_evicted = 0; 
    atomic<u64> pp_p2_iopushed = 0; 
    // -------------------------------------------------------------------------------------
-   ThreadCounters() { }
+   explicit ThreadCounters(int core) : core_id(core), ti_id(thread_counter++) {}
    // -------------------------------------------------------------------------------------
-   static tbb::enumerable_thread_specific<ThreadCounters> thread_counters;
-   static tbb::enumerable_thread_specific<ThreadCounters>::reference myCounters() { return thread_counters.local(); }
+   static std::atomic<uint64_t> thread_counter;
+   static std::atomic<ThreadCounters*> thread_counters[MAX_CORES]; // Per-core storage
+   static std::mutex thread_counters_mut; // Fallback mutex
+   static ThreadCounters& myCounters(); 
+
+   int core_id;
+   int ti_id;
 };
 }  // namespace leanstore
 // -------------------------------------------------------------------------------------

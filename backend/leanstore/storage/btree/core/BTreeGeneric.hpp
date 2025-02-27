@@ -6,7 +6,7 @@
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
 #include "leanstore/storage/buffer-manager/BufferManager.hpp"
 #include "leanstore/storage/buffer-manager/DTRegistry.hpp"
-#include "leanstore/sync-primitives/JumpMU.hpp"
+#include <osv/jumpmu.hh>
 #include "leanstore/sync-primitives/PageGuard.hpp"
 #include "leanstore/utils/RandomGenerator.hpp"
 // -------------------------------------------------------------------------------------
