@@ -7,7 +7,7 @@
 
 #include "leanstore/Config.hpp"
 #include "leanstore/concurrency-recovery/Transaction.hpp"
-#include "leanstore/utils/JumpMU.hpp"
+#include <osv/jumpmu.hh>
 #include "leanstore/utils/Misc.hpp"
 // -------------------------------------------------------------------------------------
 

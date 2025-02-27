@@ -5,6 +5,7 @@
 #include "leanstore/Config.hpp"
 #include "leanstore/LeanStore.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
+#include <osv/jumpmu.hh>
 #include "leanstore/utils/FVector.hpp"
 #include "leanstore/utils/Files.hpp"
 #include "leanstore/utils/Parallelize.hpp"
@@ -122,6 +123,7 @@ int main(int argc, char** argv)
    gflags::ParseCommandLineFlags(&argc, &argv, true);
    // -------------------------------------------------------------------------------------
    chrono::high_resolution_clock::time_point begin, end;
+   jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext;
    // -------------------------------------------------------------------------------------
    // Always init with the maximum number of threads (FLAGS_worker_threads)
    LeanStore db;
@@ -182,7 +184,11 @@ int main(int argc, char** argv)
 
    // FIXME: in the future this should be distributed to multiple threads
    // FIXME: WAL things are currently not used
-   parallel_for(0, n, 2, [&](u64 thread_id, u64 begin, u64 end) {
+   parallel_for(0, n, 1, [&](u64 thread_id, u64 begin, u64 end) {
+      if (!jumpmu::thread_local_jumpmu_ctx) {
+         jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext;
+      }
+
       for (u64 i = begin; i < end; i++) {
          YCSBPayload payload;
          utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
@@ -254,9 +260,43 @@ int main(int argc, char** argv)
          YCSBKey key;
          LockFreeObjectPool<YCSBArgs, POOL_SIZE>* pool;
          u64 start;
+         jumpmu::JumpMUContext jmp_ctx; 
       };
 
       LockFreeObjectPool<YCSBArgs, POOL_SIZE> pool{};
+
+      // i experience who thread conversion in the first few rounds -> to get the buffermanager balanced 
+      // -> therefore i want to add a basic loop that just executes the first few hundred operations in the 
+      // main thread and then starts normal execution
+      for (size_t start_it = 0; start_it < 30000; start_it++) {
+         jumpmuTry()
+         {
+            YCSBKey key;
+            if (FLAGS_zipf_factor == 0) {
+               key = utils::RandomGenerator::getRandU64(0, ycsb_tuple_count);
+            } else {
+               key = zipf_random->rand();
+            }
+            assert(key < ycsb_tuple_count);
+            YCSBPayload result;
+            auto before = readTSC();
+            table.lookup1({key}, [&](const KVTable&) {});         // result = record.my_payload;
+            leanstore::storage::BMC::global_bf->evictLastPage();  // to ignore the replacement strategy effect on MVCC experiment
+
+            auto now = readTSC();
+            auto timeDiff = tscDifferenceNs(now, before);
+            WorkerCounters::myCounters().total_tx_time += timeDiff;
+            WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
+
+            WorkerCounters::myCounters().tx++;
+         }
+         jumpmuCatch()
+         {
+            WorkerCounters::myCounters().tx_abort++;
+         }
+      }
+
+      printf("switching\n"); 
 
       while (keep_running) {
          YCSBKey key;
@@ -270,40 +310,9 @@ int main(int argc, char** argv)
          // cr::Worker::my().startTX(tx_type, isolation_level);
          // TODO args should be in some kind of pool but works for now
 
-#ifdef OSV_ENQUEUE
-
-         std::thread(
-             [](void* args) {
-                jumpmuTry()
-                {
-                   YCSBArgs* ycsb_args = (YCSBArgs*)args;
-
-                   ycsb_args->table->lookup1({ycsb_args->key}, [&](const KVTable&) {});  // result = record.my_payload;
-                   // leanstore::storage::BMC::global_bf->evictLastPage();  // to ignore the replacement strategy effect on MVCC experiment
-                   auto now = readTSC();
-                   // printf("finished2 on cpu: %u\n", sched_getcpu());
-                   auto timeDiff = tscDifferenceUs(now, ycsb_args->start);
-                   WorkerCounters::myCounters().total_tx_time += timeDiff;
-                   WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
-                   WorkerCounters::myCounters().tx++;
-
-                   printf("finished %u on cpu: %u in %u\n", ycsb_args->it, sched_getcpu(), timeDiff);
-
-                   // delete ycsb_args;
-                }
-                jumpmuCatch()
-                {
-                   WorkerCounters::myCounters().tx_abort++;
-                }
-             },
-             a)
-             .detach();
-
-#else
-
          auto* node = pool.acquire();
          if (node == nullptr) {
-            // printf("Pool filled up...\n");
+            printf("Pool filled up...\n");
             usleep(50000);
             continue;
          }
@@ -315,16 +324,19 @@ int main(int argc, char** argv)
                     auto* node = (LockFreeObjectPool<YCSBArgs, POOL_SIZE>::Node*)args;
                     YCSBArgs* ycsb_args = (YCSBArgs*)node->getObject();
 
+                    jumpmu::thread_local_jumpmu_ctx = new (&(ycsb_args->jmp_ctx)) jumpmu::JumpMUContext;
+
                     jumpmuTry()
                     {
                        ycsb_args->table->lookup1({ycsb_args->key}, [&](const KVTable&) {});  // result = record.my_payload;
                        // leanstore::storage::BMC::global_bf->evictLastPage();  // to ignore the replacement strategy effect on MVCC experiment
                        auto now = readTSC();
                        // printf("finished2 on cpu: %u\n", sched_getcpu());
-                       auto timeDiff = tscDifferenceUs(now, ycsb_args->start);
+                       auto timeDiff = tscDifferenceNs(now, ycsb_args->start);
                        WorkerCounters::myCounters().total_tx_time += timeDiff;
                        WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
                        WorkerCounters::myCounters().tx++;
+                       WorkerCounters::myCounters().olap_tx += sched_getcpu() ^ 1;
                     }
                     jumpmuCatch()
                     {
@@ -336,8 +348,7 @@ int main(int argc, char** argv)
             std::cerr << "osv_task_enqueue failed" << std::endl;
             return EXIT_FAILURE;
          }
-         usleep(100); 
-#endif
+         usleep(200);
          // cr::Worker::my().commitTX();
       }
    }

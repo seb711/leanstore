@@ -9,6 +9,8 @@
 // -------------------------------------------------------------------------------------
 #include "PerfEvent.hpp"
 // -------------------------------------------------------------------------------------
+#include "./sync-reader/SyncReader.hpp"
+// -------------------------------------------------------------------------------------
 #include <libaio.h>
 #include <sys/mman.h>
 
@@ -102,6 +104,9 @@ class BufferManager
    // -------------------------------------------------------------------------------------
    // Temporary hack: let workers evict the last page they used
    static thread_local BufferFrame* last_read_bf;
+
+   // HACK FOR SYNC READ
+   SyncReader* reader; 
 
   public:
    // -------------------------------------------------------------------------------------

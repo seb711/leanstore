@@ -62,7 +62,7 @@ void UserThreadManager::init(u64 n)
    uts_ready.reserve(1024);
    for (u64 t_i = 0; t_i < n; t_i++)
       worker_threads.emplace_back([&, t_i]() {
-         if (FLAGS_pin_threads) {
+         if (false) {
             leanstore::utils::pinThisThread(t_i);
          }
          worker_id = t_i;

@@ -1,6 +1,8 @@
 #include "leanstore/storage/buffer-manager/async-write-buffer/LibaioAsyncWriteBuffer.hpp"
 #include "leanstore/storage/buffer-manager/async-write-buffer/OsvAsyncWriteBuffer.hpp"
+#include "leanstore/storage/buffer-manager/sync-reader/OsvSyncReader.hpp"
 
+#include "Time.hpp"
 #include "BufferFrame.hpp"
 #include "BufferManager.hpp"
 #include "Exceptions.hpp"
@@ -29,6 +31,10 @@ namespace storage
 // -------------------------------------------------------------------------------------
 void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_end)
 {
+   if (!jumpmu::thread_local_jumpmu_ctx) {
+      jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext;
+   }
+
    std::string thread_name("pp_" + std::to_string(p_begin) + "_" + std::to_string(p_end));
    pthread_setname_np(pthread_self(), thread_name.c_str());
    using Time = decltype(std::chrono::high_resolution_clock::now());
@@ -41,6 +47,14 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
       async_write_buffer = std::make_unique<LibaioAsyncWriteBuffer>(ssd_fd, PAGE_SIZE, FLAGS_write_buffer_size);
    } else {
       async_write_buffer = std::make_unique<OsvAsyncWriteBuffer>(PAGE_SIZE, FLAGS_write_buffer_size);
+   }
+
+   // get the syncreader interface
+   SyncReader* sync_reader;
+   if (FLAGS_is_linux) {
+      // async_write_buffer = std::make_unique<LibaioAsyncWriteBuffer>(ssd_fd, PAGE_SIZE, FLAGS_write_buffer_size);
+   } else {
+      sync_reader = OsvSyncReader::getInstance();
    }
    
 
@@ -96,6 +110,7 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
       }
       return;
    };
+
    // -------------------------------------------------------------------------------------
    while (bg_threads_keep_running) {
       // Phase 1: unswizzle pages (put in the cooling stage)
@@ -324,6 +339,10 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
          freed_bfs_batch.push(current_partition);
       }
       COUNTERS_BLOCK() { PPCounters::myCounters().pp_thread_rounds++; }
+
+
+      // here just fetch the queues
+      sync_reader->pollQueues(); 
    }
    bg_threads_counter--;
    //   delete cr::Worker::tls_ptr;

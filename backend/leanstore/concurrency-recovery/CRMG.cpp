@@ -2,6 +2,7 @@
 
 #include "leanstore/profiling/counters/CPUCounters.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
+#include <osv/jumpmu.hh>
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 #include <mutex>
@@ -28,6 +29,9 @@ CRManager::CRManager(HistoryTreeInterface& versions_space, s32 ssd_fd, u64 end_o
    worker_threads.reserve(workers_count);
    for (u64 t_i = 0; t_i < workers_count; t_i++) {
       worker_threads.emplace_back([&, t_i]() {
+         if (!jumpmu::thread_local_jumpmu_ctx) {
+            jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext;
+         }
          std::string thread_name("worker_" + std::to_string(t_i));
          pthread_setname_np(pthread_self(), thread_name.c_str());
          if (FLAGS_pin_threads) {

@@ -61,6 +61,7 @@ LeanStore::LeanStore()
    if (FLAGS_trunc) {
       flags |= O_TRUNC | O_CREAT;
    }
+   /*
    ssd_fd = open(FLAGS_ssd_path.c_str(), flags, 0666);
    if (ssd_fd == -1) {
       perror("posix error");
@@ -77,7 +78,7 @@ LeanStore::LeanStore()
       free(dummy_data);
       fsync(ssd_fd);
    }
-   ensure(fcntl(ssd_fd, F_GETFL) != -1);
+   ensure(fcntl(ssd_fd, F_GETFL) != -1);*/
    // -------------------------------------------------------------------------------------
    buffer_manager = make_unique<storage::BufferManager>(ssd_fd);
    BMC::global_bf = buffer_manager.get();
@@ -100,6 +101,9 @@ LeanStore::LeanStore()
    cr_manager = make_unique<cr::CRManager>(*history_tree.get(), ssd_fd, end_of_block_device);
    cr::CRManager::global = cr_manager.get();
    cr_manager->scheduleJobSync(0, [&]() {
+      if (!jumpmu::thread_local_jumpmu_ctx) {
+         jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext;
+      }
       history_tree->update_btrees = std::make_unique<leanstore::storage::btree::BTreeLL*[]>(FLAGS_worker_threads);
       history_tree->remove_btrees = std::make_unique<leanstore::storage::btree::BTreeLL*[]>(FLAGS_worker_threads);
       for (u64 w_i = 0; w_i < FLAGS_worker_threads; w_i++) {

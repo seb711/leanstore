@@ -5,7 +5,7 @@
 #include "leanstore/Config.hpp"
 #include "leanstore/KVInterface.hpp"
 #include "leanstore/storage/btree/core/WALMacros.hpp"
-#include "leanstore/utils/JumpMU.hpp"
+#include <osv/jumpmu.hh>
 #include "rocksdb/db.h"
 #include "rocksdb/utilities/optimistic_transaction_db.h"
 #include "rocksdb/utilities/transaction_db.h"

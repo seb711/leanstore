@@ -10,6 +10,7 @@
 #include "leanstore/utils/Misc.hpp"
 #include "leanstore/utils/Parallelize.hpp"
 #include "leanstore/utils/RandomGenerator.hpp"
+#include "leanstore/storage/buffer-manager/sync-reader/OsvSyncReader.hpp"
 // -------------------------------------------------------------------------------------
 #include <gflags/gflags.h>
 // -------------------------------------------------------------------------------------
@@ -65,6 +66,14 @@ BufferManager::BufferManager(s32 ssd_fd) : ssd_fd(ssd_fd)
          }
       });
    }
+
+   // INIT SYNC READER
+   // HACK FOR SYNC READ
+   if (FLAGS_is_linux) {
+      // async_write_buffer = std::make_unique<LibaioAsyncWriteBuffer>(ssd_fd, PAGE_SIZE, FLAGS_write_buffer_size);
+   } else {
+      reader = OsvSyncReader::getInstance();
+   }
 }
 // -------------------------------------------------------------------------------------
 void BufferManager::startBackgroundThreads()
@@ -79,11 +88,10 @@ void BufferManager::startBackgroundThreads()
       for (u64 t_i = 0; t_i < FLAGS_pp_threads; t_i++) {
          pp_threads.emplace_back(
              [&, t_i](u64 p_begin, u64 p_end) {
-                if (FLAGS_pin_threads) {
-                   utils::pinThisThread(FLAGS_worker_threads + FLAGS_wal + t_i);
-                } else {
-                   utils::pinThisThread(FLAGS_wal + t_i);
-                }
+               if (!jumpmu::thread_local_jumpmu_ctx) {
+                  jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext;
+               }
+               utils::pinThisThread(0);
                 CPUCounters::registerThread("pp_" + std::to_string(t_i));
                 // https://linux.die.net/man/2/setpriority
                 if (FLAGS_root) {
@@ -432,7 +440,9 @@ void BufferManager::readPageSync(u64 pid, u8* destination)
    paranoid(u64(destination) % 512 == 0);
    s64 bytes_left = PAGE_SIZE;
    do {
-      const int bytes_read = pread(ssd_fd, destination, bytes_left, pid * PAGE_SIZE + (PAGE_SIZE - bytes_left));
+      const int bytes_read = reader->syncRead(destination, bytes_left, pid * PAGE_SIZE + (PAGE_SIZE - bytes_left));
+      // const int bytes_read = pread(ssd_fd, destination, bytes_left, pid * PAGE_SIZE + (PAGE_SIZE - bytes_left));
+
       assert(bytes_read > 0);  // call was successfull?
       bytes_left -= bytes_read;
    } while (bytes_left > 0);

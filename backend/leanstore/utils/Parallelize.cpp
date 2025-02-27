@@ -1,5 +1,5 @@
 #include "Parallelize.hpp"
-
+#include <osv/jumpmu.hh>
 #include "Exceptions.hpp"
 #include "Units.hpp"
 // -------------------------------------------------------------------------------------
@@ -42,7 +42,12 @@ void Parallelize::parallelRange(u64 n, std::function<void(u64 begin, u64 end)> c
       if (t_i == hw_threads - 1) {
          end = n;
       }
-      threads.emplace_back([&](u64 begin, u64 end) { callback(begin, end); }, begin, end);
+      threads.emplace_back([&](u64 begin, u64 end) { 
+         if (!jumpmu::thread_local_jumpmu_ctx) {
+            jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext;
+         }
+         callback(begin, end); 
+      }, begin, end);
    }
    for (auto& thread : threads) {
       thread.join();

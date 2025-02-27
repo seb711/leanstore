@@ -7,7 +7,7 @@
 #include "leanstore/Config.hpp"
 #include "leanstore/KVInterface.hpp"
 #include "leanstore/storage/btree/core/WALMacros.hpp"
-#include "leanstore/utils/JumpMU.hpp"
+#include <osv/jumpmu.hh>
 // -------------------------------------------------------------------------------------
 #include <cassert>
 #include <cstdint>
