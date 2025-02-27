@@ -59,8 +59,10 @@ void ThreadTable::next()
    // for (auto& c: ThreadCounters::thread_counters) {
    for (size_t t = 0; t < MAX_CORES; t++) {
       counter = ThreadCounters::thread_counters[t].load();
-      for (auto& c : columns) {
-         c.second.generator(c.second);
+      if (counter) {
+         for (auto& c : columns) {
+            c.second.generator(c.second);
+         }
       }
    }
 }

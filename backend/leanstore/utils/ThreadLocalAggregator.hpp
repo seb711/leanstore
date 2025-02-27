@@ -11,7 +11,7 @@ namespace utils
 namespace threadlocal
 {
 template <class CountersClass, class CounterType, typename T = u64>
-T sum(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c)
+T sum(std::atomic<CountersClass*>* counters, CounterType CountersClass::* c)
 {
    T local_c = 0;
    for (size_t t = 0; t < MAX_CORES; t++) {
@@ -23,7 +23,7 @@ T sum(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c)
 }
 // -------------------------------------------------------------------------------------
 template <class CountersClass, class CounterType, typename T = u64>
-T sum(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c, u64 index)
+T sum(std::atomic<CountersClass*>* counters, CounterType CountersClass::* c, u64 index)
 {
    T local_c = 0;
    for (size_t t = 0; t < MAX_CORES; t++) {
@@ -35,7 +35,7 @@ T sum(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c, u64 
 }
 // -------------------------------------------------------------------------------------
 template <class CountersClass, class CounterType, typename T = u64>
-T sum(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c, u64 row, u64 col)
+T sum(std::atomic<CountersClass*>* counters, CounterType CountersClass::* c, u64 row, u64 col)
 {
    T local_c = 0;
    for (size_t t = 0; t < MAX_CORES; t++) {
@@ -47,7 +47,7 @@ T sum(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c, u64 
 }
 // -------------------------------------------------------------------------------------
 template <class CountersClass, class CounterType, typename T = u64>
-T max(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c, u64 row)
+T max(std::atomic<CountersClass*>* counters, CounterType CountersClass::* c, u64 row)
 {
    T local_c = 0;
    for (size_t t = 0; t < MAX_CORES; t++) {
@@ -58,20 +58,25 @@ T max(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c, u64 
    return local_c;
 }
 template <class CountersClass, class CounterType, typename T = u64>
-T thr_aggr_max(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c)
+T thr_aggr_max(std::atomic<CountersClass*>* counters, CounterType CountersClass::* c)
 {
    T local_c = 0;
    for (size_t t = 0; t < MAX_CORES; t++) {
-      local_c = std::max(local_c, ((*counters[t]).*c).exchange(0));
+      if (counters[t]) {
+         local_c = std::max(local_c, ((*counters[t]).*c).exchange(0));
+      }
    }
+
    return local_c;
 }
 template <class CountersClass, class CounterType, typename T = u64>
-T thr_aggr_max(std::atomic<CountersClass*>* counters, CounterType CountersClass::*c, u8 index)
+T thr_aggr_max(std::atomic<CountersClass*>* counters, CounterType CountersClass::* c, u8 index)
 {
    T local_c = 0;
    for (size_t t = 0; t < MAX_CORES; t++) {
-      local_c = std::max(local_c, ((*counters[t]).*c)[index].exchange(0));
+      if (counters[t]) {
+         local_c = std::max(local_c, ((*counters[t]).*c)[index].exchange(0));
+      }
    }
    return local_c;
 }
