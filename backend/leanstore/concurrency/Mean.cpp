@@ -4,6 +4,7 @@
 // -------------------------------------------------------------------------------------
 #include "TaskManager.hpp"
 #include "ThreadingManager.hpp"
+#include "OsvJobManager.hpp"
 // -------------------------------------------------------------------------------------
 #include <mutex>
 // -------------------------------------------------------------------------------------
@@ -16,6 +17,9 @@ using ExecEnv = ThreadingManager;
 #endif
 #ifdef MEAN_USE_TASKING
 using ExecEnv = TaskManager;
+#endif
+#ifdef MEAN_USE_JOBBING
+using ExecEnv = OsvJobManager;
 #endif
 // -------------------------------------------------------------------------------------
 namespace env

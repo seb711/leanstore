@@ -11,11 +11,11 @@
 namespace mean
 {
 // -------------------------------------------------------------------------------------
-#if !defined(MEAN_USE_TASKING) && !defined(MEAN_USE_THREADING)
+#if !defined(MEAN_USE_TASKING) && !defined(MEAN_USE_THREADING) && !defined(MEAN_USE_JOBBING)
 #define MEAN_USE_TASKING
 #endif
 
-#ifdef MEAN_USE_THREADING
+#if defined(MEAN_USE_THREADING) || defined(MEAN_USE_JOBBING)
 using mutex = std::mutex;
 #endif
 #ifdef MEAN_USE_TASKING

@@ -23,7 +23,35 @@ namespace mean
 // -------------------------------------------------------------------------------------
 class OsvJobManager
 {
-   boost::object_pool<Job> pool;
+
+   struct WaitContext {
+      std::mutex mtx;
+      std::condition_variable cv; 
+      std::atomic<bool> ready;
+      u64 magic; 
+
+   WaitContext() : ready(false), magic(0) {} 
+
+    // Delete copy constructor & copy assignment
+    WaitContext(const WaitContext&) = delete;
+    WaitContext& operator=(const WaitContext&) = delete;
+
+    // Allow move semantics if needed
+    WaitContext(WaitContext&&) = default;
+    WaitContext& operator=(WaitContext&&) = default;   };
+
+   struct meta {
+      std::mutex mutex;
+      std::condition_variable cv;
+      TaskFunction task;
+      bool wt_ready = true;
+      bool job_set = false;
+      bool job_done = false;
+   } syncJobMeta;
+
+   LockFreeObjectPool<Job, JOB_QUEUE_SIZE>* pool;
+   boost::object_pool<WaitContext>* waiter_pool;
+
    int total_threads_count;
    int max_exclusive_threads;
    std::atomic<int> running_threads = {0};
@@ -44,6 +72,8 @@ public:
    void join();
    void adjustWorkerCount(int workerThreads);
    void registerPageProvider(void* bf_ptr, int partitions_count);
+   std::string printCountersHeader();
+   std::string printCounters(int te_id);
    // -------------------------------------------------------------------------------------
    // exec
    // -------------------------------------------------------------------------------------
@@ -54,10 +84,12 @@ public:
    // -------------------------------------------------------------------------------------
    void registerExclusiveThread(std::string name, int t_i, TaskFunction fun);
    void parallelFor(BlockedRange range, std::function<void(u64, std::atomic<bool>& cancelable)> fun, int tasks, s64 bbgranularity = -1);
+   void registerPoller(int to, TaskFunction poller);
    void scheduleTaskSync(TaskFunction fun);
    void yield(TaskState ts);
    void blockingIo(IoRequestType type, char* data, s64 addr, u64 len);
    Task& this_task();
+   void sleepAll(float sleep);
    // -------------------------------------------------------------------------------------
    // int getFd();
    // -------------------------------------------------------------------------------------
