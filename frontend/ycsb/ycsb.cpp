@@ -145,7 +145,7 @@ void run_ycsb() {
             }
            i++;
            auto now = mean::readTSC();
-           auto timeDiff = mean::tscDifferenceUs(now, before);
+           auto timeDiff = mean::tscDifferenceNs(now, before);
            // auto timeDiffIncWait = mean::tscDifferenceUs(now, tx_start_time);
            WorkerCounters::myCounters().total_tx_time += timeDiff;
            WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
@@ -154,7 +154,7 @@ void run_ycsb() {
            // }
            // WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
            WorkerCounters::myCounters().tx++;
-           ThreadCounters::myCounters().tx++;
+           // ThreadCounters::myCounters().tx++;
            mean::task::yield();
          running_threads_counter--;
       };

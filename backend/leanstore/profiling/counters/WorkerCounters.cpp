@@ -4,7 +4,7 @@
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {
-   std::atomic<WorkerCounters*> WorkerCounters::worker_counters[MAX_CORES] = {nullptr};
+   std::array<std::atomic<WorkerCounters*>, MAX_CORES> WorkerCounters::worker_counters = {nullptr}; // Per-core storage
         atomic<u64> WorkerCounters::workers_counter = {0};
 
 WorkerCounters& WorkerCounters::myCounters()

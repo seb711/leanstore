@@ -4,7 +4,7 @@
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {
-   std::atomic<PPCounters*> PPCounters::pp_counters[MAX_CORES] = {nullptr};
+   std::array<std::atomic<PPCounters*>, MAX_CORES> PPCounters::pp_counters = {nullptr}; // Per-core storage
         atomic<u64> PPCounters::pp_counter = {0};
 
 PPCounters& PPCounters::myCounters()

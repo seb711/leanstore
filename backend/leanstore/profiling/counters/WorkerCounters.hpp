@@ -24,8 +24,10 @@ struct WorkerCounters {
    atomic<u64> free_list_pop_failed = 0;
    atomic<u64> restarts_counter = 0;
    atomic<u64> tx = 0;
+   atomic<u64> setup_tx = 0;
    atomic<u64> tx_abort = 0;
    atomic<s32> tmp = 0;
+   atomic<u64> total_setup_tx_time = 0;
    atomic<u64> total_tx_time = 0;
    atomic<u64> total_tx_time_inc_wait = 0;
    Hist<int, u64> tx_latency_hist{100000, 0, 500000};
@@ -68,7 +70,7 @@ struct WorkerCounters {
    explicit WorkerCounters(int core) : core_id(core), ti_id(workers_counter++) {}
    // -------------------------------------------------------------------------------------
    static std::atomic<uint64_t> workers_counter;
-   static std::atomic<WorkerCounters*> worker_counters[MAX_CORES]; // Per-core storage
+   static std::array<std::atomic<WorkerCounters*>, MAX_CORES> worker_counters; // Per-core storage
    static std::mutex worker_counters_mut; // Fallback mutex
    static WorkerCounters& myCounters(); 
 

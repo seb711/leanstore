@@ -4,7 +4,7 @@
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {
-      std::atomic<CRCounters*> CRCounters::cr_counters[MAX_CORES] = {nullptr};
+   std::array<std::atomic<CRCounters*>, MAX_CORES> CRCounters::cr_counters = {nullptr}; // Per-core storage
         atomic<u64> CRCounters::cr_counter = {0};
 
 CRCounters& CRCounters::myCounters()

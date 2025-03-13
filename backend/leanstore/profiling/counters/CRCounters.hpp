@@ -26,7 +26,7 @@ struct CRCounters {
    explicit CRCounters(int core) : core_id(core), t_id(cr_counter++) {}
    // -------------------------------------------------------------------------------------
    static std::atomic<uint64_t> cr_counter;
-   static std::atomic<CRCounters*> cr_counters[MAX_CORES]; // Per-core storage
+   static std::array<std::atomic<CRCounters*>, MAX_CORES> cr_counters; // Per-core storage
    static std::mutex cr_counters_mut; // Fallback mutex
    static CRCounters& myCounters(); 
 

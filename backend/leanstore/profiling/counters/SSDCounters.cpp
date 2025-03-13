@@ -4,7 +4,7 @@
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {
-   std::atomic<SSDCounters*> SSDCounters::ssd_counters[MAX_CORES] = {nullptr};
+   std::array<std::atomic<SSDCounters*>, MAX_CORES> SSDCounters::ssd_counters = {nullptr}; // Per-core storage
         atomic<u64> SSDCounters::ssd_counter = {0};
 
         SSDCounters& SSDCounters::myCounters()

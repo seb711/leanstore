@@ -4,7 +4,7 @@
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {
-   std::atomic<ThreadCounters*> ThreadCounters::thread_counters[MAX_CORES] = {nullptr};
+   std::array<std::atomic<ThreadCounters*>, MAX_CORES> ThreadCounters::thread_counters = {nullptr}; // Per-core storage
         atomic<u64> ThreadCounters::thread_counter = {0};
 
 ThreadCounters& ThreadCounters::myCounters()

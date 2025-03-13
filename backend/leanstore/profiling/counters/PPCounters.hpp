@@ -44,7 +44,7 @@ struct PPCounters {
    explicit PPCounters(int core) : core_id(core), t_id(pp_counter++) {}
    // -------------------------------------------------------------------------------------
    static std::atomic<uint64_t> pp_counter;
-   static std::atomic<PPCounters*> pp_counters[MAX_CORES]; // Per-core storage
+   static std::array<std::atomic<PPCounters*>, MAX_CORES> pp_counters; // Per-core storage
    static std::mutex pp_counters_mut; // Fallback mutex
    static PPCounters& myCounters(); 
 

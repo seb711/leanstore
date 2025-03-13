@@ -36,7 +36,7 @@ struct ThreadCounters {
    explicit ThreadCounters(int core) : core_id(core), ti_id(thread_counter++) {}
    // -------------------------------------------------------------------------------------
    static std::atomic<uint64_t> thread_counter;
-   static std::atomic<ThreadCounters*> thread_counters[MAX_CORES]; // Per-core storage
+   static std::array<std::atomic<ThreadCounters*>, MAX_CORES> thread_counters; // Per-core storage
    static std::mutex thread_counters_mut; // Fallback mutex
    static ThreadCounters& myCounters(); 
 

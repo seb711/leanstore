@@ -30,12 +30,17 @@ void CRTable::open()
    columns.emplace("gct_committed_tx", [&](Column& col) { col << sum(CRCounters::cr_counters, &CRCounters::gct_committed_tx); });
    columns.emplace("gct_rounds", [&](Column& col) { col << sum(CRCounters::cr_counters, &CRCounters::gct_rounds); });
    columns.emplace("tx", [&](Column& col) { col << local_tx; });
+   columns.emplace("setup_tx", [&](Column& col) { col << local_setup_tx; });
    columns.emplace("tx_rate", [&](Column& col) { col << FLAGS_tx_rate; });
    columns.emplace("tx_abort", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::tx_abort); });
    // -------------------------------------------------------------------------------------
    columns.emplace("tx_latency_us",
                    [&](Column& col) { col << (local_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_tx_time) / local_tx : 0); });
-   // -------------------------------------------------------------------------------------
+   
+    columns.emplace("tx_setup_latency_us",
+                    [&](Column& col) { col << (local_setup_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_setup_tx_time) / local_setup_tx : 0); });
+    
+                   // -------------------------------------------------------------------------------------
    columns.emplace("tx_latency_us_10p", [&](Column& col) { col << local_tx_lat10p_us; });
    columns.emplace("tx_latency_us_25p", [&](Column& col) { col << local_tx_lat25p_us; });
    columns.emplace("tx_latency_us_50p", [&](Column& col) { col << local_tx_lat50p_us; });
@@ -115,6 +120,7 @@ void CRTable::next()
    total = p1 + p2 + write;
 
    local_tx = sum(WorkerCounters::worker_counters, &WorkerCounters::tx);
+   local_setup_tx = sum(WorkerCounters::worker_counters, &WorkerCounters::setup_tx);
    /* int counters = 0;
    // lat10p = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> const auto& { return wc.tx_latency_hist; }, 10);
    local_tx_lat10p_us = getPercentileOfField(
