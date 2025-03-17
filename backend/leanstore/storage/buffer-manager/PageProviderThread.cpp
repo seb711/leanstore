@@ -115,6 +115,8 @@ void BufferManager::pageProviderCycle(int partition_id) {
    }
    // -------------------------------------------------------------------------------------
    // Attach the freed bfs batch to the partition free list
+   
+   
    if (partition.state.freed_bfs_batch.size()) {
       partition.pushFreeList();
    }
@@ -681,6 +683,7 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
       }
    }
    ensure(mean::exec::ioChannel().submitMin() == 0 || added % mean::exec::ioChannel().submitMin() == 0);
+
    return added;
 }
 // -------------------------------------------------------------------------------------

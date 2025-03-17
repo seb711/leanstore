@@ -3,7 +3,7 @@
 #include <atomic>
 #include "Time.hpp"
 
-#define JOB_QUEUE_SIZE 512
+#define JOB_QUEUE_SIZE (64)
 
 namespace mean
 {

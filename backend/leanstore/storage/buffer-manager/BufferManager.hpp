@@ -1,5 +1,5 @@
-#pragma once
 #include "BufferFrame.hpp"
+#pragma once
 #include "DTRegistry.hpp"
 #include "FreeList.hpp"
 #include "Partition.hpp"
@@ -47,7 +47,7 @@ class BufferManager
    // -------------------------------------------------------------------------------------
    BufferFrame* bfs;
    // -------------------------------------------------------------------------------------
-   // int ssd_fd;
+   int ssd_fd;
    // -------------------------------------------------------------------------------------
    // Free  Pages
    const u8 safety_pages = 10;               // we reserve these extra pages to prevent segfaults

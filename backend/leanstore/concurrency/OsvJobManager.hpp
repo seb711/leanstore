@@ -50,7 +50,7 @@ class OsvJobManager
    } syncJobMeta;
 
    LockFreeObjectPool<Job, JOB_QUEUE_SIZE>* pool;
-   boost::object_pool<WaitContext>* waiter_pool;
+   LockFreeObjectPool<WaitContext, JOB_QUEUE_SIZE>* waiter_pool;
 
    int total_threads_count;
    int max_exclusive_threads;
@@ -59,6 +59,7 @@ class OsvJobManager
    std::vector<std::unique_ptr<ThreadWithJump>> exclusiveThreadList;
    std::unordered_map<int, std::reference_wrapper<ThreadWithJump>> exclusiveThreadMap;
    static constexpr int MAX_WORKER_THREADS = 2048;
+   std::mutex mtx;
 public:
    leanstore::cr::Worker* workers[MAX_WORKER_THREADS];   
 // -------------------------------------------------------------------------------------
@@ -79,6 +80,7 @@ public:
    // -------------------------------------------------------------------------------------
    int execId();
    IoChannel& execIoChannel(); // FIXME: for now we only use one io channel; 
+   IoChannel& noExecIoChannel(); // FIXME: for now we only use one io channel; 
    // -------------------------------------------------------------------------------------
    // task
    // -------------------------------------------------------------------------------------

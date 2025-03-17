@@ -65,7 +65,7 @@ class OsvChannel
 
             if (ret == 0) {
                outstanding[req->base.device]++;
-               ensure(ret == 0);
+               ensure(ret == 0, "ret == 0");
                req = nullptr;
             } else {
                break;
@@ -73,8 +73,9 @@ class OsvChannel
          }
          // controller.submit(req->base.device, queue, reinterpret_cast<SpdkIoReq*>(&req->impl));
       }
+
       int left = 0;
-      for (int i = 0; i < write_request_stack.size(); i++) {
+      for (u64 i = 0; i < write_request_stack.size(); i++) {
          if (write_request_stack[i] != nullptr) {
             write_request_stack[left++] = write_request_stack[i];
          }
@@ -92,9 +93,10 @@ class OsvChannel
       for (unsigned int i = 0; i < qpairs.size(); i++) {
          int ok = OsvEnvironment::qpair_process_completions(qpairs[i], 32);
          outstanding[i] -= ok;
-         ensure(ok >= 0);
+         ensure(ok >= 0, "ok >= 0");
          done += ok;
       }
+      // printf("completed %i ios\n", done); 
       // }
       assert(done >= 0);
       return done;

@@ -21,10 +21,10 @@ install-dependencies:
 .PHONY: cmake-configure
 cmake-configure:
 	mkdir -p $(BUILD_DIR)
-	cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Release -DLEANSTORE_INCLUDE_OSV=1\
+	cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Debug -DLEANSTORE_INCLUDE_OSV=1\
 		-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
 		-DCMAKE_C_FLAGS="-fPIC" \
-		-DCMAKE_CXX_FLAGS="-fPIC  -DMEAN_USE_TASKING" -DLIBFAKEOSV_PATH=$(LIB_SHARED) .. && make -j
+		-DCMAKE_CXX_FLAGS="-fPIC  -DMEAN_USE_JOBBING" -DLIBFAKEOSV_PATH=$(LIB_SHARED) .. && make -j
 
 # Clean the build directory
 .PHONY: clean

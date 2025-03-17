@@ -84,7 +84,7 @@ BufferManager::BufferManager()
       // -------------------------------------------------------------------------------------
    }
    // -------------------------------------------------------------------------------------
-   /*
+   
    // Init SSD pool
    int flags = O_RDWR | O_DIRECT;
    if (FLAGS_trunc) {
@@ -103,7 +103,7 @@ BufferManager::BufferManager()
      fsync(ssd_fd);
    }
    ensure(fcntl(ssd_fd, F_GETFL) != -1);
-   */
+   
    // -------------------------------------------------------------------------------------
    // Background threads
    // -------------------------------------------------------------------------------------
@@ -466,8 +466,24 @@ void BufferManager::readPageSync(u64 pid, u8* destination)
 {
    assert(u64(destination) % 512 == 0);
    s64 bytes_left = PAGE_SIZE;
+#ifdef MEAN_USE_TASKING
+   auto start = mean::readTSC();
    mean::task::read(reinterpret_cast<char*>(destination), pid * PAGE_SIZE, bytes_left);
-   // const int bytes_read = pread(ssd_fd, destination, bytes_left, pid * PAGE_SIZE + (PAGE_SIZE - bytes_left));
+   auto now = mean::readTSC();
+#elif defined(MEAN_USE_JOBBING)
+   /* auto start = mean::readTSC();
+   const int bytes_read = pread(ssd_fd, destination, bytes_left, pid * PAGE_SIZE + (PAGE_SIZE - bytes_left));
+   auto now = mean::readTSC(); */
+   auto start = mean::readTSC();
+   mean::task::read(reinterpret_cast<char*>(destination), pid * PAGE_SIZE, bytes_left);
+   auto now = mean::readTSC();
+#else
+   assert("false"); 
+#endif
+   auto timeDiff = mean::tscDifferenceUs(now, start);
+   // printf("%lu\n", timeDiff);
+   leanstore::WorkerCounters::myCounters().total_setup_tx_time += timeDiff;
+   leanstore::WorkerCounters::myCounters().setup_tx++;
    // -------------------------------------------------------------------------------------
    WorkerCounters::myCounters().read_operations_counter++;
 }

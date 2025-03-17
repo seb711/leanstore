@@ -29,12 +29,14 @@ OsvJobManager::~OsvJobManager()
    shutdown();
 }
 // -------------------------------------------------------------------------------------
+static std::mutex cb_mtx; 
+// -------------------------------------------------------------------------------------
 // env
 // -------------------------------------------------------------------------------------
 void OsvJobManager::init(int workers_count, int exclusiveThreads, IoOptions ioOptions, [[maybe_unused]] int threadAffinityOffset)
 {
    pool = new LockFreeObjectPool<Job, JOB_QUEUE_SIZE>();
-   waiter_pool = new boost::object_pool<WaitContext>(512);
+   waiter_pool = new LockFreeObjectPool<WaitContext, JOB_QUEUE_SIZE>();
    std::cout << "INIT OSV JOBBING MANAGER" << std::endl;
    ensure(ioOptions.engine == "osv", "ioOptions.engine == osv");
    // TODO: implement methods in OSv that show which cores are currently not used
@@ -118,7 +120,14 @@ IoChannel& OsvJobManager::execIoChannel()
 {
    // int this_id = execId();
    // TODO check if in exclusive thread
-   return IoInterface::instance().getIoChannel(0);
+   auto& ioChannel = IoInterface::instance().getIoChannel(0);
+   return ioChannel; 
+}
+IoChannel& OsvJobManager::noExecIoChannel()
+{
+   // int this_id = execId();
+   // TODO check if in exclusive thread
+   return IoInterface::instance().getIoChannel(1);
 }
 // -------------------------------------------------------------------------------------
 // task
@@ -141,6 +150,14 @@ void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
             buffer_manager->pageProviderCycle(t_i);
             execIoChannel().submit();
             execIoChannel().poll();
+
+            // NOTE: THIS MUTEX IS NOT NEEDED BUT WE STILL USE IT
+            //       FOR EASIER DEBUGGING
+            {
+               std::unique_lock l(cb_mtx); 
+               noExecIoChannel().submit();
+               noExecIoChannel().poll();
+            }
          }
       });
    }
@@ -204,8 +221,21 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       job->args.pool = pool;
       job->args.key = id;
 
+      // printf("%lu\n", id); 
+
+#ifdef USE_JOBS
       if (!osv_task_enqueue(job_fn, node)) {
+         assert(false); 
       }
+#else
+      // JUST EXECUTE IT IN THE MAIN THREAD; THIS IS EASIER FOR DEBUGGING THE MAIN CODE
+      jumpmu::thread_local_jumpmu_ctx = new (&(job->jumpctx)) jumpmu::JumpMUContext;
+      fun(id, job->args.cancelable);
+      pool->release(node);
+#endif
+
+      // printf("started %lu\n", id); 
+
       // auto now = mean::readTSC();
       // auto timeDiff = mean::tscDifferenceNs(now, start);
       // printf("%lu\n", timeDiff);
@@ -297,9 +327,12 @@ void OsvJobManager::adjustWorkerCount(int workerThreads) {}
 // -------------------------------------------------------------------------------------
 void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
 {
-   throw std::logic_error("not implemented right now. come back tomorrow");
-   /*
-   WaitContext* waitargs = waiter_pool->construct();
+   auto* node = waiter_pool->acquire();
+   auto* waitargs = node->getObject(); 
+
+   waitargs = new (waitargs) WaitContext; 
+
+   assert(!waitargs->ready);  
 
    UserIoCallback cb;
    cb.callback = [](IoBaseRequest* req) {
@@ -313,15 +346,20 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
    cb.user_data.val.ptr = waitargs;
 
    assert(type == IoRequestType::Read);
-   execIoChannel().push(type, data, addr, len, cb);
+
+   // NOTE: FOR NOW WE GO EXTRA SAFE AND ADD A MUTEX FOR IO CHANNEL 
+   //       ACCESS. BUT WE NORMALLY SHOULD NOT NEED THEM. 
+   {
+      std::unique_lock l(cb_mtx); 
+      noExecIoChannel().push(type, data, addr, len, cb);
+   }
 
    {
       std::unique_lock<std::mutex> lock(waitargs->mtx);
       waitargs->cv.wait(lock, [waitargs] { return waitargs->ready.load(); });
    }
 
-   waiter_pool->free(waitargs);*/
-   // throw std::logic_error("not implemented right now. come back tomorrow");
+   waiter_pool->release(node);
 }
 
 Task& OsvJobManager::this_task()
