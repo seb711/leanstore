@@ -196,7 +196,6 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
    std::atomic<u64> finished = {0};
 
    u64 start = bb.begin;
-   std::cout << "bb end " << bb.end << std::endl;
 
    for (u64 id = bb.begin; id < bb.end; id++) {
       // we just need to send one job after the other i guess

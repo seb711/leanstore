@@ -61,16 +61,31 @@ void run_ycsb() {
                                     ? FLAGS_ycsb_tuple_count
                                     : FLAGS_target_gib * 1024 * 1024 * 1024 * 1.0 / 2.0 / (sizeof(YCSBKey) + sizeof(YCSBPayload));
    // Insert values
-   jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext(); 
-   
    {
       const u64 n = ycsb_tuple_count;
       cout << "-------------------------------------------------------------------------------------" << endl;
       cout << "Inserting values" << endl;
       begin = chrono::high_resolution_clock::now();
-
       mean::BlockedRange bb(0, (u64)n);
       ensure((bool)((bb.end - bb.begin) > 1));
+#ifdef MEAN_USE_TASKING
+      auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>&) {
+         // vector<u64> keys(range.size());
+         // std::iota(keys.begin(), keys.end(), range.begin());
+         // std::random_shuffle(keys.begin(), keys.end());
+         YCSBPayload payload;
+         utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
+         auto& key = t_i;
+         table.insert(key, payload);
+         YCSBPayload result; /// FIXME remove this check
+         table.lookup(t_i, result);
+         ensure(result == payload);
+
+         mean::task::yield();
+      };
+      mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks, 100000);
+#else
+      jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext(); 
       // auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>&) {
       for (int i = 0; i < bb.end; i++) {
          // vector<u64> keys(range.size());
@@ -86,9 +101,7 @@ void run_ycsb() {
 
          // mean::task::yield();
       }
-         
-      // };
-      // mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks, 100000);
+#endif
       end = chrono::high_resolution_clock::now();
       cout << "time elapsed = " << (chrono::duration_cast<chrono::microseconds>(end - begin).count() / 1000000.0) << endl;
       cout << calculateMTPS(begin, end, n) << " M tps" << endl;
@@ -195,10 +208,10 @@ int main(int argc, char** argv)
       ioOptions.channelCount = FLAGS_worker_threads;
       mean::env::init(
          FLAGS_worker_threads, //std::min(std::thread::hardware_concurrency(), FLAGS_tpcc_warehouse_count),
-         0/*FLAGS_pp_threads*/, ioOptions);
+         0/*FLAGS_pp_threads*/, ioOptions, 0);
    } else {
       ioOptions.channelCount = FLAGS_worker_threads + FLAGS_pp_threads;
-      mean::env::init(FLAGS_worker_threads, FLAGS_pp_threads, ioOptions);
+      mean::env::init(FLAGS_worker_threads, FLAGS_pp_threads, ioOptions, 0);
    }
    mean::env::start(run_ycsb);
    // -------------------------------------------------------------------------------------
