@@ -41,11 +41,18 @@ class RequestStack
    ~RequestStack() {}
    int outstanding()
    {
+      std::unique_lock<std::mutex> lock(mtx);
       assert(max_entries - free - pushed == outstanding_set.size());
       return max_entries - free - pushed;
    }
-   int submitStackSize() { return pushed; }
-   bool full() { return free == 0; }
+   int submitStackSize() { 
+      std::unique_lock<std::mutex> lock(mtx);
+      return pushed; 
+   }
+   bool full() { 
+      std::unique_lock<std::mutex> lock(mtx);
+      return free == 0; 
+   }
 
    /* free -> to user (untracked)*/
    bool popFromFreeStack(R*& out)
