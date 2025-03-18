@@ -35,8 +35,8 @@ static std::mutex cb_mtx;
 // -------------------------------------------------------------------------------------
 void OsvJobManager::init(int workers_count, int exclusiveThreads, IoOptions ioOptions, [[maybe_unused]] int threadAffinityOffset)
 {
-   pool = new LockFreeObjectPool<Job, JOB_QUEUE_SIZE>();
-   waiter_pool = new LockFreeObjectPool<WaitContext, JOB_QUEUE_SIZE>();
+   pool = new LockFreeObjectPool<Job, JOB_QUEUE_SIZE>{};
+   waiter_pool = new LockFreeObjectPool<WaitContext, JOB_QUEUE_SIZE>{};
    std::cout << "INIT OSV JOBBING MANAGER" << std::endl;
    ensure(ioOptions.engine == "osv", "ioOptions.engine == osv");
    // TODO: implement methods in OSv that show which cores are currently not used
@@ -166,14 +166,13 @@ void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
 
 static void job_fn(void* args)
 {
-   auto* node = (LockFreeObjectPool<Job, JOB_QUEUE_SIZE>::Node*)args;
-   auto* job = node->getObject();
+   auto* job = (Job*)args;
 
    jumpmu::thread_local_jumpmu_ctx = new (&(job->jumpctx)) jumpmu::JumpMUContext;
 
    (*(job->fun))(job->args.key, job->args.cancelable);
 
-   job->args.pool->release(node);
+   job->args.pool->release(job);
 };
 
 void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>& cancelable)> fun, const int tasks, s64 bbgranularity)
@@ -207,13 +206,11 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       // 2. with function to execute
       // 3. with some kind of state that we know it is executed
 
-      LockFreeObjectPool<mean::Job, JOB_QUEUE_SIZE>::Node* node = pool->acquire();
-      while (node == nullptr) {
+      auto* job = pool->acquire();
+      while (job == nullptr) {
          usleep((pool->getSize() >> 2));  // Optimized for spin-wait on x86 (use __builtin_arm_yield() on ARM)
-         node = pool->acquire();
+         job = pool->acquire();
       }
-      assert(node);
-      auto* job = node->getObject();
       assert(job);
       // auto start = mean::readTSC();
       job->fun = &fun;
@@ -223,7 +220,7 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       // printf("%lu\n", id); 
 
 #ifdef USE_JOBS
-      if (!osv_task_enqueue(job_fn, node)) {
+      if (!osv_task_enqueue(job_fn, job)) {
          assert(false); 
       }
 #else
@@ -326,8 +323,7 @@ void OsvJobManager::adjustWorkerCount(int workerThreads) {}
 // -------------------------------------------------------------------------------------
 void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
 {
-   auto* node = waiter_pool->acquire();
-   auto* waitargs = node->getObject(); 
+   auto* waitargs = waiter_pool->acquire();
 
    waitargs = new (waitargs) WaitContext; 
 
@@ -358,7 +354,7 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
       waitargs->cv.wait(lock, [waitargs] { return waitargs->ready.load(); });
    }
 
-   waiter_pool->release(node);
+   waiter_pool->release(waitargs);
 }
 
 Task& OsvJobManager::this_task()
