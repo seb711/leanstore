@@ -91,7 +91,7 @@ class OsvChannel
       int done = 0;
 
       for (unsigned int i = 0; i < qpairs.size(); i++) {
-         int ok = OsvEnvironment::qpair_process_completions(qpairs[i], 32);
+         int ok = OsvEnvironment::qpair_process_completions(qpairs[i], 128);
          outstanding[i] -= ok;
          ensure(ok >= 0, "ok >= 0");
          done += ok;
