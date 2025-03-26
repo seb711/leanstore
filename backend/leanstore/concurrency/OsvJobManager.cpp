@@ -26,6 +26,8 @@ namespace mean
 // -------------------------------------------------------------------------------------
 OsvJobManager::~OsvJobManager()
 {
+   if (pool) delete pool; 
+   if (waiter_pool) delete waiter_pool;
    shutdown();
 }
 // -------------------------------------------------------------------------------------
@@ -67,7 +69,9 @@ void OsvJobManager::init(int workers_count, int exclusiveThreads, IoOptions ioOp
                    break;
                 }
                 meta.wt_ready = false;
+                printf("started\n"); 
                 meta.task();
+                printf("finished\n"); 
                 meta.wt_ready = true;
                 meta.job_done = true;
                 meta.job_set = false;
@@ -76,10 +80,10 @@ void OsvJobManager::init(int workers_count, int exclusiveThreads, IoOptions ioOp
              running_threads--;
           },
           "w_" + std::to_string(t_i), t_i);
-      if (t_i < max_exclusive_threads) {
-         thread->setCpuAffinityBeforeStart(t_i);
+      /* if (t_i < max_exclusive_threads) {
+         thread->setCpuAffinityBeforeStart(t_i + 2);
          thread->setNameBeforeStart("x_" + std::to_string(t_i));
-      }
+      } */
       exclusiveThreadList.push_back(std::move(thread));
       exclusiveThreadList.back()->start();
    }
@@ -145,19 +149,32 @@ void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
    for (int t_i = 0; t_i < partitions_count; t_i++) {
       std::cout << "register exclusive thread with page provider on thread " << t_i << std::endl;
       registerExclusiveThread("pp", t_i, [buffer_manager, t_i, this]() {
+         jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext{};
+         jumpmu::thread_local_jumpmu_ctx->pid = -1; 
+
          std::cout << "pp running on " << sched_getcpu() << std::endl;
+         auto start = mean::readTSC();
          while (true) {
             buffer_manager->pageProviderCycle(t_i);
             execIoChannel().submit();
             execIoChannel().poll();
 
-            // NOTE: THIS MUTEX IS NOT NEEDED BUT WE STILL USE IT
-            //       FOR EASIER DEBUGGING
-            {
-               std::unique_lock l(cb_mtx); 
-               noExecIoChannel().submit();
-               noExecIoChannel().poll();
-            }
+            #ifndef NDEBUG
+            auto open_ios = noExecIoChannel().submit();
+            auto completed = noExecIoChannel().poll();
+            #else 
+
+            auto open_ios = noExecIoChannel().submit();
+            auto completed = noExecIoChannel().poll();
+            #endif
+
+            /* auto now = mean::readTSC();
+            auto timeDiff = mean::tscDifferenceUs(now, start);
+            leanstore::WorkerCounters::myCounters().total_cycle_wait_time += timeDiff;
+            leanstore::WorkerCounters::myCounters().io_cycles++; */
+            // leanstore::WorkerCounters::myCounters().total_ios += completed;
+
+            // start = now; 
          }
       });
    }
@@ -169,9 +186,11 @@ static void job_fn(void* args)
    auto start = mean::readTSC();
    auto* job = (Job*)args;
 
-   jumpmu::thread_local_jumpmu_ctx = new (&(job->jumpctx)) jumpmu::JumpMUContext;
+   jumpmu::thread_local_jumpmu_ctx = &(job->jumpctx);
 
    (*(job->fun))(job->args.key, job->args.cancelable);
+
+   // jumpmu::thread_local_jumpmu_ctx->~JumpMUContext();
 
    job->args.pool->release(job);
    auto now = mean::readTSC();
@@ -211,11 +230,15 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       // 2. with function to execute
       // 3. with some kind of state that we know it is executed
 
+      // auto* job = new Job; // pool->acquire();
+      size_t it = 0; 
       auto* job = pool->acquire();
       while (job == nullptr) {
-         usleep((pool->getSize() >> 2));  // Optimized for spin-wait on x86 (use __builtin_arm_yield() on ARM)
+         pool->waitUntilFull(); 
+         // std::cout << " waiting threads: " << waiting_threads << " pool size: " << pool->getSize() << " open tasks: " << open_tasks << " done tasks: " << done_tasks << "diff: " << open_tasks - done_tasks<< "diff started: " << started_tasks - done_tasks << std::endl; 
          job = pool->acquire();
-      }
+      } 
+      // new (job) Job; 
       assert(job);
       // auto start = mean::readTSC();
       job->fun = &fun;
@@ -224,7 +247,6 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       job->args.done = &done_tasks;
       job->args.started = &started_tasks;
 
-      // printf("%lu\n", id); 
 
 #ifdef USE_JOBS
       if (!osv_task_enqueue(job_fn, job)) {
@@ -248,6 +270,7 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       // leanstore::WorkerCounters::myCounters().total_setup_tx_time += timeDiff;
       // leanstore::WorkerCounters::myCounters().setup_tx++;
    }
+
 
    while (pool->getSize() > 0) {
       _mm_pause();
@@ -335,7 +358,9 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
 {
    auto* waitargs = waiter_pool->acquire();
 
-   waitargs = new (waitargs) WaitContext; 
+   // new (waitargs) WaitContext; 
+
+   waitargs->ready = false; 
 
    assert(!waitargs->ready);  
 
@@ -347,6 +372,7 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
          waitDone->ready.store(true);
      }
      waitDone->cv.notify_one();
+
    };
    cb.user_data.val.ptr = waitargs;
 
@@ -359,11 +385,16 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
    #endif
    // std::cout << "waiting threads " << waiting_threads << " overall free " << pool->getSize() << std::endl; 
    {
-      std::unique_lock l(cb_mtx); 
+      // std::unique_lock l(cb_mtx); 
       noExecIoChannel().push(type, data, addr, len, cb);
    }
 
+   auto start = mean::readTSC(); 
+
+
+   // First check atomically without locking
    {
+      // Only if not ready, use the condition variable
       std::unique_lock<std::mutex> lock(waitargs->mtx);
       waitargs->cv.wait(lock, [waitargs] { return waitargs->ready.load(); });
    }

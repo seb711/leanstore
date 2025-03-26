@@ -97,6 +97,7 @@ public:
    void blockingIo(IoRequestType type, char* data, s64 addr, u64 len);
    Task& this_task();
    void sleepAll(float sleep);
+   static void registerSyncPageProvider(); 
    // -------------------------------------------------------------------------------------
    // int getFd();
    // -------------------------------------------------------------------------------------
