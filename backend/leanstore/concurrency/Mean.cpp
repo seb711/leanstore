@@ -13,12 +13,13 @@ namespace mean
 // -------------------------------------------------------------------------------------
 // defaults set in hpp
 #ifdef MEAN_USE_THREADING
+#pragma message ("Compiling with MEAN_USE_THREADING enabled")
 using ExecEnv = ThreadingManager;
-#endif
-#ifdef MEAN_USE_TASKING
+#elif defined(MEAN_USE_TASKING)
+#pragma message ("Compiling with MEAN_USE_TASKING enabled")
 using ExecEnv = TaskManager;
-#endif
-#ifdef MEAN_USE_JOBBING
+#elif defined(MEAN_USE_JOBBING)
+#pragma message ("Compiling with MEAN_USE_JOBBING enabled")
 using ExecEnv = OsvJobManager;
 #endif
 // -------------------------------------------------------------------------------------

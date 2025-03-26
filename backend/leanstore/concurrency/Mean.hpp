@@ -3,6 +3,7 @@
 #include "BlockedRange.hpp"
 #include "Task.hpp"
 #include "YieldLock.hpp"
+#include "DebugLock.hpp"
 #include "leanstore/io/IoInterface.hpp"
 // -------------------------------------------------------------------------------------
 #include <functional>
@@ -15,10 +16,13 @@ namespace mean
 #define MEAN_USE_TASKING
 #endif
 
-#if defined(MEAN_USE_THREADING) || defined(MEAN_USE_JOBBING)
+#if defined(MEAN_USE_THREADING)
 using mutex = std::mutex;
-#endif
-#ifdef MEAN_USE_TASKING
+#elif defined(MEAN_USE_JOBBING) && defined(NDEBUG)
+using mutex = std::mutex;
+#elif defined(MEAN_USE_JOBBING)
+using mutex = DebugLock;
+#else
 using mutex = YieldLock;
 #endif
 
