@@ -195,15 +195,17 @@ void LeanStore::startProfilingThread()
          const double l1_per_tx = cpu_table.workers_agg_events["L1-miss"] / tx;
          // using RowType = std::vector<variant<std::string, const char*, Table>>;
          if (FLAGS_print_tx_console) {
+
+            
             
             tabulate::Table table;
-            table.add_row({"t", "wt", "LAT" ,"TX P [M]", "TXS P [M]", "LATS", "W MiB", "R MiB", "Instrs/TX", "Cycles/TX", "CPUs", "L1/TX", "WAL T", "WAL R G", "WAL W G"});
+            table.add_row({"t", "wt", "LAT" ,"TX P [M]", "TXS P [M]", "IO LAT" , "IO D", "LATS", "W MiB", "R MiB", "Cycles/TX", "CPUs", "L1/TX", "WAL T", "WAL R G"});
             table.add_row({std::to_string(seconds),
                            std::to_string(mean::timePointDifferenceMs(mean::getTimePoint(), lastTimePrint)/(float)1000),
-                           cr_table.get("0", "tx_latency_us"), std::to_string(stol(cr_table.get("0", "tx"))/(float)1000/1000), std::to_string(stol(cr_table.get("0", "setup_tx"))/(float)1000/1000), cr_table.get("0", "tx_setup_latency_us"),
-                           bm_table.get("0", "w_mib"), bm_table.get("0", "r_mib"), std::to_string(instr_per_tx), std::to_string(cycles_per_tx),
+                           cr_table.get("0", "tx_latency_us"), std::to_string(stol(cr_table.get("0", "tx"))/(float)1000/1000), std::to_string(stol(cr_table.get("0", "setup_tx"))/(float)1000/1000),cr_table.get("0", "io_cycle_diff"), cr_table.get("0", "ios_diff"), cr_table.get("0", "tx_setup_latency_us"),
+                           bm_table.get("0", "w_mib"), bm_table.get("0", "r_mib"), std::to_string(cycles_per_tx),
                            std::to_string(cpu_table.workers_agg_events["CPU"]), std::to_string(l1_per_tx), cr_table.get("0", "wal_total"),
-                           cr_table.get("0", "wal_read_gib"), cr_table.get("0", "wal_write_gib")});
+                           cr_table.get("0", "wal_read_gib")});
             lastTimePrint = mean::getTimePoint();
             // -------------------------------------------------------------------------------------
             table.format().width(10);
