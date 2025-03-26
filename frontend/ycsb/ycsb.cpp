@@ -153,6 +153,7 @@ void run_ycsb() {
 
             auto before = mean::readTSC();
             YCSBKey key = zipf_random->rand();
+            jumpmu::thread_local_jumpmu_ctx->pid = i; 
             assert(key < ycsb_tuple_count);
             YCSBPayload result;
             if (FLAGS_ycsb_read_ratio == 100 || utils::RandomGenerator::getRandU64(0, 100) < FLAGS_ycsb_read_ratio) {
@@ -162,9 +163,9 @@ void run_ycsb() {
                utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
                table.update(key, payload);
             }
-           i++;
            auto now = mean::readTSC();
            auto timeDiff = mean::tscDifferenceUs(now, before);
+           // trace_finish_transaction(i); 
            // auto timeDiffIncWait = mean::tscDifferenceUs(now, tx_start_time);
            WorkerCounters::myCounters().total_tx_time += timeDiff;
            WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
