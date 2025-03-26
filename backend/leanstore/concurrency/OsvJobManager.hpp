@@ -52,6 +52,11 @@ class OsvJobManager
    LockFreeObjectPool<Job, JOB_QUEUE_SIZE>* pool;
    LockFreeObjectPool<WaitContext, JOB_QUEUE_SIZE>* waiter_pool;
 
+   std::atomic<u64> waiting_threads{0}; 
+   std::atomic<u64> open_tasks{0}; 
+   std::atomic<u64> started_tasks{0}; 
+   std::atomic<u64> done_tasks{0}; 
+
    int total_threads_count;
    int max_exclusive_threads;
    std::atomic<int> running_threads = {0};

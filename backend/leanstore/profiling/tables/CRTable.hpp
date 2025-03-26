@@ -15,6 +15,7 @@ class CRTable : public ProfilingTable
 
    u64 local_tx;
    u64 local_setup_tx;
+   u64 local_thread_tx;
    u64 local_tx_lat10p_us = 0;
    u64 local_tx_lat25p_us = 0;
    u64 local_tx_lat50p_us = 0;
@@ -40,6 +41,8 @@ class CRTable : public ProfilingTable
    u64 local_ssd_write_lat99p_us = 0;
    u64 local_ssd_write_lat99p9_us = 0;
    u64 local_ssd_write_lat99p99_us = 0;
+
+   u64 local_io_cycles = 0; 
 
   public:
    virtual std::string getName();

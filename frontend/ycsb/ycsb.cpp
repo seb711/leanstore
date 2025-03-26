@@ -86,6 +86,7 @@ void run_ycsb() {
       mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks, 100000);
 #else
       jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext(); 
+      jumpmu::thread_local_jumpmu_ctx->pid = -2; 
       // auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>&) {
       for (int i = 0; i < bb.end; i++) {
          // vector<u64> keys(range.size());

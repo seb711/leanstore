@@ -166,6 +166,7 @@ void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
 
 static void job_fn(void* args)
 {
+   auto start = mean::readTSC();
    auto* job = (Job*)args;
 
    jumpmu::thread_local_jumpmu_ctx = new (&(job->jumpctx)) jumpmu::JumpMUContext;
@@ -173,6 +174,10 @@ static void job_fn(void* args)
    (*(job->fun))(job->args.key, job->args.cancelable);
 
    job->args.pool->release(job);
+   auto now = mean::readTSC();
+   auto timeDiff = mean::tscDifferenceUs(now, start);
+   leanstore::WorkerCounters::myCounters().total_cycle_wait_time += timeDiff;
+   leanstore::WorkerCounters::myCounters().total_ios++;
 };
 
 void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>& cancelable)> fun, const int tasks, s64 bbgranularity)
@@ -216,6 +221,8 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       job->fun = &fun;
       job->args.pool = pool;
       job->args.key = id;
+      job->args.done = &done_tasks;
+      job->args.started = &started_tasks;
 
       // printf("%lu\n", id); 
 
@@ -223,6 +230,9 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       if (!osv_task_enqueue(job_fn, job)) {
          assert(false); 
       }
+      #ifndef NDEBUG
+      open_tasks++; 
+      #endif
 #else
       // JUST EXECUTE IT IN THE MAIN THREAD; THIS IS EASIER FOR DEBUGGING THE MAIN CODE
       jumpmu::thread_local_jumpmu_ctx = new (&(job->jumpctx)) jumpmu::JumpMUContext;
@@ -344,6 +354,10 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
 
    // NOTE: FOR NOW WE GO EXTRA SAFE AND ADD A MUTEX FOR IO CHANNEL 
    //       ACCESS. BUT WE NORMALLY SHOULD NOT NEED THEM. 
+   #ifndef NDEBUG
+   waiting_threads++; 
+   #endif
+   // std::cout << "waiting threads " << waiting_threads << " overall free " << pool->getSize() << std::endl; 
    {
       std::unique_lock l(cb_mtx); 
       noExecIoChannel().push(type, data, addr, len, cb);
@@ -353,6 +367,16 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
       std::unique_lock<std::mutex> lock(waitargs->mtx);
       waitargs->cv.wait(lock, [waitargs] { return waitargs->ready.load(); });
    }
+   #ifndef NDEBUG
+   waiting_threads--; 
+
+
+   auto done = mean::readTSC(); 
+   auto timeDiff = mean::tscDifferenceUs(done, start);
+   leanstore::WorkerCounters::myCounters().total_wait_tx_time += timeDiff;
+   leanstore::WorkerCounters::myCounters().wait_tx++;
+   #endif
+
 
    waiter_pool->release(waitargs);
 }

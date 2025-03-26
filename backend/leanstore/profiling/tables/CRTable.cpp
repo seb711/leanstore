@@ -31,6 +31,7 @@ void CRTable::open()
    columns.emplace("gct_rounds", [&](Column& col) { col << sum(CRCounters::cr_counters, &CRCounters::gct_rounds); });
    columns.emplace("tx", [&](Column& col) { col << local_tx; });
    columns.emplace("setup_tx", [&](Column& col) { col << local_setup_tx; });
+   columns.emplace("io_cycles", [&](Column& col) { col << local_io_cycles; });
    columns.emplace("tx_rate", [&](Column& col) { col << FLAGS_tx_rate; });
    columns.emplace("tx_abort", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::tx_abort); });
    // -------------------------------------------------------------------------------------
@@ -39,7 +40,16 @@ void CRTable::open()
    
     columns.emplace("tx_setup_latency_us",
                     [&](Column& col) { col << (local_setup_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_setup_tx_time) / local_setup_tx : 0); });
+
+    columns.emplace("tx_wait_latency_us",
+        [&](Column& col) { col << (local_thread_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_wait_tx_time) / local_thread_tx : 0); });
     
+        columns.emplace("io_cycle_diff",
+            [&](Column& col) { col << (local_io_cycles > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_cycle_wait_time) / local_io_cycles : 0); });
+        
+            columns.emplace("ios_diff",
+                [&](Column& col) { col << (local_io_cycles > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_ios) / local_io_cycles : 0); });
+            
                    // -------------------------------------------------------------------------------------
    columns.emplace("tx_latency_us_10p", [&](Column& col) { col << local_tx_lat10p_us; });
    columns.emplace("tx_latency_us_25p", [&](Column& col) { col << local_tx_lat25p_us; });
@@ -121,6 +131,8 @@ void CRTable::next()
 
    local_tx = sum(WorkerCounters::worker_counters, &WorkerCounters::tx);
    local_setup_tx = sum(WorkerCounters::worker_counters, &WorkerCounters::setup_tx);
+   local_thread_tx = sum(WorkerCounters::worker_counters, &WorkerCounters::wait_tx);
+   local_io_cycles = sum(WorkerCounters::worker_counters, &WorkerCounters::io_cycles);
    /* int counters = 0;
    // lat10p = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> const auto& { return wc.tx_latency_hist; }, 10);
    local_tx_lat10p_us = getPercentileOfField(
