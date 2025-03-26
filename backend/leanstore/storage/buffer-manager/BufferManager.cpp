@@ -86,6 +86,7 @@ BufferManager::BufferManager()
    // -------------------------------------------------------------------------------------
    
    // Init SSD pool
+   /*
    int flags = O_RDWR | O_DIRECT;
    if (FLAGS_trunc) {
      flags |= O_TRUNC | O_CREAT;
@@ -102,7 +103,7 @@ BufferManager::BufferManager()
      free(dummy_data);
      fsync(ssd_fd);
    }
-   ensure(fcntl(ssd_fd, F_GETFL) != -1);
+   ensure(fcntl(ssd_fd, F_GETFL) != -1);*/
    
    // -------------------------------------------------------------------------------------
    // Background threads
