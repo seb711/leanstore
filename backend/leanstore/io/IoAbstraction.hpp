@@ -9,6 +9,8 @@
 #include "leanstore/concurrency/ConnectedIoChannel.hpp"
 #include "leanstore/utils/Hist.hpp"
 #include "RequestStack.hpp"
+#include "RequestStackLockfree.hpp"
+
 #include "Raid.hpp"
 #include "leanstore/profiling/counters/SSDCounters.hpp"
 // -------------------------------------------------------------------------------------
@@ -41,7 +43,11 @@ class Raid0Channel : public IoChannel
    TIoEnvironment& io_env;
    TIoChannel& io_channel;
    IoOptions io_options;
-   RequestStack<RaidRequest<TImplRequest>> request_stack;
+#ifdef MEAN_USE_JOBBING
+RequestStackLockfree<RaidRequest<TImplRequest>> request_stack;
+#else
+RequestStack<RaidRequest<TImplRequest>> request_stack;
+#endif
    u64 pushTimeout = 0;
    int outstanding = 0;
    u64 pushed = 0;

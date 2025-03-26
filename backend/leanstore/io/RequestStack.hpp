@@ -17,7 +17,6 @@ template <typename R>
 class RequestStack
 {
   public:
-   std::mutex mtx;
    std::unique_ptr<R[]> requests;
    std::unique_ptr<R*[]> free_stack;
    std::unique_ptr<R*[]> submit_stack;
@@ -41,24 +40,19 @@ class RequestStack
    ~RequestStack() {}
    int outstanding()
    {
-      std::unique_lock<std::mutex> lock(mtx);
       assert(max_entries - free - pushed == outstanding_set.size());
       return max_entries - free - pushed;
    }
    int submitStackSize() { 
-      std::unique_lock<std::mutex> lock(mtx);
       return pushed; 
    }
    bool full() { 
-      std::unique_lock<std::mutex> lock(mtx);
       return free == 0; 
    }
 
    /* free -> to user (untracked)*/
    bool popFromFreeStack(R*& out)
    {
-      {
-         std::unique_lock<std::mutex> lock(mtx);
          assert(free >= 0);
          if (free == 0) {
             return false;
@@ -66,22 +60,18 @@ class RequestStack
          free--;
          out = free_stack[free];
          return true;
-      }
    }
    /* user -> to submit */
    void pushToSubmitStack(R* req)
    {
-      {
-         std::unique_lock<std::mutex> lock(mtx);
+      
          submit_stack[pushed] = req;
          pushed++;
-      }
    }
    /* free -> submit / direct path (not like popFromFree and pushToSubmit ) */
    bool moveFreeToSubmitStack(R*& out)
    {
-      {
-         std::unique_lock<std::mutex> lock(mtx);
+
          assert(free >= 0);
          if (free == 0) {
             return false;
@@ -93,13 +83,10 @@ class RequestStack
          submit_stack[pushed] = out;
          pushed++;
          return true;
-      }
    }
    /* submit -> outstanding */
    void emptySubmitStack()
    {
-      {
-         std::unique_lock<std::mutex> lock(mtx);
 #ifndef NDEBUG
          for (int i = 0; i < pushed; i++) {
             auto found = outstanding_set.find(submit_stack[i]);
@@ -110,13 +97,10 @@ class RequestStack
          }
 #endif
          pushed = 0;
-      }
    }
    /* submit -> outstanding */
    bool popFromSubmitStack(R*& out)
    {
-      {
-         std::unique_lock<std::mutex> lock(mtx);
          if (pushed <= 0) {
             return false;
          }
@@ -130,13 +114,11 @@ class RequestStack
          }
 #endif
          return true;
-      }
    }
    /* outstanding -> free */
    void returnToFreeList(R* ptr)
    {
       {
-         std::unique_lock<std::mutex> lock(mtx);
 #ifndef NDEBUG
          auto found = outstanding_set.find(ptr);
          ensure(found != outstanding_set.end());
