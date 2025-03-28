@@ -246,7 +246,7 @@ void BufferManager::reclaimPage(BufferFrame& bf)
       // DO NOTHING ! we have a garbage collector ;-)
       bf.header.latch->fetch_add(LATCH_EXCLUSIVE_BIT, std::memory_order_release);
       bf.header.latch.mutex.unlock();
-      cout << "garbage collector, yeah" << endl;
+      // cout << "garbage collector, yeah" << endl;
    } else {
       CoolingPartition& partition = getCoolingPartition(bf);
       bf.reset();
@@ -481,12 +481,12 @@ void BufferManager::readPageSync(u64 pid, u8* destination)
 #else
    assert("false"); 
 #endif
-   auto timeDiff = mean::tscDifferenceUs(now, start);
+   /* auto timeDiff = mean::tscDifferenceNs(now, start);
    // printf("%lu\n", timeDiff);
    leanstore::WorkerCounters::myCounters().total_setup_tx_time += timeDiff;
-   leanstore::WorkerCounters::myCounters().setup_tx++;
+   leanstore::WorkerCounters::myCounters().setup_tx++; */
    // -------------------------------------------------------------------------------------
-   WorkerCounters::myCounters().read_operations_counter++;
+   WorkerCounters::myCounters().read_operations_counter++; 
 }
 // -------------------------------------------------------------------------------------
 void BufferManager::fDataSync()
