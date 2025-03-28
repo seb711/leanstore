@@ -10,7 +10,7 @@ namespace leanstore
 WorkerCounters& WorkerCounters::myCounters()
 {
    int core_id = sched_getcpu();  // Get the current core ID
-   WorkerCounters* expected = worker_counters[core_id].load(std::memory_order_acquire);
+   WorkerCounters* expected = worker_counters[core_id].load(std::memory_order_relaxed);
 
    if (!expected) {
       WorkerCounters* new_instance = new WorkerCounters(core_id);
@@ -18,7 +18,7 @@ WorkerCounters& WorkerCounters::myCounters()
          // Another thread initialized it first, delete our instance
          delete new_instance;
       }
-      expected = worker_counters[core_id].load(std::memory_order_acquire);
+      expected = worker_counters[core_id].load(std::memory_order_relaxed);
    }
 
    return *expected;

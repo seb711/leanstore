@@ -17,9 +17,11 @@
 #include <string>
 // -------------------------------------------------------------------------------------
 #include <osv/task.h>
+#include <osv/leanstore_debug.hh>
 // -------------------------------------------------------------------------------------
 
 #define USE_JOBS
+#define USE_TIME_MEASURE
 
 namespace mean
 {

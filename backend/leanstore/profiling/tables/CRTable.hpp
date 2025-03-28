@@ -42,7 +42,10 @@ class CRTable : public ProfilingTable
    u64 local_ssd_write_lat99p9_us = 0;
    u64 local_ssd_write_lat99p99_us = 0;
 
-   u64 local_io_cycles = 0; 
+   u64 local_time_counter_0 = 0; 
+   u64 local_time_counter_1 = 0; 
+   u64 local_time_counter_2 = 0; 
+   u64 local_time_counter_3 = 0; 
 
   public:
    virtual std::string getName();

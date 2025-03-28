@@ -30,7 +30,6 @@ struct WorkerCounters {
    atomic<s32> tmp = 0;
    atomic<u64> total_setup_tx_time = 0;
    atomic<u64> total_wait_tx_time = 0;
-   atomic<u64> total_cycle_wait_time = 0; 
    atomic<u64> total_ios = 0; 
    atomic<u64> total_tx_time = 0;
    atomic<u64> total_tx_time_inc_wait = 0;
@@ -38,7 +37,18 @@ struct WorkerCounters {
    Hist<int, u64> tx_latency_hist_incwait{100000, 0, 500000};
    Hist<int, u64> ssd_read_latency{5000, 0, 50000};
    Hist<int, u64> ssd_write_latency{5000, 0, 50000};
-   atomic<u64> io_cycles = 0;
+
+   atomic<u64> time_counter_0 = 0;
+   atomic<u64> time_counter_1 = 0;
+   atomic<u64> time_counter_2 = 0;
+   atomic<u64> time_counter_3 = 0;
+
+   atomic<u64> total_time_sum_0 = 0; 
+   atomic<u64> total_time_sum_1 = 0; 
+   atomic<u64> total_time_sum_2 = 0; 
+   atomic<u64> total_time_sum_3 = 0; 
+
+
    // -------------------------------------------------------------------------------------
    // Space and contention management
    atomic<u64> contention_split_succ_counter[max_dt_id] = {0};
