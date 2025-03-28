@@ -39,6 +39,7 @@ static std::mutex cb_mtx;
 // -------------------------------------------------------------------------------------
 void OsvJobManager::init(int workers_count, int exclusiveThreads, IoOptions ioOptions, [[maybe_unused]] int threadAffinityOffset)
 {
+   
    pool = new LockFreeObjectPool<Job, JOB_QUEUE_SIZE>{};
    waiter_pool = new LockFreeObjectPool<WaitContext, JOB_QUEUE_SIZE>{};
    std::cout << "INIT OSV JOBBING MANAGER" << std::endl;
@@ -82,10 +83,10 @@ void OsvJobManager::init(int workers_count, int exclusiveThreads, IoOptions ioOp
              running_threads--;
           },
           "w_" + std::to_string(t_i), t_i);
-      /* if (t_i < max_exclusive_threads) {
-         thread->setCpuAffinityBeforeStart(t_i + 2);
+      if (t_i < max_exclusive_threads) {
+         thread->setCpuAffinityBeforeStart(t_i + 1);
          thread->setNameBeforeStart("x_" + std::to_string(t_i));
-      } */
+      }
       exclusiveThreadList.push_back(std::move(thread));
       exclusiveThreadList.back()->start();
    }
@@ -151,32 +152,40 @@ void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
    for (int t_i = 0; t_i < partitions_count; t_i++) {
       std::cout << "register exclusive thread with page provider on thread " << t_i << std::endl;
       registerExclusiveThread("pp", t_i, [buffer_manager, t_i, this]() {
+         // leanstore_osv_debug::set_priority(1.0); 
+
          jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext{};
          jumpmu::thread_local_jumpmu_ctx->pid = -1; 
 
          std::cout << "pp running on " << sched_getcpu() << std::endl;
          auto start = mean::readTSC();
          while (true) {
+            auto now = mean::readTSC();
+
             buffer_manager->pageProviderCycle(t_i);
             execIoChannel().submit();
             execIoChannel().poll();
 
+            size_t completed = 0; 
             #ifndef NDEBUG
-            auto open_ios = noExecIoChannel().submit();
-            auto completed = noExecIoChannel().poll();
+            noExecIoChannel().submit();
+            completed += noExecIoChannel().poll();
             #else 
+            noExecIoChannel().submit();
+            completed += noExecIoChannel().poll();
 
-            auto open_ios = noExecIoChannel().submit();
-            auto completed = noExecIoChannel().poll();
             #endif
 
-            /* auto now = mean::readTSC();
+#ifdef USE_TIME_MEASURE
             auto timeDiff = mean::tscDifferenceUs(now, start);
-            leanstore::WorkerCounters::myCounters().total_cycle_wait_time += timeDiff;
-            leanstore::WorkerCounters::myCounters().io_cycles++; */
+            leanstore::WorkerCounters::myCounters().total_time_sum_1 += completed;
+            leanstore::WorkerCounters::myCounters().time_counter_1++; 
             // leanstore::WorkerCounters::myCounters().total_ios += completed;
 
-            // start = now; 
+            start = now; 
+#endif
+            std::this_thread::sleep_for(std::chrono::microseconds(1));
+            // _mm_pause(); 
          }
       });
    }
@@ -185,7 +194,6 @@ void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
 
 static void job_fn(void* args)
 {
-   auto start = mean::readTSC();
    auto* job = (Job*)args;
 
    jumpmu::thread_local_jumpmu_ctx = &(job->jumpctx);
@@ -195,14 +203,12 @@ static void job_fn(void* args)
    // jumpmu::thread_local_jumpmu_ctx->~JumpMUContext();
 
    job->args.pool->release(job);
-   auto now = mean::readTSC();
-   auto timeDiff = mean::tscDifferenceUs(now, start);
-   leanstore::WorkerCounters::myCounters().total_cycle_wait_time += timeDiff;
-   leanstore::WorkerCounters::myCounters().total_ios++;
 };
 
 void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>& cancelable)> fun, const int tasks, s64 bbgranularity)
 {
+   leanstore_osv_debug::set_priority(0.5); 
+
    ensure(tasks > 0, "tasks > 0");
    int startedJobs = 0;
    std::mutex allDoneMutex;
@@ -233,6 +239,8 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       // 3. with some kind of state that we know it is executed
 
       // auto* job = new Job; // pool->acquire();
+      auto start = mean::readTSC();
+
       size_t it = 0; 
       auto* job = pool->acquire();
       while (job == nullptr) {
@@ -240,6 +248,8 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
          // std::cout << " waiting threads: " << waiting_threads << " pool size: " << pool->getSize() << " open tasks: " << open_tasks << " done tasks: " << done_tasks << "diff: " << open_tasks - done_tasks<< "diff started: " << started_tasks - done_tasks << std::endl; 
          job = pool->acquire();
       } 
+
+
       // new (job) Job; 
       assert(job);
       // auto start = mean::readTSC();
@@ -248,7 +258,6 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       job->args.key = id;
       job->args.done = &done_tasks;
       job->args.started = &started_tasks;
-
 
 #ifdef USE_JOBS
       if (!osv_task_enqueue(job_fn, job)) {
@@ -271,6 +280,12 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       // printf("%lu\n", timeDiff);
       // leanstore::WorkerCounters::myCounters().total_setup_tx_time += timeDiff;
       // leanstore::WorkerCounters::myCounters().setup_tx++;
+#ifdef USE_TIME_MEASURE
+      auto now = mean::readTSC();
+      auto timeDiff = mean::tscDifferenceNs(now, start);
+      leanstore::WorkerCounters::myCounters().total_time_sum_0 += timeDiff;
+      leanstore::WorkerCounters::myCounters().time_counter_0++;
+#endif
    }
 
 
@@ -363,6 +378,7 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
    // new (waitargs) WaitContext; 
 
    waitargs->ready = false; 
+   waitargs->magic = mean::readTSC(); 
 
    assert(!waitargs->ready);  
 
@@ -375,6 +391,14 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
      }
      waitDone->cv.notify_one();
 
+#ifdef USE_TIME_MEASURE
+     auto now = mean::readTSC(); 
+     auto timeDiff = mean::tscDifferenceUs(now, waitDone->magic);
+   // printf("%lu\n", timeDiff);
+      leanstore::WorkerCounters::myCounters().total_time_sum_2 += timeDiff;
+      leanstore::WorkerCounters::myCounters().time_counter_2++;
+#endif
+      // -------------------------------------------------------------------------------------
    };
    cb.user_data.val.ptr = waitargs;
 
@@ -402,14 +426,15 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
    }
    #ifndef NDEBUG
    waiting_threads--; 
-
-
-   auto done = mean::readTSC(); 
-   auto timeDiff = mean::tscDifferenceUs(done, start);
-   leanstore::WorkerCounters::myCounters().total_wait_tx_time += timeDiff;
-   leanstore::WorkerCounters::myCounters().wait_tx++;
    #endif
 
+
+#ifdef USE_TIME_MEASURE
+   auto done = mean::readTSC(); 
+   auto timeDiff = mean::tscDifferenceUs(done, start);
+   leanstore::WorkerCounters::myCounters().total_time_sum_3 += timeDiff;
+   leanstore::WorkerCounters::myCounters().time_counter_3++;
+#endif
 
    waiter_pool->release(waitargs);
 }
