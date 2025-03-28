@@ -7,7 +7,7 @@
 #include <condition_variable>
 #include "Mean.hpp"
 
-#define JOB_QUEUE_SIZE (96)
+#define JOB_QUEUE_SIZE (256)
 
 namespace mean
 {
@@ -33,10 +33,10 @@ namespace mean
    
        void waitUntilFull()
        {
-           /* std::unique_lock<std::mutex> lock(interruptmtx); 
+           if (size > 0) return; 
+           std::unique_lock<std::mutex> lock(interruptmtx); 
            waiting = true; 
-           cv.wait(lock, [this] {return !waiting.load(std::memory_order_release); }); */
-           usleep(JOB_QUEUE_SIZE); 
+           cv.wait(lock, [this] {return !waiting.load(std::memory_order_release); });
        }
    
        size_t getSize() const
@@ -60,14 +60,14 @@ namespace mean
            
            // Attempt to push back to queue, check return value
            if (queue.push(job)) {
-               /* size++;  // Increment size only if push is successful
+               size++;  // Increment size only if push is successful
                
                // Check and notify if waiting
-               if (waiting.load(std::memory_order_acquire)) {
+               if (size > 32 && waiting.load(std::memory_order_acquire)) {
                    std::unique_lock<std::mutex> lock(interruptmtx);
                    waiting = false;
                    cv.notify_all();
-               }*/
+               }
            }
        }
    };
