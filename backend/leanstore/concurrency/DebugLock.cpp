@@ -20,7 +20,7 @@ DebugLock::DebugLock() : id(global_id++) {};
 bool DebugLock::try_lock()
 {
    if (jumpmu::thread_local_jumpmu_ctx->pid >= TRACEMUTEXLVL) {
-      trace_try_lock(id, jumpmu::thread_local_jumpmu_ctx->pid);
+      leanstore_osv_debug::trace_try_lock(id, jumpmu::thread_local_jumpmu_ctx->pid);
    }
 
    auto current = jumpmu::thread_local_jumpmu_ctx->pid;
@@ -36,7 +36,7 @@ bool DebugLock::try_lock()
 
    if (b) {
       if (jumpmu::thread_local_jumpmu_ctx->pid >= TRACEMUTEXLVL) {
-         trace_lock(id, jumpmu::thread_local_jumpmu_ctx->pid);
+         leanstore_osv_debug::trace_lock(id, jumpmu::thread_local_jumpmu_ctx->pid);
          owner.store(current);
       }
    }
@@ -48,7 +48,7 @@ void DebugLock::lock()
    auto current = jumpmu::thread_local_jumpmu_ctx->pid;
 
    if (jumpmu::thread_local_jumpmu_ctx->pid >= TRACEMUTEXLVL) {
-      trace_wait_lock(id, jumpmu::thread_local_jumpmu_ctx->pid);
+      leanstore_osv_debug::trace_wait_lock(id, jumpmu::thread_local_jumpmu_ctx->pid);
    }
    // For non-recursive mutex, we need to detect double-locking
    if (owner.load() == current) {
@@ -59,7 +59,7 @@ void DebugLock::lock()
    mtx.lock();
    owner.store(current);
    if (jumpmu::thread_local_jumpmu_ctx->pid >= TRACEMUTEXLVL) {
-      trace_lock(id, jumpmu::thread_local_jumpmu_ctx->pid);
+      leanstore_osv_debug::trace_lock(id, jumpmu::thread_local_jumpmu_ctx->pid);
    }
    return;
 }
@@ -67,7 +67,7 @@ void DebugLock::lock()
 void DebugLock::unlock()
 {
    if (jumpmu::thread_local_jumpmu_ctx->pid >= TRACEMUTEXLVL) {
-      trace_wait_unlock(id, jumpmu::thread_local_jumpmu_ctx->pid);
+      leanstore_osv_debug::trace_wait_unlock(id, jumpmu::thread_local_jumpmu_ctx->pid);
    }
    auto current = jumpmu::thread_local_jumpmu_ctx->pid;
    if (owner.load() != current) {
@@ -79,7 +79,7 @@ void DebugLock::unlock()
    _mm_mfence(); 
    owner.store(-3, std::memory_order_release);
    if (jumpmu::thread_local_jumpmu_ctx->pid >= TRACEMUTEXLVL) {
-      trace_unlock(id, jumpmu::thread_local_jumpmu_ctx->pid);
+      leanstore_osv_debug::trace_unlock(id, jumpmu::thread_local_jumpmu_ctx->pid);
    }
    return;
 }
