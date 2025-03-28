@@ -115,7 +115,7 @@ void LeanStore::startProfilingThread()
    std::thread profiling_thread([&]() {
       /* cpu_set_t cpuset;
       CPU_ZERO(&cpuset);
-      CPU_SET(63, &cpuset);
+      CPU_SET(0, &cpuset);
       auto thread = pthread_self();
       int s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
       if (s != 0) {
@@ -126,7 +126,7 @@ void LeanStore::startProfilingThread()
          ensure(false, "[startProfilingThread] Affinity could not be set.");
       } */
 
-      posix_check(pthread_setname_np(pthread_self(), "profiling") == 0);
+      // posix_check(pthread_setname_np(pthread_self(), "profiling") == 0);
       // -------------------------------------------------------------------------------------
       profiling::BMTable bm_table(*buffer_manager.get());
       profiling::DTTable dt_table(*buffer_manager.get());
@@ -199,13 +199,12 @@ void LeanStore::startProfilingThread()
             
             
             tabulate::Table table;
-            table.add_row({"t", "wt", "LAT" ,"TX P [M]", "TXS P [M]", "IO LAT" , "IO D", "LATS", "W MiB", "R MiB", "Cycles/TX", "CPUs", "L1/TX", "WAL T", "WAL R G"});
+            table.add_row({"t", "wt", "LAT" ,"TX P [M]", "TXS P [M]", "C0", "C1", "C2", "C3", "W MiB", "R MiB", "Cycles/TX", "CPUs", "L1/TX", "WAL T"});
             table.add_row({std::to_string(seconds),
                            std::to_string(mean::timePointDifferenceMs(mean::getTimePoint(), lastTimePrint)/(float)1000),
-                           cr_table.get("0", "tx_latency_us"), std::to_string(stol(cr_table.get("0", "tx"))/(float)1000/1000), std::to_string(stol(cr_table.get("0", "setup_tx"))/(float)1000/1000),cr_table.get("0", "io_cycle_diff"), cr_table.get("0", "ios_diff"), cr_table.get("0", "tx_setup_latency_us"),
+                           cr_table.get("0", "tx_latency_us"), std::to_string(stol(cr_table.get("0", "tx"))/(float)1000/1000), std::to_string(stol(cr_table.get("0", "setup_tx"))/(float)1000/1000),cr_table.get("0", "time_counter_0"), cr_table.get("0", "time_counter_1"), cr_table.get("0", "time_counter_2") , cr_table.get("0", "time_counter_3"),
                            bm_table.get("0", "w_mib"), bm_table.get("0", "r_mib"), std::to_string(cycles_per_tx),
-                           std::to_string(cpu_table.workers_agg_events["CPU"]), std::to_string(l1_per_tx), cr_table.get("0", "wal_total"),
-                           cr_table.get("0", "wal_read_gib")});
+                           std::to_string(cpu_table.workers_agg_events["CPU"]), std::to_string(l1_per_tx), cr_table.get("0", "wal_total")});
             lastTimePrint = mean::getTimePoint();
             // -------------------------------------------------------------------------------------
             table.format().width(10);
