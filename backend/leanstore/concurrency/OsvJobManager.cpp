@@ -84,7 +84,7 @@ void OsvJobManager::init(int workers_count, int exclusiveThreads, IoOptions ioOp
           },
           "w_" + std::to_string(t_i), t_i);
       if (t_i < max_exclusive_threads) {
-         thread->setCpuAffinityBeforeStart(t_i + 1);
+         thread->setCpuAffinityBeforeStart(t_i);
          thread->setNameBeforeStart("x_" + std::to_string(t_i));
       }
       exclusiveThreadList.push_back(std::move(thread));
@@ -162,7 +162,36 @@ void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
          while (true) {
             auto now = mean::readTSC();
 
-            buffer_manager->pageProviderCycle(t_i);
+
+            /*
+               THIS IS JUST A TEMPORARY FIX FOR A SITUATION IN WHICH THE PAGEPROVIDER 
+               CANNOT ACCESS THE LOCKS DUE TO HOW LOCKS ARE IMPLEMENTED IN OSV
+
+               - THE JOB THREADS WAIT FOR FREE PAGES AND REQUEST A LOCK AND THEREFORE
+               INCREMENT THE LOCK-COUNTER IN LFMUTEX.CC 
+               - THE PAGEPROVIDER ALSO WANTS THE LOCK TO FREE PAGES; BUT THE PAGEPROVIDER 
+               DOES THIS WITH TRY-LOCK AND NOT WITH LOCK AND THEREFORE HAS LEAST PRIORITY
+               
+               WE CURRENTLY RESOLVE THIS BY ASSESSING WHEN THIS SITUATION IS ACTIVE (NO FREE PAGES AND THE SITUATION IS NOT HANDLED)
+
+               - IN THAT CASE WE GET LOCKS ON ALL IO PARTITIONS AND CALL THE PAGEPROVIDER
+
+               THIS SOLUTION IS CURRENTLY ONLY POSSIBLE IF WE HAVE ONE COOLING PARTITION
+               FIXME: ADD SUPPORT FOR MULTIPLE COOLING PARTITIONS
+            */
+            if (buffer_manager->cooling_partitions[t_i].dram_free_list.counter == 0 && counter++ > 10) {
+               std::vector<std::unique_ptr<std::unique_lock<mean::mutex>>> locks;
+               
+               for (size_t io_partition_idx = 0; io_partition_idx < buffer_manager->io_partitions_count; io_partition_idx++) {
+                  locks.push_back(std::make_unique<std::unique_lock<mean::mutex>>(buffer_manager->io_partitions[io_partition_idx].io_mutex));
+               }
+
+               buffer_manager->pageProviderCycle(t_i);
+
+               counter = 0; 
+            } else {
+               buffer_manager->pageProviderCycle(t_i);
+            }
             execIoChannel().submit();
             execIoChannel().poll();
 
