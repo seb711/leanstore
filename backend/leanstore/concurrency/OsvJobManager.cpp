@@ -273,8 +273,9 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       size_t it = 0; 
       auto* job = pool->acquire();
       while (job == nullptr) {
-         pool->waitUntilFull(); 
-         // std::cout << " waiting threads: " << waiting_threads << " pool size: " << pool->getSize() << " open tasks: " << open_tasks << " done tasks: " << done_tasks << "diff: " << open_tasks - done_tasks<< "diff started: " << started_tasks - done_tasks << std::endl; 
+         pool->waitUntilAvailable();
+         // std::cout << " waiting threads: " << waiting_threads << " pool size: " << pool->getSize() << " open tasks: " << open_tasks << " done
+         // tasks: " << done_tasks << "diff: " << open_tasks - done_tasks<< "diff started: " << started_tasks - done_tasks << std::endl;
          job = pool->acquire();
       } 
 
