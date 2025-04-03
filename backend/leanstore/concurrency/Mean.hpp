@@ -5,6 +5,7 @@
 #include "YieldLock.hpp"
 #include "DebugLock.hpp"
 #include "leanstore/io/IoInterface.hpp"
+#include <osv/mutex.h>
 // -------------------------------------------------------------------------------------
 #include <functional>
 #include <string>
@@ -19,9 +20,9 @@ namespace mean
 #if defined(MEAN_USE_THREADING)
 using mutex = std::mutex;
 #elif defined(MEAN_USE_JOBBING) && defined(NDEBUG)
-using mutex = std::mutex;
+using mutex = lockfree::mutex;
 #elif defined(MEAN_USE_JOBBING)
-using mutex = std::mutex; // DebugLock;
+using mutex = lockfree::mutex; // DebugLock;
 #else
 using mutex = YieldLock;
 #endif
