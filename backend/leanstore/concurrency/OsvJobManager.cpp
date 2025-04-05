@@ -158,6 +158,7 @@ void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
          jumpmu::thread_local_jumpmu_ctx->pid = -1; 
 
          std::cout << "pp running on " << sched_getcpu() << std::endl;
+         size_t counter = 0;
          auto start = mean::readTSC();
          while (true) {
             auto now = mean::readTSC();
