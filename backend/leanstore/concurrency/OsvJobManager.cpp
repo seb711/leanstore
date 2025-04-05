@@ -318,10 +318,6 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
 #endif
    }
 
-
-   while (pool->getSize() > 0) {
-      _mm_pause();
-   }
 }
 // -------------------------------------------------------------------------------------
 void OsvJobManager::registerPoller([[maybe_unused]] int to, TaskFunction poller)
