@@ -214,8 +214,8 @@ void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
 
             start = now; 
 #endif
-            std::this_thread::sleep_for(std::chrono::microseconds(1));
-            // _mm_pause(); 
+            // usleep(10);
+            leanstore_osv_debug::yield();
          }
       });
    }
@@ -274,6 +274,8 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       size_t it = 0; 
       auto* job = pool->acquire();
       while (job == nullptr) {
+         leanstore_osv_debug::rcu_flush();
+         leanstore_osv_debug::wait_until_zombies_reaped();
          pool->waitUntilAvailable();
          // std::cout << " waiting threads: " << waiting_threads << " pool size: " << pool->getSize() << " open tasks: " << open_tasks << " done
          // tasks: " << done_tasks << "diff: " << open_tasks - done_tasks<< "diff started: " << started_tasks - done_tasks << std::endl;
@@ -291,12 +293,11 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       job->args.started = &started_tasks;
 
 #ifdef USE_JOBS
-      if (!osv_task_enqueue(job_fn, job)) {
-         assert(false); 
-      }
-      #ifndef NDEBUG
-      open_tasks++; 
-      #endif
+      assert(leanstore_osv_debug::task_stack.size() < 2048);
+      leanstore_osv_debug::task_stack.push({job_fn, job});
+#ifndef NDEBUG
+      open_tasks++;
+#endif
 #else
       // JUST EXECUTE IT IN THE MAIN THREAD; THIS IS EASIER FOR DEBUGGING THE MAIN CODE
       jumpmu::thread_local_jumpmu_ctx = new (&(job->jumpctx)) jumpmu::JumpMUContext;
@@ -317,6 +318,10 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       leanstore::WorkerCounters::myCounters().total_time_sum_0 += timeDiff;
       leanstore::WorkerCounters::myCounters().time_counter_0++;
 #endif
+
+      if (leanstore_osv_debug::task_stack.size() > 96) { // FIXME: this is currently a constant 
+         leanstore_osv_debug::flush_to_runqueue();
+      }
    }
 
 }
