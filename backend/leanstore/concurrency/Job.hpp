@@ -7,7 +7,9 @@
 #include "Mean.hpp"
 #include "Time.hpp"
 
-#define JOB_QUEUE_SIZE (128)
+#define JOB_QUEUE_SIZE (256)
+
+constexpr size_t wait_for_count = JOB_QUEUE_SIZE / 4; 
 
 namespace mean
 {
@@ -18,7 +20,8 @@ namespace mean
         std::array<T, Capacity> storage;  // Fixed storage for objects
         boost::lockfree::queue<T*, boost::lockfree::fixed_sized<true>, boost::lockfree::capacity<Capacity>> queue;
         std::atomic<size_t> available{Capacity};  // Count of available objects
-        
+        std::atomic<bool> waiting{false};  // Count of available objects
+
         // Synchronization for waiters
         std::mutex wait_mutex;
         std::condition_variable wait_cv;
@@ -41,9 +44,11 @@ namespace mean
             
             // Slow path - wait for an object to become available
             std::unique_lock<std::mutex> lock(wait_mutex);
+            waiting = true; 
             wait_cv.wait(lock, [this] { 
-                return available.load(std::memory_order_acquire) > 0; 
+                return available.load(std::memory_order_acquire) > (wait_for_count); 
             });
+            waiting = false; 
         }
         
         // Wait until the pool is completely full (all objects returned)
@@ -90,9 +95,9 @@ namespace mean
                 
                 // Notify waiters if this might satisfy a waiting condition
                 // Only lock and notify if there's likely to be a waiter
-                if (prev_count == 0 || prev_count == Capacity - 1) {
+                if (waiting.load() && prev_count >= wait_for_count) {
                     std::lock_guard<std::mutex> lock(wait_mutex);
-                    wait_cv.notify_all();  // Wake all waiters
+                    wait_cv.notify_one();  // Wake all waiters
                 }
             }
         }
