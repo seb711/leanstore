@@ -17,6 +17,7 @@
 // -------------------------------------------------------------------------------------
 #include <iostream>
 #include <set>
+#include <osv/leanstore_debug.hh>
 // -------------------------------------------------------------------------------------
 DEFINE_uint32(ycsb_read_ratio, 100, "");
 DEFINE_uint64(ycsb_tuple_count, 0, "");
@@ -174,7 +175,9 @@ void run_ycsb() {
            // }
            // WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
            WorkerCounters::myCounters().tx++;
+           WorkerCounters::myCounters().setup_tx += sched_getcpu() == 0 ? 1 : 0;
            // ThreadCounters::myCounters().tx++;
+           // leanstore_osv_debug::trace_finish_transaction(jumpmu::thread_local_jumpmu_ctx->pid); 
            mean::task::yield();
          running_threads_counter--;
       };
@@ -212,7 +215,8 @@ int main(int argc, char** argv)
          FLAGS_worker_threads, //std::min(std::thread::hardware_concurrency(), FLAGS_tpcc_warehouse_count),
          0/*FLAGS_pp_threads*/, ioOptions);
    } else {
-      ioOptions.channelCount = FLAGS_worker_threads + FLAGS_pp_threads;
+      // FIXME: this is also depending on the architecture used
+      ioOptions.channelCount = 3; // FLAGS_worker_threads + FLAGS_pp_threads;
       mean::env::init(FLAGS_worker_threads, FLAGS_pp_threads, ioOptions);
    }
    mean::env::start(run_ycsb);

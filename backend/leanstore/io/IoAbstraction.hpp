@@ -73,7 +73,7 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
    // -------------------------------------------------------------------------------------
   public:
    Raid0Channel(TIoEnvironment& io_env, TIoChannel& io_channel, IoOptions io_options, u64 channelId, u64 totalChannels) // TODO
-      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(io_options.iodepth), raid(io_env.deviceCount(), CHUNK_SIZE)
+      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(2048), raid(io_env.deviceCount(), CHUNK_SIZE) // io_options.iodepth
    {
 #ifdef IO_TRACE_ON
       trace.reserve(100e6);
@@ -125,7 +125,7 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
    void _push(const IoBaseRequest& usr) override { 
       IoBaseRequest* req = getIoRequest();
       if (!req) {
-         throw std::logic_error("Cannot push more: free: " + std::to_string(request_stack.free) + " pushed: " + std::to_string(request_stack.pushed)  + " max: " + std::to_string(request_stack.max_entries));
+         throw std::logic_error("Cannot push more: free: " + std::to_string(request_stack.free) + " pushed: " + std::to_string(request_stack.pushed)  + " outstanding: " + std::to_string(request_stack.outstanding_count)  + " max: " + std::to_string(request_stack.max_entries));
       }
       ensure(req);
       req->copyFields(usr);

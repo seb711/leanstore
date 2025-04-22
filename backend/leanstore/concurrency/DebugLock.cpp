@@ -25,18 +25,13 @@ bool DebugLock::try_lock()
 
    auto current = jumpmu::thread_local_jumpmu_ctx->pid;
    // For non-recursive mutex, we need to detect double-locking
-   if (owner.load() == current) {
-      // Current thread already owns the lock - this is an error in non-recursive mutex
-      fprintf(stderr, "[lock] Double lock attempt by same thread %i\n", current);
-
-      throw std::runtime_error("Double lock attempt by same thread");
-   }
 
    bool b = mtx.try_lock();
 
    if (b) {
       if (jumpmu::thread_local_jumpmu_ctx->pid >= TRACEMUTEXLVL) {
          leanstore_osv_debug::trace_lock(id, jumpmu::thread_local_jumpmu_ctx->pid);
+         _mm_mfence(); 
          owner.store(current);
       }
    }
@@ -50,13 +45,9 @@ void DebugLock::lock()
    if (jumpmu::thread_local_jumpmu_ctx->pid >= TRACEMUTEXLVL) {
       leanstore_osv_debug::trace_wait_lock(id, jumpmu::thread_local_jumpmu_ctx->pid);
    }
-   // For non-recursive mutex, we need to detect double-locking
-   if (owner.load() == current) {
-      // Current thread already owns the lock - this is an error in non-recursive mutex
-      fprintf(stderr, "[lock] Double lock attempt by same thread %i\n", current);
-      throw std::runtime_error("Double lock attempt by same thread");
-   }
+
    mtx.lock();
+   _mm_mfence(); 
    owner.store(current);
    if (jumpmu::thread_local_jumpmu_ctx->pid >= TRACEMUTEXLVL) {
       leanstore_osv_debug::trace_lock(id, jumpmu::thread_local_jumpmu_ctx->pid);
@@ -66,15 +57,16 @@ void DebugLock::lock()
 
 void DebugLock::unlock()
 {
+   // if (owner.load() == -3) return; 
    if (jumpmu::thread_local_jumpmu_ctx->pid >= TRACEMUTEXLVL) {
       leanstore_osv_debug::trace_wait_unlock(id, jumpmu::thread_local_jumpmu_ctx->pid);
    }
-   auto current = jumpmu::thread_local_jumpmu_ctx->pid;
+   /* auto current = jumpmu::thread_local_jumpmu_ctx->pid;
    if (owner.load() != current) {
       // Error: thread trying to unlock mutex it doesn't own
       fprintf(stderr, "%i %i\n", current, owner.load());
       throw std::runtime_error("Unlocking mutex not owned by current thread");
-   }
+   } */
    mtx.unlock();
    _mm_mfence(); 
    owner.store(-3, std::memory_order_release);

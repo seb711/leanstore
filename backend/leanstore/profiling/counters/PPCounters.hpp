@@ -1,9 +1,11 @@
 #pragma once
 #include "Units.hpp"
 // -------------------------------------------------------------------------------------
+
+#include "PerfEvent.hpp"
+#include "leanstore/utils/Hist.hpp"
 // -------------------------------------------------------------------------------------
 #include <atomic>
-#include <mutex>
 #include <unordered_map>
 // -------------------------------------------------------------------------------------
 namespace leanstore
@@ -45,7 +47,6 @@ struct PPCounters {
    // -------------------------------------------------------------------------------------
    static std::atomic<uint64_t> pp_counter;
    static std::array<std::atomic<PPCounters*>, MAX_CORES> pp_counters; // Per-core storage
-   static std::mutex pp_counters_mut; // Fallback mutex
    static PPCounters& myCounters(); 
 
    int core_id;

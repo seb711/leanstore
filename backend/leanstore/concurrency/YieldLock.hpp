@@ -3,6 +3,9 @@
 #include <atomic>
 #include <cassert>
 #include <osv/jumpmu.hh>
+#include <osv/leanstore_debug.hh>
+#include <osv/mutex.h>
+
 #include <emmintrin.h>
 // -------------------------------------------------------------------------------------
 namespace mean
@@ -38,6 +41,8 @@ class YieldLock
    void lock();
    void unlock();
 };
+
+#ifndef MEAN_USE_JOBBING
 class SharedYieldLock
 {
    static constexpr int EXCLUSIVE_BIT = 1 << 31;
@@ -85,6 +90,97 @@ class SharedYieldLock
       _lock.fetch_add(-1, std::memory_order_release);
    }
 };
+#else 
+class SharedYieldLock {
+   private:
+      lockfree::mutex mutex;               // For writer exclusivity
+       std::atomic<int> reader_count;  // Tracks active readers
+       std::atomic<bool> writer_active; // Indicates if writer is active
+   
+   public:
+   SharedYieldLock() : reader_count(0), writer_active(false) {}
+   
+       // Acquire read lock (shared access)
+       void lock_shared() {
+           // Wait if a writer is active
+           while (writer_active.load(std::memory_order_acquire)) {
+               leanstore_osv_debug::yield();
+           }
+           
+           // Increment reader count
+           reader_count.fetch_add(1, std::memory_order_acquire);
+           
+           // Double-check writer hasn't become active (writer preference)
+           if (writer_active.load(std::memory_order_acquire)) {
+               reader_count.fetch_sub(1, std::memory_order_release);
+               lock_shared(); // Recursive call - try again
+           }
+       }
+   
+       // Try to acquire read lock (non-blocking)
+       bool try_lock_shared() {
+           // Fail if a writer is active
+           if (writer_active.load(std::memory_order_acquire)) {
+               return false;
+           }
+           
+           // Increment reader count
+           reader_count.fetch_add(1, std::memory_order_acquire);
+           
+           // If writer became active, rollback and fail
+           if (writer_active.load(std::memory_order_acquire)) {
+               reader_count.fetch_sub(1, std::memory_order_release);
+               return false;
+           }
+           
+           return true;
+       }
+   
+       // Release read lock
+       void unlock_shared() {
+           reader_count.fetch_sub(1, std::memory_order_release);
+       }
+   
+       // Acquire write lock (exclusive access)
+       void lock() {
+           bool expected = false;
+           // Try to set writer_active from false to true
+           while (!writer_active.compare_exchange_strong(expected, true,
+                  std::memory_order_acquire)) {
+               expected = false;
+               leanstore_osv_debug::yield();
+           }
+           
+           // Wait for all readers to finish
+           while (reader_count.load(std::memory_order_acquire) > 0) {
+            leanstore_osv_debug::yield();
+           }
+       }
+   
+       // Try to acquire write lock (non-blocking)
+       bool try_lock() {
+           bool expected = false;
+           // Try to set writer_active from false to true
+           if (!writer_active.compare_exchange_strong(expected, true,
+               std::memory_order_acquire)) {
+               return false;
+           }
+           
+           // If there are readers, rollback and fail
+           if (reader_count.load(std::memory_order_acquire) > 0) {
+               writer_active.store(false, std::memory_order_release);
+               return false;
+           }
+           
+           return true;
+       }
+   
+       // Release write lock
+       void unlock() {
+           writer_active.store(false, std::memory_order_release);
+       }
+   };
+#endif
 // -------------------------------------------------------------------------------------
 }  // namespace mean
 // -------------------------------------------------------------------------------------

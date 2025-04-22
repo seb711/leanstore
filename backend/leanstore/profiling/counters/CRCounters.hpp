@@ -2,9 +2,11 @@
 #include "Units.hpp"
 // -------------------------------------------------------------------------------------
 
+#include "PerfEvent.hpp"
+#include "leanstore/utils/Hist.hpp"
 // -------------------------------------------------------------------------------------
 #include <atomic>
-#include <mutex>
+#include <unordered_map>
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {
@@ -27,7 +29,6 @@ struct CRCounters {
    // -------------------------------------------------------------------------------------
    static std::atomic<uint64_t> cr_counter;
    static std::array<std::atomic<CRCounters*>, MAX_CORES> cr_counters; // Per-core storage
-   static std::mutex cr_counters_mut; // Fallback mutex
    static CRCounters& myCounters(); 
 
    int core_id;

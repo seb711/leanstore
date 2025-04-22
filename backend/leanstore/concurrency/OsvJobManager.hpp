@@ -8,6 +8,8 @@
 #include "leanstore/concurrency-recovery/Worker.hpp"
 #include "leanstore/io/IoInterface.hpp"
 #include "leanstore/concurrency-recovery/Worker.hpp"
+#include "leanstore/storage/buffer-manager/BufferManager.hpp"
+
 // -------------------------------------------------------------------------------------
 #include <iostream>
 #include <memory>
@@ -57,6 +59,9 @@ class OsvJobManager
    std::atomic<u64> started_tasks{0}; 
    std::atomic<u64> done_tasks{0}; 
 
+   std::atomic<bool> setup_mem = {true}; 
+   leanstore::storage::BufferManager* buffer_manager; 
+
    int total_threads_count;
    int max_exclusive_threads;
    std::atomic<int> running_threads = {0};
@@ -86,6 +91,7 @@ public:
    int execId();
    IoChannel& execIoChannel(); // FIXME: for now we only use one io channel; 
    IoChannel& noExecIoChannel(); // FIXME: for now we only use one io channel; 
+   IoChannel& noExecIoChannel2(); // FIXME: for now we only use one io channel; 
    // -------------------------------------------------------------------------------------
    // task
    // -------------------------------------------------------------------------------------

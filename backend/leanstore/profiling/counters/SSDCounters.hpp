@@ -33,7 +33,6 @@ struct SSDCounters {
    // -------------------------------------------------------------------------------------
    static std::atomic<uint64_t> ssd_counter;
    static std::array<std::atomic<SSDCounters*>, MAX_CORES> ssd_counters; // Per-core storage
-   static std::mutex ssd_counters_mut; // Fallback mutex
    static SSDCounters& myCounters(); 
 
    int core_id;

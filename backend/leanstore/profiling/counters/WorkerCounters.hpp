@@ -86,7 +86,6 @@ struct WorkerCounters {
    // -------------------------------------------------------------------------------------
    static std::atomic<uint64_t> workers_counter;
    static std::array<std::atomic<WorkerCounters*>, MAX_CORES> worker_counters; // Per-core storage
-   static std::mutex worker_counters_mut; // Fallback mutex
    static WorkerCounters& myCounters(); 
 
    int core_id;

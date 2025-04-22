@@ -7,9 +7,9 @@
 #include "Mean.hpp"
 #include "Time.hpp"
 
-#define JOB_QUEUE_SIZE (256)
+#define JOB_QUEUE_SIZE (2048)
 
-constexpr size_t wait_for_count = JOB_QUEUE_SIZE / 4; 
+constexpr size_t wait_for_count = JOB_QUEUE_SIZE / 64; 
 
 namespace mean
 {
@@ -18,7 +18,7 @@ namespace mean
     {
     private:
         std::array<T, Capacity> storage;  // Fixed storage for objects
-        boost::lockfree::queue<T*, boost::lockfree::fixed_sized<true>, boost::lockfree::capacity<Capacity>> queue;
+        alignas(64) boost::lockfree::queue<T*, boost::lockfree::fixed_sized<true>, boost::lockfree::capacity<Capacity>> queue;
         std::atomic<size_t> available{Capacity};  // Count of available objects
         std::atomic<bool> waiting{false};  // Count of available objects
 
@@ -145,7 +145,7 @@ class Job
 {
   public:
    jumpmu::JumpMUContext jumpctx;
-   JobFunction* fun = nullptr;
+   alignas(64) JobFunction* fun = nullptr;
    JobArguments args;
 
   public:
