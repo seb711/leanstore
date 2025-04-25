@@ -202,7 +202,7 @@ void LeanStore::startProfilingThread()
             table.add_row({"t", "wt", "LAT" ,"TX P [M]", "TXS P [M]", "C0", "C1", "C2", "C3", "W MiB", "R MiB", "Cycles/TX", "CPUs", "L1/TX", "WAL T"});
             table.add_row({std::to_string(seconds),
                            std::to_string(mean::timePointDifferenceMs(mean::getTimePoint(), lastTimePrint)/(float)1000),
-                           cr_table.get("0", "tx_latency_us"), std::to_string(stol(cr_table.get("0", "tx"))/(float)1000/1000), std::to_string(stol(cr_table.get("0", "setup_tx"))/(float)1000/1000),cr_table.get("0", "time_avg_0"), cr_table.get("0", "time_avg_1"), cr_table.get("0", "time_avg_2") , cr_table.get("0", "time_avg_3"),
+                           cr_table.get("0", "tx_latency_us"), std::to_string(stol(cr_table.get("0", "tx"))/(float)1000/1000), std::to_string(stol(cr_table.get("0", "setup_tx"))/(float)1000/1000),cr_table.get("0", "time_counter_0"), cr_table.get("0", "time_counter_1"), cr_table.get("0", "time_avg_2") , cr_table.get("0", "time_avg_3"),
                            bm_table.get("0", "w_mib"), bm_table.get("0", "r_mib"), std::to_string(cycles_per_tx),
                            std::to_string(cpu_table.workers_agg_events["CPU"]), std::to_string(l1_per_tx), cr_table.get("0", "wal_total")});
             lastTimePrint = mean::getTimePoint();

@@ -7,7 +7,7 @@
 #include "Mean.hpp"
 #include "Time.hpp"
 
-#define JOB_QUEUE_SIZE (2048)
+#define JOB_QUEUE_SIZE (4096)
 
 constexpr size_t wait_for_count = JOB_QUEUE_SIZE / 64; 
 

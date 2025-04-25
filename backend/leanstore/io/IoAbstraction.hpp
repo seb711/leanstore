@@ -73,7 +73,7 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
    // -------------------------------------------------------------------------------------
   public:
    Raid0Channel(TIoEnvironment& io_env, TIoChannel& io_channel, IoOptions io_options, u64 channelId, u64 totalChannels) // TODO
-      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(2048), raid(io_env.deviceCount(), CHUNK_SIZE) // io_options.iodepth
+      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(4096), raid(io_env.deviceCount(), CHUNK_SIZE) // io_options.iodepth
    {
 #ifdef IO_TRACE_ON
       trace.reserve(100e6);
@@ -170,7 +170,7 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
             rr->base.user.callback(&rr->base);
             auto this_ptr = (Raid0Channel<TIoEnvironment, TIoChannel,TImplRequest>*)req->innerCallback.user_data2.val.ptr;
             auto ch = reinterpret_cast<Raid0Channel<TIoEnvironment, TIoChannel,TImplRequest>*>(this_ptr);
-            /*COUNTERS_BLOCK()*/ { ch->counters.handleCompletedReq(*req); leanstore::SSDCounters::myCounters().polled[req->device]++; }
+            // /*COUNTERS_BLOCK()*/ { ch->counters.handleCompletedReq(*req); leanstore::SSDCounters::myCounters().polled[req->device]++; }
             rr->base.stats.completion_time = readTSC();
 #ifdef IO_TRACE_ON
             this_ptr->trace.emplace_back((int)rr->base.type, rr->base.addr, nanoFromTsc(rr->base.stats.submit_time), tscDifferenceUs(readTSC(), rr->base.stats.submit_time));

@@ -22,7 +22,7 @@
 
 #define USE_JOBS
 #define USE_BATCH_IPI_ENQUEUE
-#define USE_IO_AS_TASKS
+// #define USE_IO_AS_TASKS
 
 #define USE_TIME_MEASURE
 
@@ -172,8 +172,12 @@ void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
          size_t completed = 0;
          bool setup = true; 
 
+         leanstore_osv_debug::set_priority(0.05);
+
          auto start = mean::readTSC();
          IoChannel& io_channel = IoInterface::instance().getIoChannel(0);
+         // IoChannel& io_channel2 = IoInterface::instance().getIoChannel(1);
+
          while (setup_mem.load()) {
             auto now = mean::readTSC();
 
@@ -207,9 +211,23 @@ void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
                buffer_manager->pageProviderCycle(t_i);
             }
 
-            io_channel.submit();
-            completed += io_channel.poll();
 
+            // if (counter % 2 == 0) {
+             unsigned submitted = io_channel.submit();
+               // std::cout << "submitted " << submitted << std::endl; 
+
+
+               unsigned polled = io_channel.poll();
+
+            leanstore::WorkerCounters::myCounters().time_counter_0 += polled;
+            // std::cout << "polled " << polled<< std::endl; 
+
+            // leanstore::WorkerCounters::myCounters().time_counter_0++;
+            // io_channel2.submit();
+            // leanstore::WorkerCounters::myCounters().time_counter_1 += io_channel2.poll();
+            // leanstore::WorkerCounters::myCounters().time_counter_1++;
+            // } 
+            
 #ifdef USE_TIME_MEASURE
             auto timeDiff = mean::tscDifferenceUs(now, start);
             // leanstore::WorkerCounters::myCounters().total_time_sum_1 += timeDiff;
@@ -237,7 +255,7 @@ static void job_fn(void* args)
 
    (*(job->fun))(job->args.key, job->args.cancelable);
 
-   // raspberryjumpmu::thread_local_jumpmu_ctx->~JumpMUContext();
+   // jumpmu::thread_local_jumpmu_ctx->~JumpMUContext();
 
    job->args.pool->release(job);
 };
@@ -250,12 +268,15 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
 #ifdef USE_IO_AS_TASKS
    setup_mem = false; 
    std::this_thread::sleep_for(std::chrono::seconds(2));
-   IoChannel& io_channel = IoInterface::instance().getIoChannel(0);
-   mean::mutex io_mtx2; 
+   std::array<mean::mutex, 2> io_mtx2 = {}; 
    std::function<void(u64, std::atomic<bool>& cancelable)> pageprovider_ptr =
-      [this, &io_mtx2, &io_channel](u64 arg, std::atomic<bool>& cancelable) {
-          std::unique_lock<mean::mutex> lock(io_mtx2);
-          assert(buffer_manager != nullptr);
+      [this, &io_mtx2](u64 arg, std::atomic<bool>& cancelable) {
+          assert(jumpmu::thread_local_jumpmu_ctx->task_cpu_id == 0); 
+          std::unique_lock<mean::mutex> lock(io_mtx2[jumpmu::thread_local_jumpmu_ctx->task_cpu_id]); 
+
+
+            
+                     assert(buffer_manager != nullptr);
           /*
           * THIS IS JUST A TEMPORARY FIX FOR A SITUATION IN WHICH THE PAGEPROVIDER
           * CANNOT ACCESS THE LOCKS DUE TO HOW LOCKS ARE IMPLEMENTED IN OSV
@@ -268,7 +289,7 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
           * THIS SOLUTION IS CURRENTLY ONLY POSSIBLE IF WE HAVE ONE COOLING PARTITION
           * FIXME: ADD SUPPORT FOR MULTIPLE COOLING PARTITIONS
           */
-         if (buffer_manager->cooling_partitions[0].dram_free_list.counter == 0) {
+          if (buffer_manager->cooling_partitions[0].dram_free_list.counter == 0) {
             std::vector<std::unique_ptr<std::unique_lock<mean::mutex>>> locks;
 
             for (size_t io_partition_idx = 0; io_partition_idx < buffer_manager->io_partitions_count; io_partition_idx++) {
@@ -280,8 +301,23 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
             buffer_manager->pageProviderCycle(0);
          }
 
-         io_channel.submit();
-         io_channel.poll();
+         IoInterface::instance().getIoChannel(jumpmu::thread_local_jumpmu_ctx->task_cpu_id).submit();
+         unsigned polled = IoInterface::instance().getIoChannel(jumpmu::thread_local_jumpmu_ctx->task_cpu_id).poll();
+         assert(polled < 256); 
+         leanstore::WorkerCounters::myCounters().total_time_sum_1 += polled;
+         leanstore::WorkerCounters::myCounters().time_counter_1++;
+      };
+
+      std::function<void(u64, std::atomic<bool>& cancelable)> iofn_ptr =
+      [this, &io_mtx2](u64 arg, std::atomic<bool>& cancelable) {
+         std::unique_lock<mean::mutex> lock(io_mtx2[jumpmu::thread_local_jumpmu_ctx->task_cpu_id]); 
+
+         assert(jumpmu::thread_local_jumpmu_ctx->task_cpu_id == 1); 
+            IoInterface::instance().getIoChannel(jumpmu::thread_local_jumpmu_ctx->task_cpu_id).submit();
+            leanstore::WorkerCounters::myCounters().total_time_sum_0 += IoInterface::instance().getIoChannel(jumpmu::thread_local_jumpmu_ctx->task_cpu_id).poll();
+            leanstore::WorkerCounters::myCounters().time_counter_0++;
+
+         
       };
 #endif
 
@@ -306,32 +342,22 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
    u64 start = bb.begin;
 
    for (u64 id = bb.begin; id < bb.end; id++) {
-      // we just need to send one job after the other i guess
-
-      // TODO: HERE WE JUST NEED TO CALL THE FUNCTION WITH THE CORRECT PARAMETERS
-
-      // we need a osv job enqueue wrapper obj
-      // 1. with jumpmu ctx
-      // 2. with function to execute
-      // 3. with some kind of state that we know it is executed
-
-      // auto* job = new Job; // pool->acquire();
-
       size_t it = 0;
       auto* job = pool->acquire();
       while (job == nullptr) {
          leanstore_osv_debug::rcu_flush();
          leanstore_osv_debug::wait_until_zombies_reaped();
          pool->waitUntilAvailable();
-         // std::cout << " waiting threads: " << waiting_threads << " pool size: " << pool->getSize() << " open tasks: " << open_tasks << " done
-         // tasks: " << done_tasks << "diff: " << open_tasks - done_tasks<< "diff started: " << started_tasks - done_tasks << std::endl;
          job = pool->acquire();
       }
+
+      leanstore::WorkerCounters::myCounters().total_time_sum_2 += pool->getAvailable();
+      leanstore::WorkerCounters::myCounters().time_counter_2++;
 
       auto start = mean::readTSC();
 
 #ifdef USE_IO_AS_TASKS
-      job->fun = id % 32 == 0 ? &pageprovider_ptr : &fun; 
+      job->fun = (id % 32 == 0) or (pool->getAvailable() < 128) ? (leanstore_osv_debug::current_worker == 0 ? &pageprovider_ptr : &iofn_ptr) : &fun; 
 #else 
 job->fun =  &fun; 
 #endif
@@ -344,6 +370,7 @@ job->fun =  &fun;
       job->args.key = id;
       job->args.done = &done_tasks;
       job->args.started = &started_tasks;
+      // job->jumpctx.task_cpu_id = leanstore_osv_debug::current_worker; 
 
 #ifdef USE_JOBS
 #ifdef USE_BATCH_IPI_ENQUEUE
@@ -358,23 +385,13 @@ job->fun =  &fun;
       fun(id, job->args.cancelable);
       pool->release(node);
 #endif
-
-      // printf("started %lu\n", id);
-
-      // auto now = mean::readTSC();
-      // auto timeDiff = mean::tscDifferenceNs(now, start);
-      // printf("%lu\n", timeDiff);
-      // leanstore::WorkerCounters::myCounters().total_setup_tx_time += timeDiff;
-      // leanstore::WorkerCounters::myCounters().setup_tx++;
 #ifdef USE_TIME_MEASURE
       auto now = mean::readTSC();
       auto timeDiff = mean::tscDifferenceNs(now, start);
-      // leanstore::WorkerCounters::myCounters().total_time_sum_0 += timeDiff;
-      // leanstore::WorkerCounters::myCounters().time_counter_0++;
 #endif
 
 #ifdef USE_BATCH_IPI_ENQUEUE
-      if (id % 256 == 0) {
+      if (id % 16 == 0) {
          leanstore_osv_debug::flush_to_runqueue(); 
       }
 #endif 
@@ -396,56 +413,9 @@ std::string OsvJobManager::printCounters(int te_id)
 // -------------------------------------------------------------------------------------
 void OsvJobManager::scheduleTaskSync(TaskFunction fun)
 {
-   // schedule task sync has to be like a normal job but we wait for the it to return
-   // exclusiveThreadList.front()->sendTaskBlocking(fun);
-   // std::atomic<bool> cancelable = {false};
-
-   /* u64 id = 0;
-   struct SyncJob {
-      std::mutex mutex;
-      std::condition_variable cv;
-      jumpmu::JumpMUContext jumpmu_ctx;
-      TaskFunction fun;
-      bool job_done = false;
-   };
-
-   std::cout << "pre pre setup sync" << std::endl;
-
-
-   SyncJob* job_args = new SyncJob{{}, {}, {}, fun, false};
-   std::cout << "jobargs" << std::endl;
-
-
-   if (!osv_task_enqueue(
-           [](void* args) {
-            std::cout << "pre setup sync" << std::endl;
-
-              auto* job = (SyncJob*)args;
-              std::unique_lock guard(job->mutex);
-
-              jumpmu::thread_local_jumpmu_ctx = new (&(job->jumpmu_ctx)) jumpmu::JumpMUContext;
-              std::cout << "setup sync" << std::endl;
-
-              job->fun();
-
-              job->job_done = true;
-              guard.unlock();
-              job->cv.notify_one();
-           },
-           job_args)) {
-      std::cerr << "osv_task_enqueue failed" << std::endl;
-   }
-
-   std::cout << "sync task finished" << std::endl;
-
-   std::unique_lock guard(job_args->mutex);
-   job_args->cv.wait(guard, [&]() { return job_args->job_done; });
-   delete job_args; */
    jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext{};
    fun();
    delete jumpmu::thread_local_jumpmu_ctx;
-
-   // wait here for the job to finish
 }
 // -------------------------------------------------------------------------------------
 void OsvJobManager::yield([[maybe_unused]] TaskState ts)
@@ -477,16 +447,8 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
          waitDone->ready.store(true);
       }
       waitDone->cv.notify_one();
-
-#ifdef USE_TIME_MEASURE
-      auto now = mean::readTSC();
-      auto timeDiff = mean::tscDifferenceUs(now, waitDone->magic);
-      // printf("%lu\n", timeDiff);
-      leanstore::WorkerCounters::myCounters().total_time_sum_2 += timeDiff;
-      leanstore::WorkerCounters::myCounters().time_counter_2++;
-#endif
       // -------------------------------------------------------------------------------------
-   };
+   }; 
    cb.user_data.val.ptr = waitargs;
 
    assert(type == IoRequestType::Read);
@@ -498,8 +460,8 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
 #endif
    // std::cout << "waiting threads " << waiting_threads << " overall free " << pool->getSize() << std::endl;
    {
+      // IoInterface::instance().getIoChannel(jumpmu::thread_local_jumpmu_ctx->task_cpu_id).push(type, data, addr, len, cb);
       IoInterface::instance().getIoChannel(0).push(type, data, addr, len, cb);
-
       // std::unique_lock l(cb_mtx);
    }
 

@@ -479,7 +479,7 @@ void BufferManager::readPageSync(u64 pid, u8* destination)
    mean::task::read(reinterpret_cast<char*>(destination), pid * PAGE_SIZE, bytes_left);
    auto now = mean::readTSC();
 #else
-   assert("false"); 
+   ensure(false); 
 #endif
    /* auto timeDiff = mean::tscDifferenceNs(now, start);
    // printf("%lu\n", timeDiff);
