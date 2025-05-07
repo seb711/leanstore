@@ -7,7 +7,7 @@
 #include "Mean.hpp"
 #include "Time.hpp"
 
-#define JOB_QUEUE_SIZE (256)
+#define JOB_QUEUE_SIZE (4096)
 
 constexpr size_t wait_for_count = JOB_QUEUE_SIZE / 4; 
 
@@ -127,7 +127,7 @@ class function_ref<Ret(Args...)>
 
 class Job;
 
-using JobFunction = std::function<void(u64, std::atomic<bool>&)>;  // std::add_pointer_t<void()>;
+using JobFunction = std::function<void(u64)>;  // std::add_pointer_t<void()>;
 using CallbackFunction = std::function<void(Job*)>;                // std::add_pointer_t<void()>;
 
 struct JobArguments {

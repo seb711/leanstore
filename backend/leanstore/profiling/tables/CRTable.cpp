@@ -30,12 +30,15 @@ void CRTable::open()
    columns.emplace("gct_committed_tx", [&](Column& col) { col << sum(CRCounters::cr_counters, &CRCounters::gct_committed_tx); });
    columns.emplace("gct_rounds", [&](Column& col) { col << sum(CRCounters::cr_counters, &CRCounters::gct_rounds); });
    columns.emplace("tx", [&](Column& col) { col << local_tx; });
+   columns.emplace("ltx", [&](Column& col) { col << local_ltx; });
    columns.emplace("setup_tx", [&](Column& col) { col << local_setup_tx; });
    columns.emplace("tx_rate", [&](Column& col) { col << FLAGS_tx_rate; });
    columns.emplace("tx_abort", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::tx_abort); });
    // -------------------------------------------------------------------------------------
    columns.emplace("tx_latency_us",
                    [&](Column& col) { col << (local_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_tx_time) / local_tx : 0); });
+    columns.emplace("ltx_latency_us",
+                    [&](Column& col) { col << (local_ltx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_ltx_time) / local_ltx : 0); });
    
     columns.emplace("tx_setup_latency_us",
                     [&](Column& col) { col << (local_setup_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_setup_tx_time) / local_setup_tx : 0); });
@@ -135,6 +138,7 @@ void CRTable::next()
    total = p1 + p2 + write;
 
    local_tx = sum(WorkerCounters::worker_counters, &WorkerCounters::tx);
+   local_ltx = sum(WorkerCounters::worker_counters, &WorkerCounters::ltx);
    local_setup_tx = sum(WorkerCounters::worker_counters, &WorkerCounters::setup_tx);
    local_thread_tx = sum(WorkerCounters::worker_counters, &WorkerCounters::wait_tx);
    local_time_counter_0 = sum(WorkerCounters::worker_counters, &WorkerCounters::time_counter_0);

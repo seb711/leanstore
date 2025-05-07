@@ -1,3 +1,5 @@
 /tpcc: ${MODULE_DIR}/build/frontend/tpcc
 /ycsb: ${MODULE_DIR}/build/frontend/ycsb
+/mixed: ${MODULE_DIR}/build/frontend/mixed
 /libycsb_shared.so: ${MODULE_DIR}/build/frontend/libycsb_shared.so
+/testfile: ${MODULE_DIR}/testfile

@@ -95,7 +95,7 @@ void run_tpcc()
          //cr::Worker::my().commitTX();
       });
 
-      auto load_fun = [](u64 w_id, std::atomic<bool>&) {
+      auto load_fun = [](u64 w_id) {
          //cr::Worker::my().startTX();
          loadStock(w_id);
          loadDistrinct(w_id);
@@ -126,7 +126,7 @@ void run_tpcc()
    mean::env::adjustWorkerCount(FLAGS_worker_threads);
    //u64 tx_per_thread[FLAGS_worker_threads];
    auto start = mean::getSeconds();
-   auto tpcc_fun = [&running_threads_counter, &keep_running, &start](u64 _, std::atomic<bool>& cancelled) {
+   auto tpcc_fun = [&running_threads_counter, &keep_running, &start](u64 _) {
       int thr = running_threads_counter++;
 
        //u64 rateLimitngEveryNs =  1;///3*1000*1000;

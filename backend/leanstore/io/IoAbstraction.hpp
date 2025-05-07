@@ -10,6 +10,7 @@
 #include "leanstore/utils/Hist.hpp"
 #include "RequestStack.hpp"
 #include "RequestStackLockfree.hpp"
+#include "RequestStackLock.hpp"
 
 #include "Raid.hpp"
 #include "leanstore/profiling/counters/SSDCounters.hpp"
@@ -44,7 +45,7 @@ class Raid0Channel : public IoChannel
    TIoChannel& io_channel;
    IoOptions io_options;
 #ifdef MEAN_USE_JOBBING
-RequestStackLockfree<RaidRequest<TImplRequest>> request_stack;
+RequestStackLock<RaidRequest<TImplRequest>> request_stack;
 #else
 RequestStack<RaidRequest<TImplRequest>> request_stack;
 #endif
@@ -73,7 +74,7 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
    // -------------------------------------------------------------------------------------
   public:
    Raid0Channel(TIoEnvironment& io_env, TIoChannel& io_channel, IoOptions io_options, u64 channelId, u64 totalChannels) // TODO
-      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(io_options.iodepth), raid(io_env.deviceCount(), CHUNK_SIZE)
+      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(2048), raid(io_env.deviceCount(), CHUNK_SIZE)
    {
 #ifdef IO_TRACE_ON
       trace.reserve(100e6);
@@ -125,7 +126,8 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
    void _push(const IoBaseRequest& usr) override { 
       IoBaseRequest* req = getIoRequest();
       if (!req) {
-         throw std::logic_error("Cannot push more: free: " + std::to_string(request_stack.free) + " pushed: " + std::to_string(request_stack.pushed)  + " max: " + std::to_string(request_stack.max_entries));
+         // throw std::logic_error("Cannot push more: free: " + std::to_string(request_stack.free) + " pushed: " + std::to_string(request_stack.pushed)  + " max: " + std::to_string(request_stack.max_entries));
+         abort(); 
       }
       ensure(req);
       req->copyFields(usr);

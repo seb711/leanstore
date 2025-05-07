@@ -8,6 +8,8 @@
 #include "leanstore/concurrency-recovery/Worker.hpp"
 #include "leanstore/io/IoInterface.hpp"
 #include "leanstore/concurrency-recovery/Worker.hpp"
+#include "leanstore/storage/buffer-manager/BufferManager.hpp"
+
 // -------------------------------------------------------------------------------------
 #include <iostream>
 #include <memory>
@@ -53,12 +55,15 @@ class OsvJobManager
    LockFreeObjectPool<WaitContext, JOB_QUEUE_SIZE>* waiter_pool;
 
    std::atomic<u64> waiting_threads{0}; 
-   std::atomic<u64> open_tasks{0}; 
    std::atomic<u64> started_tasks{0}; 
    std::atomic<u64> done_tasks{0}; 
 
    int total_threads_count;
    int max_exclusive_threads;
+   std::atomic<bool> setup_mem = {true};
+   leanstore::storage::BufferManager* buffer_manager; 
+   std::mutex io_mutex;
+
    std::atomic<int> running_threads = {0};
    std::atomic<int> exclusiveThreadCounter = {0};
    std::vector<std::unique_ptr<ThreadWithJump>> exclusiveThreadList;
@@ -67,6 +72,7 @@ class OsvJobManager
    std::mutex mtx;
 public:
    leanstore::cr::Worker* workers[MAX_WORKER_THREADS];   
+
 // -------------------------------------------------------------------------------------
    ~OsvJobManager();
    // -------------------------------------------------------------------------------------
@@ -90,7 +96,7 @@ public:
    // task
    // -------------------------------------------------------------------------------------
    void registerExclusiveThread(std::string name, int t_i, TaskFunction fun);
-   void parallelFor(BlockedRange range, std::function<void(u64, std::atomic<bool>& cancelable)> fun, int tasks, s64 bbgranularity = -1);
+   void parallelFor(BlockedRange range, std::function<void(u64)> fun, int tasks, s64 bbgranularity = -1);
    void registerPoller(int to, TaskFunction poller);
    void scheduleTaskSync(TaskFunction fun);
    void yield(TaskState ts);

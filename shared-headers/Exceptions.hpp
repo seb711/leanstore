@@ -59,6 +59,7 @@ inline void ensure(bool e, std::string msg = "")
 {
    if (__builtin_expect(!(e), 0)) {
       throw leanstore::ex::EnsureFailed(std::string(__func__) + " in " + std::string(__FILE__) + "@" + std::to_string(__LINE__) + ": " +  msg);
+      // abort(); 
    }
 }
 #else
@@ -66,6 +67,7 @@ inline void ensure(bool e, std::string msg = "")
 {
    if (__builtin_expect(!(e), 0)) {
       throw leanstore::ex::EnsureFailed(std::string(__func__) + " in " + std::string(__FILE__) + "@" + std::to_string(__LINE__) + ": " +  msg);
+      // abort(); 
    }
 }
 //#define ensure(e)                                                                                                                               //
