@@ -56,7 +56,6 @@ int getId();
 namespace task
 {
 void registerExclusiveThread(std::string name, int id, TaskFunction fun);
-void registerPoller(int to, TaskFunction poller);
 void parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>&)> fun, int tasks, s64 granularity = -1);
 void scheduleTaskSync(TaskFunction fun);
 // -------------------------------------------------------------------------------------

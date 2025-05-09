@@ -15,7 +15,7 @@ endif ()
 # Library
 # ---------------------------------------------------------------------------
 add_library(leanstore STATIC ${LEANSTORE_CC})
-target_link_libraries(leanstore gflags Threads::Threads aio atomic tabluate nvme fakeosv) #tbb
+target_link_libraries(leanstore gflags Threads::Threads aio atomic tabluate fakeosv) #tbb
 
 
 # ---------------------------------------------------------------------------

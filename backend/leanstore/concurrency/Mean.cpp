@@ -4,7 +4,7 @@
 // -------------------------------------------------------------------------------------
 #include "TaskManager.hpp"
 #include "ThreadingManager.hpp"
-#include "OsvJobManager.hpp"
+#include "osv/OsvJobManager.hpp"
 // -------------------------------------------------------------------------------------
 #include <mutex>
 // -------------------------------------------------------------------------------------
@@ -96,10 +96,6 @@ namespace task
 void registerExclusiveThread(std::string name, int id, TaskFunction fun)
 {
    env::_instance.registerExclusiveThread(name, id, fun);
-}
-void registerPoller(int to, TaskFunction poller)
-{
-   env::_instance.registerPoller(to, poller);
 }
 void parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>&)> fun, int tasks, s64 granularity)
 {

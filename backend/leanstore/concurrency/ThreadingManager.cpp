@@ -159,11 +159,6 @@ void ThreadingManager::registerPageProvider(void* bf_ptr, int partitions_count) 
    }
 }
 // -------------------------------------------------------------------------------------
-void ThreadingManager::registerPoller([[maybe_unused]] int to, TaskFunction poller)
-{
-   registerExclusiveThread("poller", -1, poller);
-}
-// -------------------------------------------------------------------------------------
 void ThreadingManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>& cancelable)> fun, const int tasks, s64 bbgranularity)
 {
    ensure(tasks > 0);

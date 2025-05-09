@@ -14,8 +14,3 @@ target_include_directories(ycsb_shared PRIVATE ${SHARED_INCLUDE_DIRECTORY})
 add_executable(tpcc tpc-c/tpcc.cpp)
 target_link_libraries(tpcc leanstore Threads::Threads )
 target_include_directories(tpcc PRIVATE ${SHARED_INCLUDE_DIRECTORY})
-
-add_executable(iob iob/iob.cpp)
-target_link_libraries(iob leanstore Threads::Threads)
-target_include_directories(iob PRIVATE ${SHARED_INCLUDE_DIRECTORY})
-

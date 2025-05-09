@@ -96,7 +96,6 @@ class ThreadingManager
    // task
    // -------------------------------------------------------------------------------------
    void registerExclusiveThread(std::string name, int t_i, TaskFunction fun);
-   void registerPoller(int to, TaskFunction poller);
    void parallelFor(BlockedRange range, std::function<void(u64, std::atomic<bool>& cancelable)> fun, int tasks, s64 bbgranularity = -1);
    void scheduleTaskSync(TaskFunction fun);
    void yield(TaskState ts);

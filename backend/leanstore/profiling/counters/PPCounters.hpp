@@ -5,6 +5,7 @@
 #include <atomic>
 #include <mutex>
 #include <unordered_map>
+#include <array>
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {

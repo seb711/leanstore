@@ -211,10 +211,6 @@ void TaskManager::registerExclusiveThread(std::string name, int, TaskFunction fu
       fun();
    });
 }
-void TaskManager::registerPoller(int to, TaskFunction poller)
-{
-   sendTask(to, [poller] { TaskExecutor::localExec().pushPoller(poller); });
-}
 void TaskManager::registerPageProvider(void* bf_ptr, int partitions_count) {
    this->buffer_manager = static_cast<BufferManager*>(bf_ptr);
    this->partitions_count = partitions_count;
