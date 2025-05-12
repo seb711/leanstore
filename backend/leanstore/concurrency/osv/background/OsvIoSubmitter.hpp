@@ -16,10 +16,10 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
 
     // will poll and submit
    unsigned getPriority() override {
-    // request_stack.outstanding stores the io_requests that could be pushed but are not pushed yet
+    // request_stack.pushed stores the io_requests that could be submitted but are not submitted yet
     // policy: run it if more than 1/4 of the queue size is used
     // attention: could starve if at some point no more items are pushed (should not happen in leanstore)
-    return request_stack.outstanding() > (request_stack.max_entries / 4) ? 5 : 0; 
+    return request_stack.submitStackSize() > (request_stack.max_entries / 4) ? 5 : 0; 
  }; 
    // will poll and submit
    int process() override {
