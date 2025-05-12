@@ -16,11 +16,11 @@ class OsvIoPoller : public OsvBackgroundThreadBase
 
    // will poll and submit
    unsigned getPriority() override {
-    // request_stack.pushed stores the io_requests that were already handed to the nvme drive but 
+    // request_stack.outstanding stores the io_requests that were already handed to the nvme drive but 
     // not yet processed/completed
     // policy: run it if more than 1/4 of the queue size is used
     // attention: could starve if at some point no more items are submitted (should not happen in leanstore)
-    return request_stack.submitStackSize() > (request_stack.max_entries / 4) ? 5 : 0; 
+    return request_stack.outstanding() > (request_stack.max_entries / 4) ? 5 : 0; 
  };
    // will poll and submit
    int process() override {
