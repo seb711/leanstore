@@ -35,7 +35,7 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
 
    public: 
    // -------------------------------------------------------------------------------------
-   OsvIoSubmitter(IoChannel& io_channel, RequestStackLock<RaidRequest<TImplRequest>>& request_stack, int id) : OsvBackgroundThreadBase("io_submitter", id), io_channel(io_channel), request_stack(request_stack) {
+   OsvIoSubmitter(IoChannel& io_channel, RequestStackLock<RaidRequest<TImplRequest>>& request_stack, int id) : OsvBackgroundThreadBase("io_submitter", sched::thread_background::io_submitter, id), io_channel(io_channel), request_stack(request_stack) {
     start(); 
    };
    ~OsvIoSubmitter() = default;

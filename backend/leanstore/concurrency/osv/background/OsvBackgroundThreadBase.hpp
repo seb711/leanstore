@@ -12,7 +12,9 @@
 #include <iostream>
 #include <memory>
 #include <thread>
+#include <osv/sched-bg.hh>
 #include <osv/jumpmu.hh>
+#include <osv/leanstore_debug.hh>
 // -------------------------------------------------------------------------------------
 namespace mean
 {
@@ -20,6 +22,7 @@ class OsvBackgroundThreadBase
 {
   protected:
    std::string name;
+   sched::thread_background _bt;
    const int _id = -2;
    std::thread tWorker;
 
@@ -27,16 +30,22 @@ class OsvBackgroundThreadBase
    {
       jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext{};
       setNameThisThread(name);
-      int pid = getpid();
-      int which = PRIO_PROCESS;
+
+      leanstore_osv_debug::register_policy(_bt, [this]() {
+         unsigned prio = this->getPriority();
+         std::cout << "[policy bt " << background_thread_name(this->_bt) << "] priority = " << prio << std::endl;
+         return prio;
+      });
+
       int ret = process();
       delete jumpmu::thread_local_jumpmu_ctx; 
       return ret;
    }
 
   public:
-  OsvBackgroundThreadBase(std::string name, int id) : name(name), _id(id) {}
-  
+  OsvBackgroundThreadBase(std::string name, sched::thread_background bt, int id)
+    : name(name), _bt(bt), _id(id) {}
+
    virtual ~OsvBackgroundThreadBase(){};
 
    OsvBackgroundThreadBase(const OsvBackgroundThreadBase& other) = delete;

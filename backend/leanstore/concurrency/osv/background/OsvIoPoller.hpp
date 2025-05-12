@@ -37,7 +37,7 @@ class OsvIoPoller : public OsvBackgroundThreadBase
   public:
    // -------------------------------------------------------------------------------------
    OsvIoPoller(IoChannel& io_channel, RequestStackLock<RaidRequest<TImplRequest>>& request_stack, int id)
-       : OsvBackgroundThreadBase("io_poller", id), io_channel(io_channel), request_stack(request_stack) {
+       : OsvBackgroundThreadBase("io_poller", sched::thread_background::io_poller, id), io_channel(io_channel), request_stack(request_stack) {
         start(); 
        };
    ~OsvIoPoller() = default;
