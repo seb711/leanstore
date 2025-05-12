@@ -26,8 +26,8 @@ public:
     std::unordered_set<R*> outstanding_set;
 #endif
     const int max_entries;
-    int free;
-    int pushed = 0;
+    std::atomic<int> free;
+    std::atomic<int> pushed = {0};
     
     // Mutexes for thread-safety
     std::mutex free_stack_mutex;
@@ -48,23 +48,16 @@ public:
     
     int outstanding()
     {
-        std::lock_guard<std::mutex> outstanding_lock(outstanding_mutex);
-        std::lock_guard<std::mutex> free_lock(free_stack_mutex);
-        std::lock_guard<std::mutex> submit_lock(submit_stack_mutex);
-        #if false
         assert(max_entries - free - pushed == outstanding_set.size());
-        #endif
-        return max_entries - free - pushed;
+        return max_entries - free.load() - pushed.load();
     }
     
     int submitStackSize() {
-        std::lock_guard<std::mutex> lock(submit_stack_mutex);
-        return pushed;
+        return pushed.load();
     }
     
     bool full() {
-        std::lock_guard<std::mutex> lock(free_stack_mutex);
-        return free == 0;
+        return free.load() == 0;
     }
     
     /* free -> to user (untracked)*/
