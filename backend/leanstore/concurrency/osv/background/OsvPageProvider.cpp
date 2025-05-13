@@ -12,7 +12,9 @@ OsvPageProvider::~OsvPageProvider() {};
 unsigned OsvPageProvider::getPriority() {
    // bf_ptr->cooling_partitions[partition_id].dram_free_list.counter counts the currently free lists
    // policy: run it if <10% are free
-   return bf_ptr->cooling_partitions[partition_id].dram_free_list.counter < 100 ? 5 : 0; 
+   auto counter = bf_ptr->cooling_partitions[partition_id].dram_free_list.counter.load();
+   std::cout << "[page provider] counter = " << counter << std::endl;
+   return bf_ptr->cooling_partitions[partition_id].dram_free_list.counter < 100 ? 1 : 0; 
 }
 
 int OsvPageProvider::process()

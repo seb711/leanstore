@@ -20,7 +20,11 @@ class OsvIoPoller : public OsvBackgroundThreadBase
     // not yet processed/completed
     // policy: run it if more than 1/4 of the queue size is used
     // attention: could starve if at some point no more items are submitted (should not happen in leanstore)
-    return request_stack.outstanding() > (request_stack.max_entries / 4) ? 5 : 0; 
+    auto outstanding = request_stack.outstanding();
+    auto desired = request_stack.max_entries / 8;
+    std::cout << "[io poller] outstanding: " << outstanding
+	<< ", desired: " << desired << std::endl;
+    return outstanding > desired ? 5 : 0; 
  };
    // will poll and submit
    int process() override {

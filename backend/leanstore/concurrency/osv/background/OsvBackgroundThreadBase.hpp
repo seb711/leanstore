@@ -33,7 +33,7 @@ class OsvBackgroundThreadBase
 
       leanstore_osv_debug::register_policy(_bt, [this]() {
          unsigned prio = this->getPriority();
-         std::cout << "[policy bt " << background_thread_name(this->_bt) << "] priority = " << prio << std::endl;
+         if (prio > 0) std::cout << "[policy bt " << background_thread_name(this->_bt) << "] priority = " << prio << std::endl;
          return prio;
       });
 
