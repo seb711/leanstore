@@ -47,8 +47,8 @@ class Raid0Channel : public IoChannel
    TIoChannel& io_channel;
    IoOptions io_options;
 
-   std::unique_ptr<OsvIoSubmitter<TImplRequest>> io_submitter_thread; 
-   std::unique_ptr<OsvIoPoller<TImplRequest>> io_poller_thread; 
+   std::unique_ptr<OsvIoSubmitter<TImplRequest, TIoChannel>> io_submitter_thread; 
+   std::unique_ptr<OsvIoPoller<TImplRequest, TIoChannel>> io_poller_thread; 
 
 #ifdef MEAN_USE_JOBBING
 RequestStackLockfree<RaidRequest<TImplRequest>> request_stack;
@@ -83,8 +83,8 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
       : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(2048), raid(io_env.deviceCount(), CHUNK_SIZE)
    {
       // ATTENTION: HERE WE NOW INIT THE BACKGROUND THREADS
-      io_submitter_thread = std::make_unique<OsvIoSubmitter<TImplRequest>>(*this, request_stack, 0); 
-      io_poller_thread = std::make_unique<OsvIoPoller<TImplRequest>>(*this, request_stack, 0); 
+      io_submitter_thread = std::make_unique<OsvIoSubmitter<TImplRequest, TIoChannel>>(*this, io_channel, request_stack, 0); 
+      io_poller_thread = std::make_unique<OsvIoPoller<TImplRequest, TIoChannel>>(io_channel, request_stack, 0); 
       // END ATTENTION
 #ifdef IO_TRACE_ON
       trace.reserve(100e6);

@@ -36,14 +36,12 @@ class OsvEnv
 // -------------------------------------------------------------------------------------
 class OsvChannel
 {
-   std::vector<RaidRequest<OsvIoReq>*> write_request_stack;
 
    IoOptions options;
    NVMeMultiController& controller;
    int queue;
    const int lbaSize;
    std::vector<void*> qpairs;
-   std::vector<int> outstanding;
    // -------------------------------------------------------------------------------------
    void prepare_request(RaidRequest<OsvIoReq>* req, OsvIoReqCallback spdkCb);
    // -------------------------------------------------------------------------------------
@@ -51,6 +49,10 @@ class OsvChannel
    OsvChannel(IoOptions options, NVMeMultiController& controller, int queue);
    ~OsvChannel();
    // -------------------------------------------------------------------------------------
+      std::vector<RaidRequest<OsvIoReq>*> write_request_stack;
+         std::vector<int> outstanding;
+
+
    void _push(RaidRequest<OsvIoReq>* req);
    void pushBlocking(IoRequestType type, char* data, s64 addr, u64 len, bool write_back) { throw std::logic_error("not implemented"); }
    int _submit()

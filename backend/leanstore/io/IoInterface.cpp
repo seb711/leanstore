@@ -14,20 +14,8 @@ std::unique_ptr<RaidEnvironment> IoInterface::_instance = nullptr;
 // -------------------------------------------------------------------------------------
 RaidEnvironment& IoInterface::initInstance(IoOptions ioOptions)
 {
-   if (ioOptions.engine == "libaio") {
-      _instance = std::unique_ptr<RaidEnvironment>(new RaidEnv<LibaioEnv, LibaioChannel, LibaioIoRequest>(ioOptions));
-#ifdef LEANSTORE_INCLUDE_SPDK
-   } else if (ioOptions.engine == "spdk") {
-      _instance = std::unique_ptr<RaidEnvironment>(new RaidEnv<SpdkEnv, SpdkChannel, SpdkIoReq>(ioOptions));
-#endif
-#ifdef LEANSTORE_INCLUDE_OSV
-   } else if (ioOptions.engine == "osv") {
-      _instance = std::unique_ptr<RaidEnvironment>(new RaidEnv<OsvEnv, OsvChannel, OsvIoReq>(ioOptions));
-#endif
- #ifdef LEANSTORE_INCLUDE_XNVME
-   } else if (ioOptions.engine.find("xnvme") != string::npos) {
-      _instance = std::unique_ptr<RaidEnvironment>(new RaidEnv<XnvmeEnv, XnvmeChannel, XnvmeRequest>(ioOptions));
-#endif
+   if (ioOptions.engine == "osv") {
+       _instance = std::unique_ptr<RaidEnvironment>(new RaidEnv<OsvEnv, OsvChannel, OsvIoReq>(ioOptions));
    } else {
       throw std::logic_error("not implemented");
    }

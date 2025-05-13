@@ -7,11 +7,12 @@
 namespace mean
 {
 
-template <typename TImplRequest>
+template <typename TImplRequest, typename TIoChannel>
 class OsvIoSubmitter : public OsvBackgroundThreadBase
 {
   private:
-  IoChannel& io_channel; 
+   IoChannel& abstraction_io_channel; 
+  TIoChannel& io_channel; 
   RequestStackLockfree<RaidRequest<TImplRequest>>& request_stack;
 
     // will poll and submit
@@ -20,8 +21,10 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
     // policy: run it if more than 1/4 of the queue size is used
     // attention: could starve if at some point no more items are pushed (should not happen in leanstore)
     auto submitStackSize = request_stack.submitStackSize();
+    auto writeRequestStackSize = io_channel.write_request_stack.submitStackSize();
+    auto ioOutstanding =  io_channel.outstanding[0]; 
     auto desired = request_stack.max_entries / 8;
-    std::cout << "[io submit] submitStackSize: " << submitStackSize
+    std::cout << "[io submit] submitStackSize: " << submitStackSize << " writeRequestStackSize: " << writeRequestStackSize << " ioOutstanding " << ioOutstanding
 	    	<< ", desired: " << desired << std::endl;
     return submitStackSize > desired ? 5 : 0; 
  }; 
@@ -32,14 +35,14 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
        // maybe we also need two threads for submit and for polling
        // submit depends on the request_stack
        // poll depends on the io_channel
-       io_channel.submit();
+       abstraction_io_channel.submit();
     }
     return 0;
  };
 
    public: 
    // -------------------------------------------------------------------------------------
-   OsvIoSubmitter(IoChannel& io_channel, RequestStackLockfree<RaidRequest<TImplRequest>>& request_stack, int id) : OsvBackgroundThreadBase("io_submitter", sched::thread_background::io_submitter, id), io_channel(io_channel), request_stack(request_stack) {
+   OsvIoSubmitter(IoChannel& abstraction_io_channel, TIoChannel& io_channel, RequestStackLockfree<RaidRequest<TImplRequest>>& request_stack, int id) : OsvBackgroundThreadBase("io_submitter", sched::thread_background::io_submitter, id), abstraction_io_channel(abstraction_io_channel), io_channel(io_channel), request_stack(request_stack) {
     start(); 
    };
    ~OsvIoSubmitter() = default;

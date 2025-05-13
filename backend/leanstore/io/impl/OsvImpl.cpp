@@ -95,7 +95,7 @@ DeviceInformation OsvEnv::getDeviceInfo()
 // Channel
 // -------------------------------------------------------------------------------------
 OsvChannel::OsvChannel(IoOptions ioOptions, NVMeMultiController& controller, int queue)
-    : options(ioOptions), controller(controller), queue(queue), lbaSize(controller.nsLbaDataSize()), outstanding(controller.deviceCount())
+    : options(ioOptions), controller(controller), queue(queue), lbaSize(controller.nsLbaDataSize()), outstanding(controller.deviceCount(), 0)
 {
    write_request_stack.reserve(ioOptions.iodepth);
    int c = controller.deviceCount();

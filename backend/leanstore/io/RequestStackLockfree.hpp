@@ -32,8 +32,8 @@ public:
     #endif
     
     const int max_entries;
-    boost::atomic<int> free;
-    boost::atomic<int> pushed{0};
+    std::atomic<int> free;
+    std::atomic<int> pushed{0};
     
     RequestStackLockfree(int max_entries) : 
         free_stack(max_entries),

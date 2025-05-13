@@ -7,11 +7,11 @@
 namespace mean
 {
 
-template <typename TImplRequest>
+template <typename TImplRequest, typename TIoChannel>
 class OsvIoPoller : public OsvBackgroundThreadBase
 {
   private:
-    IoChannel& io_channel;
+  TIoChannel& io_channel; 
    RequestStackLockfree<RaidRequest<TImplRequest>>& request_stack;
 
    // will poll and submit
@@ -20,7 +20,7 @@ class OsvIoPoller : public OsvBackgroundThreadBase
     // not yet processed/completed
     // policy: run it if more than 1/4 of the queue size is used
     // attention: could starve if at some point no more items are submitted (should not happen in leanstore)
-    auto outstanding = request_stack.outstanding();
+    auto outstanding = io_channel.outstanding[0];
     auto desired = request_stack.max_entries / 8;
     std::cout << "[io poller] outstanding: " << outstanding
 	<< ", desired: " << desired << std::endl;
@@ -33,14 +33,14 @@ class OsvIoPoller : public OsvBackgroundThreadBase
        // maybe we also need two threads for submit and for polling
        // submit depends on the request_stack
        // poll depends on the io_channel
-       io_channel.poll();
+       io_channel._poll(32);
     }
     return 0;
  };
 
   public:
    // -------------------------------------------------------------------------------------
-   OsvIoPoller(IoChannel& io_channel, RequestStackLockfree<RaidRequest<TImplRequest>>& request_stack, int id)
+   OsvIoPoller(TIoChannel& io_channel, RequestStackLockfree<RaidRequest<TImplRequest>>& request_stack, int id)
        : OsvBackgroundThreadBase("io_poller", sched::thread_background::io_poller, id), io_channel(io_channel), request_stack(request_stack) {
         start(); 
        };
