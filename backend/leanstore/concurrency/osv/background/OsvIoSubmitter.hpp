@@ -28,7 +28,7 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
        // maybe we also need two threads for submit and for polling
        // submit depends on the request_stack
        // poll depends on the io_channel
-       io_channel.poll();
+       io_channel.submit();
     }
     return 0;
  };
