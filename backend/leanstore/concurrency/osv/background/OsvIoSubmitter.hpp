@@ -1,7 +1,7 @@
 #pragma once
 
 #include "OsvBackgroundThreadBase.hpp"
-#include "leanstore/io/RequestStackLock.hpp"
+#include "leanstore/io/RequestStackLockfree.hpp"
 #include "leanstore/io/IoChannel.hpp"
 
 namespace mean
@@ -12,7 +12,7 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
 {
   private:
   IoChannel& io_channel; 
-  RequestStackLock<RaidRequest<TImplRequest>>& request_stack;
+  RequestStackLockfree<RaidRequest<TImplRequest>>& request_stack;
 
     // will poll and submit
    unsigned getPriority() override {
@@ -35,7 +35,7 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
 
    public: 
    // -------------------------------------------------------------------------------------
-   OsvIoSubmitter(IoChannel& io_channel, RequestStackLock<RaidRequest<TImplRequest>>& request_stack, int id) : OsvBackgroundThreadBase("io_submitter", sched::thread_background::io_submitter, id), io_channel(io_channel), request_stack(request_stack) {
+   OsvIoSubmitter(IoChannel& io_channel, RequestStackLockfree<RaidRequest<TImplRequest>>& request_stack, int id) : OsvBackgroundThreadBase("io_submitter", sched::thread_background::io_submitter, id), io_channel(io_channel), request_stack(request_stack) {
     start(); 
    };
    ~OsvIoSubmitter() = default;

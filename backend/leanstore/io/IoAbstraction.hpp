@@ -51,7 +51,7 @@ class Raid0Channel : public IoChannel
    std::unique_ptr<OsvIoPoller<TImplRequest>> io_poller_thread; 
 
 #ifdef MEAN_USE_JOBBING
-RequestStackLock<RaidRequest<TImplRequest>> request_stack;
+RequestStackLockfree<RaidRequest<TImplRequest>> request_stack;
 #else
 RequestStack<RaidRequest<TImplRequest>> request_stack;
 #endif
