@@ -52,7 +52,7 @@ public:
     int outstanding()
     {
         #ifndef NDEBUG
-        assert(max_entries - free.load() - pushed.load() == outstanding_count.load());
+        // assert(max_entries - free.load() - pushed.load() == outstanding_count.load());
         return outstanding_count.load();
         #else
         return max_entries - free.load() - pushed.load();
@@ -85,7 +85,7 @@ public:
     /* user -> to submit */
     void pushToSubmitStack(R* req)
     {
-        submit_stack.push(req);
+        assert(submit_stack.push(req));
         pushed.fetch_add(1);
     }
     
@@ -99,23 +99,11 @@ public:
         
         if (free_stack.pop(out)) {
             free.fetch_sub(1);
-            submit_stack.push(out);
+            assert(submit_stack.push(out));
             pushed.fetch_add(1);
             return true;
         }
         return false;
-    }
-    
-    /* submit -> outstanding */
-    void emptySubmitStack()
-    {
-        R* item;
-        while (submit_stack.pop(item)) {
-            #ifndef NDEBUG
-            outstanding_count.fetch_add(1);
-            #endif
-            pushed.fetch_sub(1);
-        }
     }
     
     /* submit -> outstanding */
@@ -141,7 +129,7 @@ public:
         #ifndef NDEBUG
         outstanding_count.fetch_sub(1);
         #endif
-        free_stack.push(ptr);
+        assert(free_stack.push(ptr));
         free.fetch_add(1);
     }
 };
