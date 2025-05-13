@@ -26,7 +26,7 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
     auto desired = request_stack.max_entries / 8;
     std::cout << "[io submit] submitStackSize: " << submitStackSize << " writeRequestStackSize: " << writeRequestStackSize << " ioOutstanding " << ioOutstanding
 	    	<< ", desired: " << desired << std::endl;
-    return (submitStackSize > desired) || (writeRequestStackSize > desired && ioOutstanding < 63) ? 5 : 0; 
+    return (submitStackSize > desired) || (writeRequestStackSize > 0 && ioOutstanding < 63) ? 5 : 0; 
  }; 
    // will poll and submit
    int process() override {

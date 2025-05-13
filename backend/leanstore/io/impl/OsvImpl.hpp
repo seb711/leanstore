@@ -36,7 +36,6 @@ class OsvEnv
 // -------------------------------------------------------------------------------------
 class OsvChannel
 {
-
    IoOptions options;
    NVMeMultiController& controller;
    int queue;
@@ -49,42 +48,35 @@ class OsvChannel
    OsvChannel(IoOptions options, NVMeMultiController& controller, int queue);
    ~OsvChannel();
    // -------------------------------------------------------------------------------------
-      std::vector<RaidRequest<OsvIoReq>*> write_request_stack;
-         std::vector<int> outstanding;
-
+   std::vector<RaidRequest<OsvIoReq>*> write_request_stack;
+   std::vector<int> outstanding;
 
    void _push(RaidRequest<OsvIoReq>* req);
    void pushBlocking(IoRequestType type, char* data, s64 addr, u64 len, bool write_back) { throw std::logic_error("not implemented"); }
    int _submit()
    {
-      for (auto& req : write_request_stack) {  // ok but this is done until stack empty
-         int ret;
-         if (true || outstanding[req->base.device] < 16) {
-            // TODO: here we need to insert the correct functions
-            // but i think we do it the same as spdk (-> put the stuff in the correct functions)
-            ret = OsvEnvironment::osv_req_type_fun_lookup[(int)req->impl.type](1, qpairs[req->base.device], req->impl.buf, req->impl.lba,
-                                                                               req->impl.lba_count, NVMeController::completion, req, 0);
+      int submitted = 0;
+
+      while (!write_request_stack.empty()) {
+         auto req = write_request_stack.back();
+
+         if (req) {
+            int ret = OsvEnvironment::osv_req_type_fun_lookup[(int)req->impl.type](1, qpairs[req->base.device], req->impl.buf, req->impl.lba,
+                                                                                   req->impl.lba_count, NVMeController::completion, req, 0);
 
             if (ret == 0) {
                outstanding[req->base.device]++;
-               ensure(ret == 0, "ret == 0");
-               req = nullptr;
+               submitted++;
+               write_request_stack.pop_back();  // Only pop if success
+               continue;
             } else {
-               break;
+               break; 
             }
          }
-         // controller.submit(req->base.device, queue, reinterpret_cast<SpdkIoReq*>(&req->impl));
+
+         break;
       }
 
-      int left = 0;
-      for (u64 i = 0; i < write_request_stack.size(); i++) {
-         if (write_request_stack[i] != nullptr) {
-            write_request_stack[left++] = write_request_stack[i];
-         }
-      }
-      int submitted = write_request_stack.size() - left;
-      write_request_stack.resize(left);
-      // write_request_stack.clear();
       return submitted;
    }
 
@@ -98,7 +90,7 @@ class OsvChannel
          ensure(ok >= 0, "ok >= 0");
          done += ok;
       }
-      // printf("completed %i ios\n", done); 
+      // printf("completed %i ios\n", done);
       // }
       assert(done >= 0);
       return done;

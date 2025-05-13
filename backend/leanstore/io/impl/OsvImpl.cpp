@@ -97,7 +97,6 @@ DeviceInformation OsvEnv::getDeviceInfo()
 OsvChannel::OsvChannel(IoOptions ioOptions, NVMeMultiController& controller, int queue)
     : options(ioOptions), controller(controller), queue(queue), lbaSize(controller.nsLbaDataSize()), outstanding(controller.deviceCount(), 0)
 {
-   write_request_stack.reserve(ioOptions.iodepth);
    int c = controller.deviceCount();
    for (int i = 0; i < c; i++) {
       qpairs.emplace_back(controller.controller[i].qpairs[queue]);
