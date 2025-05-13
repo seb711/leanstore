@@ -3,7 +3,7 @@
 #include "OsvBackgroundThreadBase.hpp"
 #include "leanstore/io/RequestStackLockfree.hpp"
 #include "leanstore/io/IoChannel.hpp"
-
+#include <osv/leanstore_debug.hh>
 namespace mean
 {
 
@@ -36,6 +36,7 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
        // submit depends on the request_stack
        // poll depends on the io_channel
        abstraction_io_channel.submit();
+       leanstore_osv_debug::yield(); 
     }
     return 0;
  };

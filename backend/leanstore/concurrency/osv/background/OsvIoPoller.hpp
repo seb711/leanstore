@@ -3,6 +3,7 @@
 #include "OsvBackgroundThreadBase.hpp"
 #include "leanstore/io/IoChannel.hpp"
 #include "leanstore/io/RequestStackLockfree.hpp"
+#include <osv/leanstore_debug.hh>
 
 namespace mean
 {
@@ -24,7 +25,7 @@ class OsvIoPoller : public OsvBackgroundThreadBase
     auto desired = 32; // in this case we just go with 32 because the nvme queue size is 64
     std::cout << "[io poller] outstanding: " << outstanding
 	<< ", desired: " << desired << std::endl;
-    return outstanding > desired ? 5 : 0; 
+    return outstanding > desired ? 6 : 0; 
  };
    // will poll and submit
    int process() override {
@@ -34,6 +35,7 @@ class OsvIoPoller : public OsvBackgroundThreadBase
        // submit depends on the request_stack
        // poll depends on the io_channel
        io_channel._poll(32);
+       leanstore_osv_debug::yield(); 
     }
     return 0;
  };
