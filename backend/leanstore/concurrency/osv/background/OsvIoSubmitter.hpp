@@ -21,7 +21,7 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
     // policy: run it if more than 1/4 of the queue size is used
     // attention: could starve if at some point no more items are pushed (should not happen in leanstore)
     auto submitStackSize = request_stack.submitStackSize();
-    auto writeRequestStackSize = io_channel.write_request_stack.submitStackSize();
+    auto writeRequestStackSize = io_channel.write_request_stack.size();
     auto ioOutstanding =  io_channel.outstanding[0]; 
     auto desired = request_stack.max_entries / 8;
     std::cout << "[io submit] submitStackSize: " << submitStackSize << " writeRequestStackSize: " << writeRequestStackSize << " ioOutstanding " << ioOutstanding
