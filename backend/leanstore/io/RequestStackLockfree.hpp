@@ -51,7 +51,12 @@ public:
     
     int outstanding()
     {
+        #ifndef NDEBUG
+        assert(max_entries - free.load() - pushed.load() == outstanding_count.load());
+        return outstanding_count.load();
+        #else
         return max_entries - free.load() - pushed.load();
+        #endif
     }
     
     int submitStackSize() {
