@@ -155,11 +155,14 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
 }
 std::string OsvJobManager::printCountersHeader()
 {
-   throw leanstore::ex::GenericException("not implemented");
+   // throw leanstore::ex::GenericException("not implemented");
+   return ""; 
 }
 std::string OsvJobManager::printCounters(int te_id)
 {
-   throw leanstore::ex::GenericException("not implemented");
+   // throw leanstore::ex::GenericException("not implemented");
+      return ""; 
+
 }
 // -------------------------------------------------------------------------------------
 void OsvJobManager::scheduleTaskSync(TaskFunction fun)
