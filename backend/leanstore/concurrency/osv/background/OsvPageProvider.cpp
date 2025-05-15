@@ -13,7 +13,7 @@ unsigned OsvPageProvider::getPriority() {
    // bf_ptr->cooling_partitions[partition_id].dram_free_list.counter counts the currently free lists
    // policy: run it if <10% are free
    auto counter = bf_ptr->cooling_partitions[partition_id].dram_free_list.counter.load();
-   std::cout << "[page provider] counter = " << counter << std::endl;
+   // std::cout << "[page provider] counter = " << counter << std::endl;
    return bf_ptr->cooling_partitions[partition_id].dram_free_list.counter < 100 ? 1 : 0; 
 }
 
@@ -28,11 +28,11 @@ int OsvPageProvider::process()
          }
 
          bf_ptr->pageProviderCycle(partition_id);
-
          counter = 0;
       } else {
          bf_ptr->pageProviderCycle(partition_id);
       }
+      leanstore_osv_debug::yield(); 
    }
 
    return 0;
