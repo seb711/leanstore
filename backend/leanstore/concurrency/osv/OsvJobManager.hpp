@@ -25,7 +25,7 @@ namespace mean
 // -------------------------------------------------------------------------------------
 class OsvJobManager
 {
-   static const int MAX_REQUESTS = 2048;
+   static const int MAX_REQUESTS = 512;
    LockfreeObjectPool<Job, JOB_QUEUE_SIZE>* pool;
    LockfreeObjectPool<BlockingIoContext, MAX_REQUESTS>* waiter_pool;
 

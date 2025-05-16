@@ -134,8 +134,8 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
       size_t it = 0; 
       auto* job = pool->acquire();
       while (job == nullptr) {
-         leanstore_osv_debug::rcu_flush();
-         leanstore_osv_debug::wait_until_zombies_reaped();
+         // leanstore_osv_debug::rcu_flush();
+         // leanstore_osv_debug::wait_until_zombies_reaped();
          pool->waitUntilAvailable();
          job = pool->acquire();
       } 
@@ -149,6 +149,7 @@ void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::at
 
       if (leanstore_osv_debug::task_stack.size() > 96) { // FIXME: this is currently a constant 
          leanstore_osv_debug::flush_to_runqueue();
+         // leanstore_osv_debug::wait_until_zombies_reaped();
       }
    }
 

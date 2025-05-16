@@ -22,7 +22,7 @@ class OsvIoPoller : public OsvBackgroundThreadBase
     // policy: run it if more than 1/4 of the queue size is used
     // attention: could starve if at some point no more items are submitted (should not happen in leanstore)
     volatile auto outstanding = io_channel.outstanding[0];
-    volatile auto desired = 16; // in this case we just go with 32 because the nvme queue size is 64
+    volatile auto desired = 0; // in this case we just go with 32 because the nvme queue size is 64
     // std::cout << "[io poller] outstanding: " << outstanding
 	 //   << ", desired: " << desired << std::endl;
     return outstanding > desired ? 5 : 0; 
