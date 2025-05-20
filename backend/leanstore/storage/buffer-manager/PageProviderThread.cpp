@@ -545,7 +545,7 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
    BufferFrame* bf_arr;
    pages_left_to_iterate_partition = std::min(pages_to_iterate_partition, partition.cooling_queue.size());
    while (pages_left_to_iterate_partition > 0  
-         && !mean::exec::ioChannel().writeStackFull() && partition.outstanding < (s64)partition.io_queue.max_size) {
+         && !mean::exec::ioChannel().writeStackFull() && partition.outstanding < (s64)IO_QUEUE_MAX_SIZE) {
       if (!partition.cooling_queue.try_pop(bf_arr)) {
          break;
       }
@@ -585,7 +585,7 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
             pages_left_to_iterate_partition--;
             if (bf.isDirty()) {
                ensure(partition.outstanding >= 0);
-               if (!mean::exec::ioChannel().writeStackFull() && partition.outstanding < (s64)partition.io_queue.max_size) {
+               if (!mean::exec::ioChannel().writeStackFull() && partition.outstanding < (s64) IO_QUEUE_MAX_SIZE) {
                   {
                      ExclusiveGuard ex_guard(o_guard);
                      assert(!bf.header.isWB);
@@ -629,7 +629,7 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
                               jumpmu_break;
                            }
                            jumpmuCatch() {
-                              std::cout << "pp2 io callback catch: " << (int)written_bf.header.state << std::endl;
+                              // std::cout << "pp2 io callback catch: " << (int)written_bf.header.state << std::endl;
                            }
                         }
                         partition.state.done++;
@@ -643,7 +643,7 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
                            reinterpret_cast<char*>(&bf.page), PAGE_SIZE * wb_pid, PAGE_SIZE, /*reinterpret_cast<uintptr_t>(&bf), pid,*/ cb, true);
                      partition.state.submitted++;
                      partition.outstanding++; // 1
-                     ensure(partition.outstanding <= (s64)partition.io_queue.max_size);
+                     // ensure(partition.outstanding <= (s64)IO_QUEUE_MAX_SIZE);
                      added++;
                      COUNTERS_BLOCK() { ThreadCounters::myCounters().pp_p2_iopushed++; }
                   }
@@ -703,7 +703,7 @@ void BufferManager::pageProviderPhase3evict(CoolingPartition& partition, FreedBf
       partition.io_queue2.pop(bf_ptr);
       // partition.io_queue2.pop_front();
       ensure(partition.outstanding >= 0);
-      ensure(partition.outstanding <= (s64)partition.io_queue.max_size);
+      ensure(partition.outstanding <= (s64)IO_QUEUE_MAX_SIZE);
       partition.outstanding--; // 2
 
       BufferFrame& bf = *bf_ptr;
@@ -741,7 +741,7 @@ void BufferManager::pageProviderPhase3evict(CoolingPartition& partition, FreedBf
             partition.io_queue.push(bf_ptr);
             partition.io_queue2.push(bf_ptr);
             //bf.header.state = BufferFrame::STATE::IOLOST2;
-            ensure(partition.outstanding <= (s64)partition.io_queue.max_size);
+            ensure(partition.outstanding <= (s64)IO_QUEUE_MAX_SIZE);
          } else if (bf.header.state == BufferFrame::STATE::IOCOLDDONE) {
             partition.outstanding++; // 4
             partition.io_queue.push(bf_ptr);

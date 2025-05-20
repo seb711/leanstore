@@ -23,6 +23,7 @@ namespace leanstore
 {
 namespace storage
 {
+constexpr size_t IO_QUEUE_MAX_SIZE = 512; 
 // -------------------------------------------------------------------------------------
 struct IOFrame {
    enum class STATE : u8 {
