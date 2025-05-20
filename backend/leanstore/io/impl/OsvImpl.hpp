@@ -40,7 +40,6 @@ class OsvChannel
    NVMeMultiController& controller;
    int queue;
    const int lbaSize;
-   std::vector<void*> qpairs;
    // -------------------------------------------------------------------------------------
    void prepare_request(RaidRequest<OsvIoReq>* req, OsvIoReqCallback spdkCb);
    // -------------------------------------------------------------------------------------
@@ -50,6 +49,7 @@ class OsvChannel
    // -------------------------------------------------------------------------------------
    std::vector<RaidRequest<OsvIoReq>*> write_request_stack;
    std::vector<int> outstanding;
+   std::vector<void*> qpairs;
 
    void _push(RaidRequest<OsvIoReq>* req);
    void pushBlocking(IoRequestType type, char* data, s64 addr, u64 len, bool write_back) { throw std::logic_error("not implemented"); }
@@ -85,7 +85,7 @@ class OsvChannel
       int done = 0;
 
       for (unsigned int i = 0; i < qpairs.size(); i++) {
-         int ok = OsvEnvironment::qpair_process_completions(qpairs[i], 128);
+         int ok = OsvEnvironment::qpair_process_completions(qpairs[i], 32);
          outstanding[i] -= ok;
          ensure(ok >= 0, "ok >= 0");
          done += ok;

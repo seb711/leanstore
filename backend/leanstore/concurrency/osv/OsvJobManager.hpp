@@ -23,17 +23,29 @@
 namespace mean
 {
 // -------------------------------------------------------------------------------------
-class OsvJobManager
+class OsvJobManager : public OsvBackgroundThreadBase
 {
-   static const int MAX_REQUESTS = 512;
+   static const int MAX_REQUESTS = 4096;
    LockfreeObjectPool<Job, JOB_QUEUE_SIZE>* pool;
    LockfreeObjectPool<BlockingIoContext, MAX_REQUESTS>* waiter_pool;
 
    leanstore::storage::BufferManager* buffer_manager; 
    std::vector<std::unique_ptr<OsvBackgroundThreadBase>> backgroundThreads;
 
+   std::function<void(u64, std::atomic<bool>& cancelable)> executed_fn; 
+
+   std::mutex mtx; 
+   std::condition_variable condvar;
+   std::atomic<bool> finished = {false}; 
+
 public:
+   OsvJobManager() : OsvBackgroundThreadBase("parallel_for", sched::thread_background::parallel_for, 7) {};
    ~OsvJobManager();
+   // -------------------------------------------------------------------------------------
+   // OsvBackgroundThreadBase
+   // -------------------------------------------------------------------------------------
+   unsigned getPriority() override;
+   int process() override; 
    // -------------------------------------------------------------------------------------
    // env
    // -------------------------------------------------------------------------------------

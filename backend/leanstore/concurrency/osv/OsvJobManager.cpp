@@ -46,7 +46,7 @@ void OsvJobManager::init(int workers_count, int exclusiveThreads, IoOptions ioOp
 
    // init the pools that we currently need
    std::cout << "INIT OSV JOBBING MANAGER" << std::endl;
-   ensure(ioOptions.engine == "osv", "ioOptions.engine == osv");
+   // ensure(ioOptions.engine == "osv", "ioOptions.engine == osv");
    IoInterface::initInstance(ioOptions);
 }
 // -------------------------------------------------------------------------------------
@@ -105,54 +105,56 @@ static void job_fn(void* args)
    job->args.pool->release(job);
 };
 
-void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>& cancelable)> fun, const int tasks, s64 bbgranularity)
-{
-   leanstore_osv_debug::set_priority(0.5); 
+// OsvBackgroundThreadBase METHODS
+unsigned OsvJobManager::getPriority() {
+   auto task_queue_load = leanstore_osv_debug::get_task_queue_load(); 
+   auto pool_load =  leanstore_osv_debug::get_thread_pool_load(); 
+   return task_queue_load < 512 && (pool_load - (task_queue_load / 4)) > 512 && (pool->available.load() + leanstore_osv_debug::task_stack.size()) >= 512 ? 10 : 0; 
+ };
 
-   ensure(tasks > 0, "tasks > 0");
-   int startedJobs = 0;
-   std::mutex allDoneMutex;
-   std::condition_variable allDone;
-   std::atomic<int> threadsDone = {0};
-   const int threads = workerCount();
-   std::atomic<bool> cancelable = {false};
-   u64 range = (bb.end - bb.begin) / threads;
-   u64 remaining = (bb.end - bb.begin) % threads;
-   if (range == 0) {
-      range = 1;
-      remaining = 0;
-   }
-
+ int OsvJobManager::process() {
    std::atomic<int> used = {0};
    std::atomic<u64> finished = {0};
 
-   u64 start = bb.begin;
-
-   for (u64 id = bb.begin; id < bb.end; id++) {
+   for (u64 id =0; id < 1000000000000000000; id++) {
       auto start = mean::readTSC();
 
       size_t it = 0; 
       auto* job = pool->acquire();
-      while (job == nullptr) {
+      /* while (job == nullptr) {
          // leanstore_osv_debug::rcu_flush();
          // leanstore_osv_debug::wait_until_zombies_reaped();
-         pool->waitUntilAvailable();
+         // pool->waitUntilAvailable();
          job = pool->acquire();
-      } 
+      } */
+      while (job == nullptr) {
+         leanstore_osv_debug::yield(); 
+         job = pool->acquire();
+      }
 
-      job->fun = &fun;
+      job->fun = &executed_fn;
       job->args.pool = pool;
       job->args.key = id;
 
       assert(leanstore_osv_debug::task_stack.size() < 2048);
       leanstore_osv_debug::task_stack.push({job_fn, job});
 
-      if (leanstore_osv_debug::task_stack.size() > 96) { // FIXME: this is currently a constant 
+      if (leanstore_osv_debug::task_stack.size() >= 512) { // FIXME: this is currently a constant 
          leanstore_osv_debug::flush_to_runqueue();
-         // leanstore_osv_debug::wait_until_zombies_reaped();
       }
    }
 
+   finished = true; 
+   return 0; 
+ };
+// OsvBackgroundThreadBase METHODS END
+
+void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>& cancelable)> fun, const int tasks, s64 bbgranularity)
+{
+   executed_fn = fun; 
+   start_background_work(); 
+   std::unique_lock<std::mutex> lock(mtx); 
+   condvar.wait(lock, [=] {return finished.load(); }); 
 }
 std::string OsvJobManager::printCountersHeader()
 {

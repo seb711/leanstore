@@ -24,8 +24,6 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
     volatile auto writeRequestStackSize = io_channel.write_request_stack.size();
     volatile auto ioOutstanding =  io_channel.outstanding[0]; 
     volatile auto desired = request_stack.max_entries / 8;
-    // std::cout << "[io submit] submitStackSize: " << submitStackSize << " writeRequestStackSize: " << writeRequestStackSize << " ioOutstanding " << ioOutstanding
-	 //   	<< ", desired: " << desired << std::endl;
     return (submitStackSize > 0) || (writeRequestStackSize > 0 && ioOutstanding < 63) ? 5 : 0; 
  }; 
    // will poll and submit
@@ -36,6 +34,7 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
        // submit depends on the request_stack
        // poll depends on the io_channel
        abstraction_io_channel.submit();
+
        leanstore_osv_debug::yield(); 
     }
     return 0;
@@ -44,7 +43,7 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
    public: 
    // -------------------------------------------------------------------------------------
    OsvIoSubmitter(IoChannel& abstraction_io_channel, TIoChannel& io_channel, RequestStackLockfree<RaidRequest<TImplRequest>>& request_stack, int id) : OsvBackgroundThreadBase("io_submitter", sched::thread_background::io_submitter, id), abstraction_io_channel(abstraction_io_channel), io_channel(io_channel), request_stack(request_stack) {
-    start(); 
+    start_background_work(); 
    };
    ~OsvIoSubmitter() = default;
    // -------------------------------------------------------------------------------------

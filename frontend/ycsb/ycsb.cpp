@@ -101,6 +101,10 @@ void run_ycsb() {
          // ensure(result == payload);
 
          // mean::task::yield();
+
+         if (i % 10000 == 0) {
+            std::cout << i << " " << bb.end << std::endl; 
+         }
       }
 #endif
       end = chrono::high_resolution_clock::now();

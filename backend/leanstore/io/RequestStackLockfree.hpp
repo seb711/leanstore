@@ -25,7 +25,7 @@ public:
     boost::lockfree::stack<R*> free_stack;
     boost::lockfree::queue<R*> submit_stack;
     
-    #ifndef NDEBUG
+    #ifndef true
     // Note: Boost doesn't have a lockfree set, but we can use a concurrent_set from TBB
     // or implement our own atomic-based tracking for debug purposes
     std::atomic<int> outstanding_count{0};
@@ -51,8 +51,8 @@ public:
     
     int outstanding()
     {
-        #ifndef NDEBUG
-        // assert(max_entries - free.load() - pushed.load() == outstanding_count.load());
+        #ifndef true
+        // ensure(max_entries - free.load() - pushed.load() == outstanding_count.load());
         return outstanding_count.load();
         #else
         return max_entries - free.load() - pushed.load();
@@ -70,7 +70,7 @@ public:
     /* free -> to user (untracked) */
     bool popFromFreeStack(R*& out)
     {
-        assert(free.load() >= 0);
+        ensure(free.load() >= 0);
         if (free.load() == 0) {
             return false;
         }
@@ -85,21 +85,21 @@ public:
     /* user -> to submit */
     void pushToSubmitStack(R* req)
     {
-        assert(submit_stack.push(req));
+        ensure(submit_stack.push(req));
         pushed.fetch_add(1);
     }
     
     /* free -> submit / direct path (not like popFromFree and pushToSubmit) */
     bool moveFreeToSubmitStack(R*& out)
     {
-        assert(free.load() >= 0);
+        ensure(free.load() >= 0);
         if (free.load() == 0) {
             return false;
         }
         
         if (free_stack.pop(out)) {
             free.fetch_sub(1);
-            assert(submit_stack.push(out));
+            ensure(submit_stack.push(out));
             pushed.fetch_add(1);
             return true;
         }
@@ -115,7 +115,7 @@ public:
         
         if (submit_stack.pop(out)) {
             pushed.fetch_sub(1);
-            #ifndef NDEBUG
+            #ifndef true
             outstanding_count.fetch_add(1);
             #endif
             return true;
@@ -126,10 +126,10 @@ public:
     /* outstanding -> free */
     void returnToFreeList(R* ptr)
     {
-        #ifndef NDEBUG
+        #ifndef true
         outstanding_count.fetch_sub(1);
         #endif
-        assert(free_stack.push(ptr));
+        ensure(free_stack.push(ptr));
         free.fetch_add(1);
     }
 };

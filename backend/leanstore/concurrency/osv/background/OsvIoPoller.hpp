@@ -4,6 +4,7 @@
 #include "leanstore/io/IoChannel.hpp"
 #include "leanstore/io/RequestStackLockfree.hpp"
 #include <osv/leanstore_debug.hh>
+#include <osv/nvme.hh>
 
 namespace mean
 {
@@ -25,7 +26,7 @@ class OsvIoPoller : public OsvBackgroundThreadBase
     volatile auto desired = 0; // in this case we just go with 32 because the nvme queue size is 64
     // std::cout << "[io poller] outstanding: " << outstanding
 	 //   << ", desired: " << desired << std::endl;
-    return outstanding > desired ? 5 : 0; 
+    return outstanding > desired && completion_queue_not_empty(io_channel.qpairs[0]) ? 5 : 0; 
  };
    // will poll and submit
    int process() override {
@@ -44,7 +45,7 @@ class OsvIoPoller : public OsvBackgroundThreadBase
    // -------------------------------------------------------------------------------------
    OsvIoPoller(TIoChannel& io_channel, RequestStackLockfree<RaidRequest<TImplRequest>>& request_stack, int id)
        : OsvBackgroundThreadBase("io_poller", sched::thread_background::io_poller, id), io_channel(io_channel), request_stack(request_stack) {
-        start(); 
+        start_background_work(); 
        };
    ~OsvIoPoller() = default;
    // -------------------------------------------------------------------------------------

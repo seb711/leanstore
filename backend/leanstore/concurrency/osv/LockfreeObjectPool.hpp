@@ -20,7 +20,6 @@ namespace mean
 
         std::array<T, Capacity> storage;  // Fixed storage for objects
         boost::lockfree::queue<T*, boost::lockfree::fixed_sized<true>, boost::lockfree::capacity<Capacity>> queue;
-        std::atomic<size_t> available{Capacity};  // Count of available objects
         std::atomic<bool> waiting{false};  // Count of available objects
 
         // Synchronization for waiters
@@ -28,6 +27,8 @@ namespace mean
         std::condition_variable wait_cv;
     
     public:
+            std::atomic<size_t> available{Capacity};  // Count of available objects
+
         LockfreeObjectPool()
         {
             for (auto& item : storage) {

@@ -8,7 +8,7 @@
 #include "Time.hpp"
 #include "LockfreeObjectPool.hpp"
 
-#define JOB_QUEUE_SIZE (256)
+#define JOB_QUEUE_SIZE (1024)
 
 constexpr size_t wait_for_count = JOB_QUEUE_SIZE / 4; 
 

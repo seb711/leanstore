@@ -4,7 +4,7 @@ namespace mean
 {
 OsvPageProvider::OsvPageProvider(leanstore::storage::BufferManager* bf_ptr, int pid)
     : OsvBackgroundThreadBase("page_provider", sched::thread_background::page_provider, pid), bf_ptr(bf_ptr), partition_id(pid) {
-      start(); 
+      start_background_work(); 
     };
 
 OsvPageProvider::~OsvPageProvider() {};

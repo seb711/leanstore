@@ -23,7 +23,7 @@ RaidEnvironment& IoInterface::initInstance(IoOptions ioOptions)
 }
 RaidEnvironment& IoInterface::instance()
 {
-   ensure(_instance.get(), "IoEnvironment not initialized.");
+   // ensure(_instance.get(), "IoEnvironment not initialized.");
    return *_instance;
 }
 int IoInterface::channelCount() {

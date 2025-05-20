@@ -80,7 +80,7 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
    // -------------------------------------------------------------------------------------
   public:
    Raid0Channel(TIoEnvironment& io_env, TIoChannel& io_channel, IoOptions io_options, u64 channelId, u64 totalChannels) // TODO
-      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(2048), raid(io_env.deviceCount(), CHUNK_SIZE)
+      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(1024), raid(io_env.deviceCount(), CHUNK_SIZE)
    {
       // ATTENTION: HERE WE NOW INIT THE BACKGROUND THREADS
       io_submitter_thread = std::make_unique<OsvIoSubmitter<TImplRequest, TIoChannel>>(*this, io_channel, request_stack, 0); 
@@ -182,7 +182,7 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
             rr->base.user.callback(&rr->base);
             auto this_ptr = (Raid0Channel<TIoEnvironment, TIoChannel,TImplRequest>*)req->innerCallback.user_data2.val.ptr;
             auto ch = reinterpret_cast<Raid0Channel<TIoEnvironment, TIoChannel,TImplRequest>*>(this_ptr);
-            /*COUNTERS_BLOCK()*/ { ch->counters.handleCompletedReq(*req); leanstore::SSDCounters::myCounters().polled[req->device]++; }
+            // /*COUNTERS_BLOCK()*/ { ch->counters.handleCompletedReq(*req); leanstore::SSDCounters::myCounters().polled[req->device]++; }
             rr->base.stats.completion_time = readTSC();
 #ifdef IO_TRACE_ON
             this_ptr->trace.emplace_back((int)rr->base.type, rr->base.addr, nanoFromTsc(rr->base.stats.submit_time), tscDifferenceUs(readTSC(), rr->base.stats.submit_time));
@@ -419,21 +419,6 @@ class RaidEnv : public RaidEnvironment {
             } else {
                ch = std::unique_ptr<IoChannel>(new Raid0Channel<TIoEnvironment, TIoChannel, TImplRequest>(*io_env, io_env->getIoChannel(i), io_options, i, io_options.channelCount));
             }
-         } else {
-            int remoteId = i % (io_env_max_channels);
-            if (true) {
-               remoteId = i - 64;// i % (io_env_max_channels);
-               if (i == 63) {
-                  remoteId = i - 1;
-               } else if (i >= 126) {
-                  remoteId = 63 - (i - 126 + 1);
-               }
-            }
-            assert(remoteId < io_env_max_channels && remoteId >= 0);
-            RemoteIoChannel* rem = new RemoteIoChannel(io_options);
-            ch = std::unique_ptr<RemoteIoChannel>(rem);
-            channels[remoteId]->registerRemoteChannel(rem);
-            std::cout << "i: " << i << " remoteId: " << remoteId << std::endl;
          }
       }
    };
