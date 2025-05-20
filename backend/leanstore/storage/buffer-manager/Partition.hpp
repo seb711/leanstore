@@ -9,6 +9,7 @@
 #include "leanstore/utils/PreallocationStack.hpp"
 #include "leanstore/utils/RingBuffer.hpp"
 #include "leanstore/utils/RingBufferMPSC.hpp"
+#include <boost/lockfree/spsc_queue.hpp>
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 #include <deque>
@@ -116,14 +117,17 @@ struct CoolingPartition {
    // -------------------------------------------------------------------------------------
    //mean::SpinLock cooling_mutex;
    utils::RingBuffer<BufferFrame*> cooling_queue;
-   utils::RingBuffer<BufferFrame*> io_queue;
-   std::deque<BufferFrame*> io_queue2;
+   // utils::RingBuffer<BufferFrame*> io_queue;
+   // boost::lockfree::queue<BufferFrame*> io_queue2;
+
+   boost::lockfree::spsc_queue<BufferFrame*> io_queue; 
+   boost::lockfree::spsc_queue<BufferFrame*> io_queue2; 
    // -------------------------------------------------------------------------------------
    atomic<u64> cooling_bfs_counter = 0;
    const u64 free_bfs_limit;
    const u64 cooling_bfs_limit;
    FreeList dram_free_list;
-   s64 outstanding = 0;
+   std::atomic<s64> outstanding = 0;
    // -------------------------------------------------------------------------------------
    const u64 pid_distance;
    std::mutex pids_mutex;  // protect free pids vector
@@ -132,7 +136,7 @@ struct CoolingPartition {
    // -------------------------------------------------------------------------------------
    CoolingPartition(u64 first_pid, u64 pid_distance, u64 free_bfs_limit, u64 cooling_bfs_limit, u64 max_outsanding_ios)
       : cooling_queue(cooling_bfs_limit * 2), // FIXME
-      io_queue(max_outsanding_ios ),
+      io_queue(max_outsanding_ios ), io_queue2(max_outsanding_ios),
       free_bfs_limit(free_bfs_limit), cooling_bfs_limit(cooling_bfs_limit), pid_distance(pid_distance)
    {
       next_pid = first_pid;

@@ -634,8 +634,8 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
                         }
                         partition.state.done++;
                         //std::cout << "i: " << &written_bf << std::endl;
-                        partition.io_queue.push_back(&written_bf);
-                        partition.io_queue2.push_back(&written_bf);
+                        partition.io_queue.push(&written_bf);
+                        partition.io_queue2.push(&written_bf);
                      };
                      bf.page.magic_debugging_number = wb_pid;
                      bf.page.magic_debugging_number_end = wb_pid;
@@ -692,15 +692,16 @@ void BufferManager::pageProviderPhase3evict(CoolingPartition& partition, FreedBf
    // no lock required as only this thread is accessing the io_queue
    // -------------------------------------------------------------------------------------
    BufferFrame* bf_ptr;
-   int in = partition.io_queue2.size();
+   int in = partition.io_queue2.read_available();
    volatile int cntDone = 0;
    volatile int cntCatch = 0;
-   while (!partition.io_queue2.empty() && in-- > 0) {
-      ensure(partition.io_queue.try_pop(bf_ptr));
+   // std::cout << "partition.io_queue2.size(): " << (partition.io_queue2.empty() ? "empty " : "not empty ") << mean::exec::ioChannel().getOpen() << "open ios" << std::endl; 
+   while (!partition.io_queue2.empty() && in-- > 0) { // && in-- > 0
+      ensure(partition.io_queue.pop(bf_ptr));
       //std::cout << "e: " << bf_ptr << std::endl;
       //ensure(bf_ptr == partition.io_queue2.front());
-      bf_ptr = partition.io_queue2.front();
-      partition.io_queue2.pop_front();
+      partition.io_queue2.pop(bf_ptr);
+      // partition.io_queue2.pop_front();
       ensure(partition.outstanding >= 0);
       ensure(partition.outstanding <= (s64)partition.io_queue.max_size);
       partition.outstanding--; // 2
@@ -737,14 +738,14 @@ void BufferManager::pageProviderPhase3evict(CoolingPartition& partition, FreedBf
          cntCatch++;
          if (!jumpCool) {
             partition.outstanding++; // 3
-            partition.io_queue.push_back(bf_ptr);
-            partition.io_queue2.push_back(bf_ptr);
+            partition.io_queue.push(bf_ptr);
+            partition.io_queue2.push(bf_ptr);
             //bf.header.state = BufferFrame::STATE::IOLOST2;
             ensure(partition.outstanding <= (s64)partition.io_queue.max_size);
          } else if (bf.header.state == BufferFrame::STATE::IOCOLDDONE) {
             partition.outstanding++; // 4
-            partition.io_queue.push_back(bf_ptr);
-            partition.io_queue2.push_back(bf_ptr);
+            partition.io_queue.push(bf_ptr);
+            partition.io_queue2.push(bf_ptr);
          }
          //*/
       }
