@@ -16,18 +16,23 @@ class OsvIoPoller : public OsvBackgroundThreadBase
   TIoChannel& io_channel; 
    RequestStackLockfree<RaidRequest<TImplRequest>>& request_stack;
 
+
    // will poll and submit
    unsigned getPriority() override {
     // request_stack.outstanding stores the io_requests that were already handed to the nvme drive but 
     // not yet processed/completed
     // policy: run it if more than 1/4 of the queue size is used
     // attention: could starve if at some point no more items are submitted (should not happen in leanstore)
-    volatile auto outstanding = io_channel.outstanding[0];
-    volatile auto desired = 0; // in this case we just go with 32 because the nvme queue size is 64
+   auto outstanding = io_channel.outstanding[0];
+   auto desired = 0; // in this case we just go with 32 because the nvme queue size is 64
     // std::cout << "[io poller] outstanding: " << outstanding
 	 //   << ", desired: " << desired << std::endl;
-    return outstanding > desired && completion_queue_not_empty(io_channel.qpairs[0]) ? 5 : 0; 
- };
+    if (outstanding == 0) return 0; 
+    
+    return has_n_completion_entries(io_channel.qpairs[0], std::min(64, outstanding)) ? 5 : 0; 
+   // return outstanding > desired && completion_queue_not_empty(io_channel.qpairs[0]) ? 5 : 0; // 
+
+   };
    // will poll and submit
    int process() override {
     while (true) {
@@ -35,7 +40,8 @@ class OsvIoPoller : public OsvBackgroundThreadBase
        // maybe we also need two threads for submit and for polling
        // submit depends on the request_stack
        // poll depends on the io_channel
-       io_channel._poll(32);
+      leanstore_osv_debug::trace_io_channel_state( io_channel.outstanding[0], io_channel.write_request_stack.size());
+       leanstore_osv_debug::trace_background_result(io_channel._poll(32));
        leanstore_osv_debug::yield(); 
     }
     return 0;

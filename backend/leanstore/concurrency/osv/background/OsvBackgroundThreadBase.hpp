@@ -28,7 +28,6 @@ class OsvBackgroundThreadBase
 
    int _process()
    {
-      jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext{};
       setNameThisThread(name);
 
       leanstore_osv_debug::register_policy(_bt, [this]() {
@@ -38,7 +37,6 @@ class OsvBackgroundThreadBase
       });
 
       int ret = process();
-      delete jumpmu::thread_local_jumpmu_ctx; 
       return ret;
    }
 

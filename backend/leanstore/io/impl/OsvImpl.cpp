@@ -53,19 +53,25 @@ u64 OsvEnv::storageSize()
 
 void* OsvEnv::allocIoMemory(size_t size, size_t align)
 {
+   // printf("try to allocate %lu bytes\n", size); 
    void* buffer = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
    null_check(buffer, "Memory allocation failed");
    madvise(buffer, size, MADV_HUGEPAGE);
+   // printf("finished try to allocate %lu bytes\n", size); 
+
    return buffer;
 }
 
 void* OsvEnv::allocIoMemoryChecked(size_t size, size_t align)
 {
+   // printf("try to allocate %lu bytes\n", size); 
    void* buffer = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
    assert(buffer != MAP_FAILED);
    madvise(buffer, size, MADV_HUGEPAGE);
    null_check(buffer, "Memory allocation failed");
+   // printf("finished try to allocate %lu bytes\n", size); 
    return buffer;
 }
 

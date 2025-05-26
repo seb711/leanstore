@@ -25,11 +25,9 @@ public:
     boost::lockfree::stack<R*> free_stack;
     boost::lockfree::queue<R*> submit_stack;
     
-    #ifndef true
     // Note: Boost doesn't have a lockfree set, but we can use a concurrent_set from TBB
     // or implement our own atomic-based tracking for debug purposes
     std::atomic<int> outstanding_count{0};
-    #endif
     
     const int max_entries;
     std::atomic<int> free;
@@ -51,12 +49,8 @@ public:
     
     int outstanding()
     {
-        #ifndef true
         // ensure(max_entries - free.load() - pushed.load() == outstanding_count.load());
         return outstanding_count.load();
-        #else
-        return max_entries - free.load() - pushed.load();
-        #endif
     }
     
     int submitStackSize() {
@@ -115,9 +109,7 @@ public:
         
         if (submit_stack.pop(out)) {
             pushed.fetch_sub(1);
-            #ifndef true
             outstanding_count.fetch_add(1);
-            #endif
             return true;
         }
         return false;
@@ -126,9 +118,7 @@ public:
     /* outstanding -> free */
     void returnToFreeList(R* ptr)
     {
-        #ifndef true
         outstanding_count.fetch_sub(1);
-        #endif
         ensure(free_stack.push(ptr));
         free.fetch_add(1);
     }

@@ -47,8 +47,10 @@ class Raid0Channel : public IoChannel
    TIoChannel& io_channel;
    IoOptions io_options;
 
+#ifndef MEAN_USE_TASKING
    std::unique_ptr<OsvIoSubmitter<TImplRequest, TIoChannel>> io_submitter_thread; 
    std::unique_ptr<OsvIoPoller<TImplRequest, TIoChannel>> io_poller_thread; 
+#endif
 
 #ifdef MEAN_USE_JOBBING
 RequestStackLockfree<RaidRequest<TImplRequest>> request_stack;
@@ -80,11 +82,13 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
    // -------------------------------------------------------------------------------------
   public:
    Raid0Channel(TIoEnvironment& io_env, TIoChannel& io_channel, IoOptions io_options, u64 channelId, u64 totalChannels) // TODO
-      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(1024), raid(io_env.deviceCount(), CHUNK_SIZE)
+      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(2048 + 512), raid(io_env.deviceCount(), CHUNK_SIZE)
    {
       // ATTENTION: HERE WE NOW INIT THE BACKGROUND THREADS
+   #ifndef MEAN_USE_TASKING
       io_submitter_thread = std::make_unique<OsvIoSubmitter<TImplRequest, TIoChannel>>(*this, io_channel, request_stack, 0); 
       io_poller_thread = std::make_unique<OsvIoPoller<TImplRequest, TIoChannel>>(io_channel, request_stack, 0); 
+   #endif
       // END ATTENTION
 #ifdef IO_TRACE_ON
       trace.reserve(100e6);
@@ -417,10 +421,15 @@ class RaidEnv : public RaidEnvironment {
                throw std::logic_error("not implemented");
                //ch = std::unique_ptr<IoChannel>(new Raid5Channel<TIoEnvironment, TIoChannel, TImplRequest>(*io_env, io_env->getIoChannel(i), io_options, i, io_options.channelCount));
             } else {
+                     std::cout << "create channels: " << i << std::endl;
                ch = std::unique_ptr<IoChannel>(new Raid0Channel<TIoEnvironment, TIoChannel, TImplRequest>(*io_env, io_env->getIoChannel(i), io_options, i, io_options.channelCount));
+                     std::cout << "created channels: " << i << std::endl;
             }
+
          }
       }
+                           std::cout << "finished: "<< std::endl;
+
    };
    ~RaidEnv() {};
    // -------------------------------------------------------------------------------------
