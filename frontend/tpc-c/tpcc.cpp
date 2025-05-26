@@ -95,7 +95,7 @@ void run_tpcc()
          //cr::Worker::my().commitTX();
       });
 
-      auto load_fun = [](u64 w_id, std::atomic<bool>&) {
+      auto load_fun = [](u64 w_id) {
          //cr::Worker::my().startTX();
          loadStock(w_id);
          loadDistrinct(w_id);
@@ -108,7 +108,7 @@ void run_tpcc()
       mean::BlockedRange bb(1, (u64)FLAGS_tpcc_warehouse_count + 1);
       ensure((bool)((bb.end - bb.begin) > 0));
       auto before = mean::getTimePoint();
-      mean::task::parallelFor(bb, load_fun, 1);
+      mean::task::parallelFor(bb, load_fun, 1, false);
       auto timeDiff = mean::timePointDifference(mean::getTimePoint(), before);
       std::cout << "Loading done in: " + std::to_string(timeDiff/1e9f) + "s" << std::endl;
    }
@@ -126,7 +126,7 @@ void run_tpcc()
    mean::env::adjustWorkerCount(FLAGS_worker_threads);
    //u64 tx_per_thread[FLAGS_worker_threads];
    auto start = mean::getSeconds();
-   auto tpcc_fun = [&running_threads_counter, &keep_running, &start](u64 _, std::atomic<bool>& cancelled) {
+   auto tpcc_fun = [&running_threads_counter, &keep_running, &start](u64 _) {
       int thr = running_threads_counter++;
 
        //u64 rateLimitngEveryNs =  1;///3*1000*1000;
@@ -172,11 +172,11 @@ void run_tpcc()
    };
    uint64_t run_until = FLAGS_run_until_tx > 0 ? FLAGS_run_until_tx : std::numeric_limits<uint64_t>::max();
    mean::BlockedRange bb(0, run_until);
-   ensure((bool)((bb.end - bb.begin) > 1));
+   ensure((bool)((bb.end - bb.begin) > 1)); 
    start = mean::getSeconds();
    auto startTsc = mean::readTSC();
    auto startTP = mean::getTimePoint();
-   mean::task::parallelFor(bb, tpcc_fun, FLAGS_worker_tasks, 100000);
+   mean::task::parallelFor(bb, tpcc_fun, FLAGS_worker_tasks, 100000, true);
    auto diffTSC = mean::tscDifferenceNs(mean::readTSC(), startTsc) / 1e9;
    auto diffTP = mean::timePointDifference(mean::getTimePoint(), startTP) / 1e9;
    std::cout << "done: time: " << diffTP << " tsc: " << diffTSC << std::endl;
