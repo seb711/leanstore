@@ -2,7 +2,6 @@
 // -------------------------------------------------------------------------------------
 #include "leanstore/concurrency/MessageHandler.hpp"
 #include "leanstore/concurrency/ThreadBase.hpp"
-#include "leanstore/concurrency/ThreadingManager.hpp"
 #include "leanstore/concurrency-recovery/Worker.hpp"
 #include "leanstore/io/IoInterface.hpp"
 #include "leanstore/concurrency-recovery/Worker.hpp"
@@ -32,7 +31,7 @@ class OsvJobManager : public OsvBackgroundThreadBase
    leanstore::storage::BufferManager* buffer_manager; 
    std::vector<std::unique_ptr<OsvBackgroundThreadBase>> backgroundThreads;
 
-   std::function<void(u64, std::atomic<bool>& cancelable)> executed_fn; 
+   std::function<void(u64)> executed_fn; 
 
    std::mutex mtx; 
    std::condition_variable condvar;
@@ -75,7 +74,7 @@ public:
    // task
    // -------------------------------------------------------------------------------------
    void registerExclusiveThread(std::string name, int t_i, TaskFunction fun);
-   void parallelFor(BlockedRange range, std::function<void(u64, std::atomic<bool>& cancelable)> fun, int tasks, s64 bbgranularity = -1);
+   void parallelFor(BlockedRange range, std::function<void(u64)> fun, int tasks, s64 bbgranularity = -1, bool rate_active=false);
    void scheduleTaskSync(TaskFunction fun);
    void yield(TaskState ts);
    void blockingIo(IoRequestType type, char* data, s64 addr, u64 len);

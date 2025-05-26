@@ -48,11 +48,13 @@ void OsvJobManager::init(int workers_count, int exclusiveThreads, IoOptions ioOp
    std::cout << "INIT OSV JOBBING MANAGER" << std::endl;
    // ensure(ioOptions.engine == "osv", "ioOptions.engine == osv");
    IoInterface::initInstance(ioOptions);
+   std::cout << "FINISHED INIT OSV JOBBING MANAGER" << std::endl;
 }
 // -------------------------------------------------------------------------------------
 void OsvJobManager::start(TaskFunction taskFun)
 {
    // all_threads[max_exclusive_threads]->sendTask(taskFun);
+   std::cout << "run function" << std::endl; 
    taskFun();
 }
 // -------------------------------------------------------------------------------------
@@ -98,9 +100,7 @@ static void job_fn(void* args)
 {
    auto* job = (Job*)args;
 
-   jumpmu::thread_local_jumpmu_ctx = &(job->jumpctx);
-
-   (*(job->fun))(job->args.key, job->args.cancelable);
+   (*(job->fun))(job->args.key);
 
    job->args.pool->release(job);
 };
@@ -109,8 +109,10 @@ static void job_fn(void* args)
 unsigned OsvJobManager::getPriority() {
    auto task_queue_load = leanstore_osv_debug::get_task_queue_load(); 
    auto pool_load =  leanstore_osv_debug::get_thread_pool_load(); 
-   return task_queue_load < 512 && (pool_load - (task_queue_load / 4)) > 512 && (pool->available.load() + leanstore_osv_debug::task_stack.size()) >= 512 ? 10 : 0; 
- };
+   // return task_queue_load < 2048 && (pool->available.load() + leanstore_osv_debug::task_stack.size()) >= 128 ? 10 : 0; 
+      return task_queue_load < 128 && (pool_load - (task_queue_load / 4)) > 128 && (pool->available.load() + leanstore_osv_debug::task_stack.size()) >= 128 ? 10 : 0; 
+
+};
 
  int OsvJobManager::process() {
    std::atomic<int> used = {0};
@@ -139,7 +141,7 @@ unsigned OsvJobManager::getPriority() {
       assert(leanstore_osv_debug::task_stack.size() < 2048);
       leanstore_osv_debug::task_stack.push({job_fn, job});
 
-      if (leanstore_osv_debug::task_stack.size() >= 512) { // FIXME: this is currently a constant 
+      if (leanstore_osv_debug::task_stack.size() >= 128) { // FIXME: this is currently a constant 
          leanstore_osv_debug::flush_to_runqueue();
       }
    }
@@ -149,7 +151,7 @@ unsigned OsvJobManager::getPriority() {
  };
 // OsvBackgroundThreadBase METHODS END
 
-void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>& cancelable)> fun, const int tasks, s64 bbgranularity)
+void OsvJobManager::parallelFor(BlockedRange bb, std::function<void(u64)> fun, int tasks, s64 bbgranularity, bool rate_active)
 {
    executed_fn = fun; 
    start_background_work(); 
@@ -170,9 +172,7 @@ std::string OsvJobManager::printCounters(int te_id)
 // -------------------------------------------------------------------------------------
 void OsvJobManager::scheduleTaskSync(TaskFunction fun)
 {
-   jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext{};
    fun();
-   delete jumpmu::thread_local_jumpmu_ctx;
 }
 // -------------------------------------------------------------------------------------
 void OsvJobManager::yield([[maybe_unused]] TaskState ts)
@@ -187,6 +187,8 @@ void OsvJobManager::adjustWorkerCount(int workerThreads) {}
 // -------------------------------------------------------------------------------------
 void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
 {
+   leanstore_osv_debug::yield(); 
+   
    auto* waitargs = waiter_pool->acquire();
 
    waitargs->ready.store(false);

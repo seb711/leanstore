@@ -3,7 +3,6 @@
 #include "BlockedRange.hpp"
 #include "Task.hpp"
 #include "YieldLock.hpp"
-#include "DebugLock.hpp"
 #include "leanstore/io/IoInterface.hpp"
 #include <osv/mutex.h>
 // -------------------------------------------------------------------------------------
@@ -56,7 +55,7 @@ int getId();
 namespace task
 {
 void registerExclusiveThread(std::string name, int id, TaskFunction fun);
-void parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>&)> fun, int tasks, s64 granularity = -1);
+void parallelFor(BlockedRange bb, std::function<void(u64)> fun, int tasks, s64 granularity = -1, bool rate_active=false);
 void scheduleTaskSync(TaskFunction fun);
 // -------------------------------------------------------------------------------------
 void yield(TaskState ts = TaskState::Ready);

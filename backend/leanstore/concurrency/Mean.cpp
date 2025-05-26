@@ -1,12 +1,13 @@
 // -------------------------------------------------------------------------------------
 #include "Mean.hpp"
+#include "ThreadingManager.hpp"
+#include "TaskManager.hpp"
+#include "osv/OsvJobManager.hpp"
 #include <libaio.h>
 // -------------------------------------------------------------------------------------
-#include "TaskManager.hpp"
-#include "ThreadingManager.hpp"
-#include "osv/OsvJobManager.hpp"
 // -------------------------------------------------------------------------------------
 #include <mutex>
+#include <string>
 // -------------------------------------------------------------------------------------
 namespace mean
 {
@@ -97,9 +98,9 @@ void registerExclusiveThread(std::string name, int id, TaskFunction fun)
 {
    env::_instance.registerExclusiveThread(name, id, fun);
 }
-void parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>&)> fun, int tasks, s64 granularity)
+void parallelFor(BlockedRange bb, std::function<void(u64)> fun, int tasks, s64 granularity, bool rate_active)
 {
-   env::_instance.parallelFor(bb, fun, tasks, granularity);
+   env::_instance.parallelFor(bb, fun, tasks, granularity, rate_active);
 }
 void scheduleTaskSync(TaskFunction fun)
 {

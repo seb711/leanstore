@@ -8,7 +8,7 @@
 #include "Time.hpp"
 #include "LockfreeObjectPool.hpp"
 
-#define JOB_QUEUE_SIZE (1024)
+#define JOB_QUEUE_SIZE (512)
 
 constexpr size_t wait_for_count = JOB_QUEUE_SIZE / 4; 
 
@@ -16,17 +16,16 @@ namespace mean
 {
 class Job;
 
-using JobFunction = std::function<void(u64, std::atomic<bool>&)>;  // std::add_pointer_t<void()>;
+using JobFunction = std::function<void(u64)>;  // std::add_pointer_t<void()>;
 using CallbackFunction = std::function<void(Job*)>;                // std::add_pointer_t<void()>;
 
 struct JobArguments {
    LockfreeObjectPool<Job, JOB_QUEUE_SIZE>* pool;
    uint64_t key;
-   std::atomic<bool> cancelable;
    std::atomic<u64>* done;
    std::atomic<u64>* started;
 
-   JobArguments() : pool(nullptr), key(0), cancelable({false}) {};
+   JobArguments() : pool(nullptr), key(0) {};
 };
 
 // -------------------------------------------------------------------------------------
