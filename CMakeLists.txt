@@ -144,6 +144,7 @@ add_subdirectory("frontend")
 # Linting
 # ---------------------------------------------------------------------------
 
+add_subdirectory("addon")
 
 #todo
 
