@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <regex>
+#include "leanstore/Config.hpp"
 
 bool OsvEnvironment::initialized = false;
 cmd_fun OsvEnvironment::osv_req_type_fun_lookup[(int)OsvIoReqType::COUNT + 1];
@@ -102,7 +103,7 @@ uint64_t NVMeController::nsNumLbas()
 uint32_t NVMeController::requestMaxQPairs()
 {
    // TODO: RETRIEVE THIS BY OSV DRIVER (-> IMPLEMENT THE METHODS IN OSV)
-   return 1;
+   return FLAGS_worker_threads;
 }
 // -------------------------------------------------------------------------------------
 void NVMeController::allocateQPairs(int number)

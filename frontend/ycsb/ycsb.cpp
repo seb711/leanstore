@@ -230,7 +230,7 @@ int main(int argc, char** argv)
          FLAGS_worker_threads, //std::min(std::thread::hardware_concurrency(), FLAGS_tpcc_warehouse_count),
          0/*FLAGS_pp_threads*/, ioOptions);
    } else {
-      ioOptions.channelCount = 2; // FLAGS_worker_threads + FLAGS_pp_threads;
+         ioOptions.channelCount = FLAGS_worker_threads;
       mean::env::init(FLAGS_worker_threads, FLAGS_pp_threads, ioOptions);
    }
    mean::env::start(run_ycsb);
