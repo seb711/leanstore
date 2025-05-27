@@ -141,7 +141,7 @@ unsigned OsvJobManager::getPriority() {
       assert(leanstore_osv_debug::task_stack.size() < 2048);
       leanstore_osv_debug::task_stack.push({job_fn, job});
 
-      if (leanstore_osv_debug::task_stack.size() >= 128) { // FIXME: this is currently a constant 
+      if (leanstore_osv_debug::task_stack.size() >= 512) { // FIXME: this is currently a constant 
          leanstore_osv_debug::flush_to_runqueue();
       }
    }

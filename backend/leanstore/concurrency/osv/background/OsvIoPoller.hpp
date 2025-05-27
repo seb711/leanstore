@@ -29,7 +29,7 @@ class OsvIoPoller : public OsvBackgroundThreadBase
 	 //   << ", desired: " << desired << std::endl;
     if (outstanding == 0) return 0; 
     
-    return has_n_completion_entries(io_channel.qpairs[0], std::min(64, outstanding)) ? 5 : 0; 
+    return has_n_completion_entries(io_channel.qpairs[0], std::min(32, outstanding)) ? 5 : 0; 
    // return outstanding > desired && completion_queue_not_empty(io_channel.qpairs[0]) ? 5 : 0; // 
 
    };

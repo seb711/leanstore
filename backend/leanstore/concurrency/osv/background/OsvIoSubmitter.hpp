@@ -24,7 +24,7 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
     volatile auto writeRequestStackSize = io_channel.write_request_stack.size();
     volatile auto ioOutstanding =  io_channel.outstanding[0]; 
     volatile auto desired = request_stack.max_entries / 8;
-    return (submitStackSize > 64) || (writeRequestStackSize > 0 && ioOutstanding < 127) ? 5 : 0; 
+    return (submitStackSize > 32) || (writeRequestStackSize > 0 && ioOutstanding < 127) ? 5 : 0; 
    // return (submitStackSize > 0) || (writeRequestStackSize > 0 && ioOutstanding < 63) ? 5 : 0; 
 
    }; 
