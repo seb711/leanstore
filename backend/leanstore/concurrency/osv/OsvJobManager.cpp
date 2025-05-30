@@ -110,7 +110,7 @@ unsigned OsvJobManager::getPriority() {
    auto task_queue_load = leanstore_osv_debug::get_task_queue_load(); 
    auto pool_load =  leanstore_osv_debug::get_thread_pool_load(); 
    // return task_queue_load < 2048 && (pool->available.load() + leanstore_osv_debug::task_stack.size()) >= 128 ? 10 : 0; 
-      return task_queue_load < 128 && (pool_load - (task_queue_load / 4)) > 128 && (pool->available.load() + leanstore_osv_debug::task_stack.size()) >= 128 ? 10 : 0; 
+      return task_queue_load < 128 && (pool_load - (task_queue_load / 2)) > 128 && (pool->available.load() + leanstore_osv_debug::task_stack.size()) >= 128 ? 10 : 0; 
 
 };
 

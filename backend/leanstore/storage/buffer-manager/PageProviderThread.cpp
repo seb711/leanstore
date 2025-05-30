@@ -53,13 +53,19 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
 void BufferManager::pageProviderCycle(int partition_id) {
    using Time = decltype(std::chrono::high_resolution_clock::now());
 
+
    /*
     * Phase 1:
     */
+   u64 picked = 0; 
    ensure(partition_id < (int)cooling_partitions_count);
    CoolingPartition& partition = cooling_partitions[partition_id];
+
+
+
+
    if (phase_1_condition(partition) > 64) {
-      u64 picked = pageProviderPhase1(partition, 128, partition_id);
+      picked = pageProviderPhase1(partition, 512, partition_id);
       //u64 picked = pageProviderPhase1Vec(partition, 128);
       COUNTERS_BLOCK() {ThreadCounters::myCounters().pp_p1_picked += picked; }
    }
@@ -78,9 +84,10 @@ void BufferManager::pageProviderCycle(int partition_id) {
       PPCounters::myCounters().pp_qlen_cnt++;
    }
    // -------------------------------------------------------------------------------------
+   int added = 0; 
    if (pages_to_iterate_partition > 0) {
       pages_to_iterate_partition = std::max(pages_to_iterate_partition , (s64)1);
-      int added = pageProviderPhase2(partition, pages_to_iterate_partition, partition.state.freed_bfs_batch);
+      added = pageProviderPhase2(partition, pages_to_iterate_partition, partition.state.freed_bfs_batch);
       COUNTERS_BLOCK() { PPCounters::myCounters().phase_2_added += added; }
    }
    // -------------------------------------------------------------------------------------
@@ -104,7 +111,7 @@ void BufferManager::pageProviderCycle(int partition_id) {
    COUNTERS_BLOCK() { partition.state.poll_end = std::chrono::high_resolution_clock::now(); }
    [[maybe_unused]] Time async_wb_begin, async_wb_end;
    // -------------------------------------------------------------------------------------
-   pageProviderPhase3evict(partition, partition.state.freed_bfs_batch);
+   int evicted = pageProviderPhase3evict(partition, partition.state.freed_bfs_batch);
    // -------------------------------------------------------------------------------------
    COUNTERS_BLOCK()
    {
@@ -121,6 +128,8 @@ void BufferManager::pageProviderCycle(int partition_id) {
       partition.pushFreeList();
    }
    COUNTERS_BLOCK() { PPCounters::myCounters().pp_thread_rounds++; }
+
+   leanstore_osv_debug::trace_page_provider(picked, added, evicted); 
 }
 
 void BufferManager::evict_bf(CoolingPartition& partition, FreedBfsBatch& freed_bfs_batch, BufferFrame& bf, OptimisticGuard& guard, bool& p1, bool& p2) {
@@ -547,8 +556,10 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
    while (pages_left_to_iterate_partition > 0  
          && !mean::exec::ioChannel().writeStackFull() && partition.outstanding < (s64)IO_QUEUE_MAX_SIZE) {
       if (!partition.cooling_queue.try_pop(bf_arr)) {
+         abort(); 
          break;
       }
+
       pages_left_to_iterate_partition--;
       partition.cooling_bfs_counter--;
       ensure(partition.cooling_queue.size() == partition.cooling_bfs_counter);
@@ -565,6 +576,7 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
          // Check if the BF got swizzled in or unswizzle another time in another partition
          if (bf.header.state != BufferFrame::STATE::COOL) {
             fromTheBeginning = true;
+
             jumpmu::jump();
          }
          if (!bf.header.isWB) {
@@ -578,7 +590,6 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
                   }
                   io_partition.io_mutex.unlock();
                } else {
-                  //std::cout << "io_mutex " << std::endl;
                   jumpmu::jump();
                }
             }
@@ -644,7 +655,6 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
                      partition.state.submitted++;
                      partition.outstanding++; // 1
                      // ensure(partition.outstanding <= (s64)IO_QUEUE_MAX_SIZE);
-                     added++;
                      COUNTERS_BLOCK() { ThreadCounters::myCounters().pp_p2_iopushed++; }
                   }
                } else {
@@ -666,8 +676,11 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
             // is already write back, do nothing skip
             //std::cout << "is allready write back" << std::endl;
          }
+               added++; 
+
       }
       jumpmuCatch() {
+
          if (bf.header.state == BufferFrame::STATE::COOL) {
             partition.cooling_bfs_counter++;
             partition.cooling_queue.push_back(&bf);
@@ -687,7 +700,7 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
    return added;
 }
 // -------------------------------------------------------------------------------------
-void BufferManager::pageProviderPhase3evict(CoolingPartition& partition, FreedBfsBatch& freed_bfs_batch) {
+int BufferManager::pageProviderPhase3evict(CoolingPartition& partition, FreedBfsBatch& freed_bfs_batch) {
    static std::atomic<u64> bla = 0;
    // no lock required as only this thread is accessing the io_queue
    // -------------------------------------------------------------------------------------
@@ -750,6 +763,8 @@ void BufferManager::pageProviderPhase3evict(CoolingPartition& partition, FreedBf
          //*/
       }
    }
+
+   return cntDone;
 }
 // -------------------------------------------------------------------------------------
 }  // namespace storage
