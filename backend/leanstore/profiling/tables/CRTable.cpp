@@ -35,7 +35,7 @@ void CRTable::open()
    columns.emplace("tx_rate", [&](Column& col) { col << FLAGS_tx_rate; });
    columns.emplace("tx_abort", [](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::tx_abort); });
    // -------------------------------------------------------------------------------------
-   columns.emplace("tx_latency_us",
+   columns.emplace("tx_avg_runtime_us",
                    [&](Column& col) { col << (local_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_tx_time) / local_tx : 0); });
     columns.emplace("ltx_latency_us",
                     [&](Column& col) { col << (local_ltx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_ltx_time) / local_ltx : 0); });
@@ -70,6 +70,11 @@ void CRTable::open()
    columns.emplace("tx_latency_us_inc_wait", [&](Column& col) {
       col << (local_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_tx_time_inc_wait) / local_tx : 0);
    });
+   
+   
+   // avg runtime
+   columns.emplace("tx_p99_runtime_us", [&](Column& col) { col << local_tx_lat99p_us; });
+
    columns.emplace("tx_latency_us_10pi", [&](Column& col) { col << local_tx_lat10pi_us; });
    columns.emplace("tx_latency_us_25pi", [&](Column& col) { col << local_tx_lat25pi_us; });
    columns.emplace("tx_latency_us_50pi", [&](Column& col) { col << local_tx_lat50pi_us; });
@@ -100,12 +105,14 @@ void CRTable::open()
    columns.emplace("wal_total", [&](Column& col) { col << wal_total; });
 }
 // -------------------------------------------------------------------------------------
-template <typename Container, typename FieldAccessor>
-u64 getPercentileOfField(Container counters, FieldAccessor field_accessor, int percentile)
+template <typename CountersClass, typename FieldAccessor>
+u64 getPercentileOfField(std::array<std::atomic<CountersClass*>, MAX_CORES>& counters, FieldAccessor field_accessor, int percentile)
 {
    u64 max = 0;
    for (size_t t = 0; t < MAX_CORES; t++) {
-      max = std::max(max, field_accessor(*counters[t]).getPercentile(percentile));
+        if (counters[t]) {
+            max = std::max(max, field_accessor(*counters[t]).getPercentile(percentile));
+        }
    }
    return max;
    /*j
@@ -145,6 +152,12 @@ void CRTable::next()
    local_time_counter_1 = sum(WorkerCounters::worker_counters, &WorkerCounters::time_counter_1);
    local_time_counter_2 = sum(WorkerCounters::worker_counters, &WorkerCounters::time_counter_2);
    local_time_counter_3 = sum(WorkerCounters::worker_counters, &WorkerCounters::time_counter_3);
+   local_tx_lat99p_us = getPercentileOfField(
+       WorkerCounters::worker_counters,
+       [](const WorkerCounters& wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist); }, 99);
+    local_tx_lat99pi_us = getPercentileOfField(
+       WorkerCounters::worker_counters,
+       [](const WorkerCounters& wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist_incwait); }, 99);
    /* int counters = 0;
    // lat10p = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> const auto& { return wc.tx_latency_hist; }, 10);
    local_tx_lat10p_us = getPercentileOfField(

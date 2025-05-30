@@ -150,9 +150,11 @@ void run_ycsb()
 #endif
          if (txtype == 0) {
             WorkerCounters::myCounters().total_tx_time += timeDiffIncWait;
+            WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiffIncWait);
             WorkerCounters::myCounters().tx++;
          } else {
             WorkerCounters::myCounters().total_ltx_time += timeDiffIncWait;
+            WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
             WorkerCounters::myCounters().ltx++;
          }
          running_threads_counter--;
@@ -172,7 +174,7 @@ void run_ycsb()
 // -------------------------------------------------------------------------------------
 int main(int argc, char** argv)
 {
-      std::cout << "run process1" << std::endl; 
+   std::cout << "run process1" << std::endl; 
 
    gflags::SetUsageMessage("Leanstore Frontend");
    gflags::ParseCommandLineFlags(&argc, &argv, true);

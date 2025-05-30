@@ -185,6 +185,7 @@ void run_ycsb() {
            WorkerCounters::myCounters().total_ltx_time += timeDiffIncWait;
            WorkerCounters::myCounters().total_tx_time += timeDiff;
            WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
+           WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
            // if (timeDiffIncWait < 10000000) {
            //   WorkerCounters::myCounters().total_tx_time_inc_wait += timeDiffIncWait;
            // }

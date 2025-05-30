@@ -35,8 +35,8 @@ struct WorkerCounters {
    atomic<u64> total_tx_time = 0;
    atomic<u64> total_ltx_time = 0;
    atomic<u64> total_tx_time_inc_wait = 0;
-   Hist<int, u64> tx_latency_hist{100000, 0, 500000};
-   Hist<int, u64> tx_latency_hist_incwait{100000, 0, 500000};
+   Hist<int, u64> tx_latency_hist{100000, 0, 1000000};
+   Hist<int, u64> tx_latency_hist_incwait{100000, 0, 1000000};
    Hist<int, u64> ssd_read_latency{5000, 0, 50000};
    Hist<int, u64> ssd_write_latency{5000, 0, 50000};
 
