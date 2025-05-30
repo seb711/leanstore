@@ -273,7 +273,7 @@ void TaskManager::parallelFor(BlockedRange bb, std::function<void(u64)> fun, con
                         if (rate == 0 or !rate_active)
                            break;
                         if (now >= nextStartTime) {
-                           if (mean::tscDifferenceMs(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time) > 5000) {
+                           if (mean::tscDifferenceS(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time) > 1) {
                               longLat++;
                               nextStartTime = now;
                               std::cout << "reset start time" << std::endl;
