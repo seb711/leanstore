@@ -24,7 +24,7 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
     volatile auto writeRequestStackSize = io_channel.write_request_stack.size();
     volatile auto ioOutstanding =  io_channel.outstanding[0]; 
     volatile auto desired = request_stack.max_entries / 8;
-    return (submitStackSize > 32) || (writeRequestStackSize > 0 && ioOutstanding < 127) ? 5 : 0; 
+    return (submitStackSize > 0) || (writeRequestStackSize > 0 && ioOutstanding < 127) ? 5 : 0; 
    // return (submitStackSize > 0) || (writeRequestStackSize > 0 && ioOutstanding < 63) ? 5 : 0; 
 
    }; 
@@ -36,10 +36,10 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
        // submit depends on the request_stack
        // poll depends on the io_channel
        
-             leanstore_osv_debug::trace_io_channel_state( io_channel.outstanding[0], io_channel.write_request_stack.size());
+             // leanstore_osv_debug::trace_io_channel_state( io_channel.outstanding[0], io_channel.write_request_stack.size());
 
-              leanstore_osv_debug::trace_background_result(abstraction_io_channel.submit());
-
+              // leanstore_osv_debug::trace_background_result(abstraction_io_channel.submit());
+      abstraction_io_channel.submit(); 
        leanstore_osv_debug::yield(); 
     }
     return 0;

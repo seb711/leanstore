@@ -29,7 +29,7 @@ class OsvIoPoller : public OsvBackgroundThreadBase
 	 //   << ", desired: " << desired << std::endl;
     if (outstanding == 0) return 0; 
     
-    return has_n_completion_entries(io_channel.qpairs[0], std::min(32, outstanding)) ? 5 : 0; 
+    return has_n_completion_entries(io_channel.qpairs[0], std::min(8, outstanding)) ? 5 : 0; 
    // return outstanding > desired && completion_queue_not_empty(io_channel.qpairs[0]) ? 5 : 0; // 
 
    };
@@ -40,8 +40,9 @@ class OsvIoPoller : public OsvBackgroundThreadBase
        // maybe we also need two threads for submit and for polling
        // submit depends on the request_stack
        // poll depends on the io_channel
-      leanstore_osv_debug::trace_io_channel_state( io_channel.outstanding[0], io_channel.write_request_stack.size());
-       leanstore_osv_debug::trace_background_result(io_channel._poll(32));
+      // leanstore_osv_debug::trace_io_channel_state( io_channel.outstanding[0], io_channel.write_request_stack.size());
+      //  leanstore_osv_debug::trace_background_result(io_channel._poll(32));
+      io_channel._poll(32); 
        leanstore_osv_debug::yield(); 
     }
     return 0;
