@@ -47,7 +47,8 @@ class OsvChannel
    OsvChannel(IoOptions options, NVMeMultiController& controller, int queue);
    ~OsvChannel();
    // -------------------------------------------------------------------------------------
-   std::vector<RaidRequest<OsvIoReq>*> write_request_stack;
+   boost::lockfree::queue<RaidRequest<OsvIoReq>*> write_request_stack;
+   std::atomic<uint64_t> submitable = {0}; 
    std::vector<int> outstanding;
    std::vector<void*> qpairs;
 
@@ -58,18 +59,19 @@ class OsvChannel
       int submitted = 0;
 
       while (!write_request_stack.empty()) {
-         auto req = write_request_stack.back();
+         RaidRequest<OsvIoReq>* req = nullptr; 
 
-         if (req) {
+         if (write_request_stack.pop(req)) {
             int ret = OsvEnvironment::osv_req_type_fun_lookup[(int)req->impl.type](1, qpairs[req->base.device], req->impl.buf, req->impl.lba,
                                                                                    req->impl.lba_count, NVMeController::completion, req, 0);
 
             if (ret == 0) {
                outstanding[req->base.device]++;
                submitted++;
-               write_request_stack.pop_back();  // Only pop if success
+               submitable--; 
                continue;
             } else {
+               write_request_stack.push(req);  // push back if it was not a success
                break; 
             }
          }

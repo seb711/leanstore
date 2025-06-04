@@ -80,7 +80,7 @@ uint32_t NVMeController::queueDepth()
 {
    // TODO: RETRIEVE THIS BY OSV DRIVER (-> IMPLEMENT THE METHODS IN OSV)
    // FIXME: THE QUEUE DEPTH SHOULD BE SET TO A MAXIMUM BUT NOT TOO HIGH
-   return 128;
+   return 64;
 }
 // -------------------------------------------------------------------------------------
 void NVMeController::allocateQPairs()

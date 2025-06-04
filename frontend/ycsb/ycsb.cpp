@@ -223,7 +223,11 @@ int main(int argc, char** argv)
    ioOptions.ioUringPollMode = FLAGS_io_uring_poll_mode;
    ioOptions.ioUringShareWq = FLAGS_io_uring_share_wq;
    ioOptions.raid5 = FLAGS_raid5;
-   ioOptions.iodepth = (FLAGS_async_batch_size + FLAGS_worker_tasks)*2; // hacky, how to take into account for remotes 
+#ifndef MEAN_USE_TASKING
+   ioOptions.iodepth = 2048 + 512;
+#else 
+   ioOptions.iodepth = (FLAGS_async_batch_size + FLAGS_worker_tasks) * 2; // hacky, how to take into account for remotes 
+#endif
    // -------------------------------------------------------------------------------------
    if (FLAGS_nopp) {
       ioOptions.channelCount = FLAGS_worker_threads;

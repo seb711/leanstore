@@ -23,7 +23,6 @@ class RequestStackLockfree
 public:
     std::unique_ptr<R[]> requests;
     boost::lockfree::stack<R*> free_stack;
-    boost::lockfree::queue<R*> submit_stack;
     
     // Note: Boost doesn't have a lockfree set, but we can use a concurrent_set from TBB
     // or implement our own atomic-based tracking for debug purposes
@@ -35,8 +34,7 @@ public:
     
     RequestStackLockfree(int max_entries) : 
         free_stack(max_entries),
-        submit_stack(max_entries),
-        max_entries(max_entries), 
+        max_entries(max_entries),
         free(max_entries)
     {
         requests = std::make_unique<R[]>(max_entries);
@@ -53,10 +51,6 @@ public:
         return outstanding_count.load();
     }
     
-    int submitStackSize() {
-        return pushed.load();
-    }
-    
     bool full() {
         return free.load() == 0;
     }
@@ -71,44 +65,6 @@ public:
         
         if (free_stack.pop(out)) {
             free.fetch_sub(1);
-            return true;
-        }
-        return false;
-    }
-    
-    /* user -> to submit */
-    void pushToSubmitStack(R* req)
-    {
-        ensure(submit_stack.push(req));
-        pushed.fetch_add(1);
-    }
-    
-    /* free -> submit / direct path (not like popFromFree and pushToSubmit) */
-    bool moveFreeToSubmitStack(R*& out)
-    {
-        ensure(free.load() >= 0);
-        if (free.load() == 0) {
-            return false;
-        }
-        
-        if (free_stack.pop(out)) {
-            free.fetch_sub(1);
-            ensure(submit_stack.push(out));
-            pushed.fetch_add(1);
-            return true;
-        }
-        return false;
-    }
-    
-    /* submit -> outstanding */
-    bool popFromSubmitStack(R*& out)
-    {
-        if (pushed.load() <= 0) {
-            return false;
-        }
-        
-        if (submit_stack.pop(out)) {
-            pushed.fetch_sub(1);
             outstanding_count.fetch_add(1);
             return true;
         }

@@ -101,7 +101,7 @@ DeviceInformation OsvEnv::getDeviceInfo()
 // Channel
 // -------------------------------------------------------------------------------------
 OsvChannel::OsvChannel(IoOptions ioOptions, NVMeMultiController& controller, int queue)
-    : options(ioOptions), controller(controller), queue(queue), lbaSize(controller.nsLbaDataSize()), outstanding(controller.deviceCount(), 0)
+    : options(ioOptions), controller(controller), queue(queue), lbaSize(controller.nsLbaDataSize()), write_request_stack(ioOptions.iodepth), outstanding(controller.deviceCount(), 0)
 {
    int c = controller.deviceCount();
    for (int i = 0; i < c; i++) {
@@ -141,7 +141,9 @@ void OsvChannel::_push(RaidRequest<OsvIoReq>* req)
 
       req->base.innerCallback.callback(&req->base);
    });
-   write_request_stack.push_back(req);
+
+   submitable++; 
+   write_request_stack.push(req);
 }
 
 void OsvChannel::_printSpecializedCounters(std::ostream& ss)
