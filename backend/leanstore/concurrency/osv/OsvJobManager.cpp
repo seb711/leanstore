@@ -190,14 +190,15 @@ void OsvJobManager::adjustWorkerCount(int workerThreads) {}
 // -------------------------------------------------------------------------------------
 void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
 {
-   leanstore_osv_debug::yield(); 
+   // leanstore_osv_debug::yield(); 
+
+   // leanstore::WorkerCounters::myCounters().time_counter_0++; 
    
    auto* waitargs = waiter_pool->acquire();
 
    waitargs->ready.store(false);
    waitargs->magic = mean::readTSC();
 
-   assert(!waitargs->ready);
 
    UserIoCallback cb;
    cb.callback = [](IoBaseRequest* req) {
@@ -217,7 +218,9 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
 
    {
       std::unique_lock<std::mutex> lock(waitargs->mtx);
+      if (waitargs->ready.load() == false) {
       waitargs->cv.wait(lock, [waitargs] { return waitargs->ready.load(); });
+      }
    }
 
    waiter_pool->release(waitargs);
