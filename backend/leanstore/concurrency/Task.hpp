@@ -1,6 +1,7 @@
 #pragma once
 // -------------------------------------------------------------------------------------
 #include "MessageHandler.hpp"
+#include "YieldLock.hpp"
 #include "leanstore/io/IoAbstraction.hpp"
 #include <osv/jumpmu.hh>
 // -------------------------------------------------------------------------------------

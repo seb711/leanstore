@@ -1,6 +1,5 @@
 // -------------------------------------------------------------------------------------
 #include "TaskManager.hpp"
-#include "ConnectedIoChannel.hpp"
 #include "leanstore/concurrency/Mean.hpp"
 #include "leanstore/concurrency/Task.hpp"
 #include "leanstore/io/IoInterface.hpp"

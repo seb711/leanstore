@@ -19,7 +19,6 @@ class TaskManager
    std::vector<std::unique_ptr<TaskExecutor>> execs;
    std::atomic<int> exclusiveThreadCounter = {0};
    std::unordered_map<int, std::reference_wrapper<TaskExecutor>> exclusiveThreadsMap;
-   std::vector<std::unique_ptr<IoChannel>> remoteChannels;
    std::unique_ptr<MessageHandlerManager> messageManager = nullptr;
    int exclusiveThreads;
    int threadAffinityOffset;

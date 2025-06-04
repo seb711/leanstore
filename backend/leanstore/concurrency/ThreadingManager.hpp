@@ -2,6 +2,7 @@
 // -------------------------------------------------------------------------------------
 #include "BlockedRange.hpp"
 #include "MessageHandler.hpp"
+#include "leanstore/utils/RingBufferSPSC.hpp"
 #include "Task.hpp"
 #include "ThreadBase.hpp"
 #include "leanstore/concurrency-recovery/Worker.hpp"
