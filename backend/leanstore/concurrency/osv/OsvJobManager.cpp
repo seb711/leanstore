@@ -109,7 +109,11 @@ unsigned OsvJobManager::getPriority() {
    auto task_queue_load = leanstore_osv_debug::get_task_queue_load(); 
    auto pool_load =  leanstore_osv_debug::get_thread_pool_load(); 
    // return task_queue_load < 2048 && (pool->available.load() + leanstore_osv_debug::task_stack.size()) >= 128 ? 10 : 0; 
-      return task_queue_load < 128 && (pool_load - (task_queue_load / 2)) > 128 && (pool->available.load() + leanstore_osv_debug::task_stack.size()) >= 128 ? 10 : 0; 
+
+      // trigger when less than 512 tasks are in the queue
+      // AND the tasks currently in the queue (512) + the tasks that are added (512) + extra buffer (10) threads are in the buffer that can theoretically could be migrated to
+      // AND the local task pool has enough entries to push to the task_queue
+      return task_queue_load < 512 && (pool_load - (task_queue_load)) > 512 + 512 + 10 && (pool->available.load() + leanstore_osv_debug::task_stack.size()) >= 512 ? 10 : 0; 
 
 };
 
