@@ -556,7 +556,6 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
    while (pages_left_to_iterate_partition > 0  
          && !mean::exec::ioChannel().writeStackFull() && partition.outstanding < (s64)IO_QUEUE_MAX_SIZE) {
       if (!partition.cooling_queue.try_pop(bf_arr)) {
-         abort(); 
          break;
       }
 
