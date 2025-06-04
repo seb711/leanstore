@@ -84,3 +84,5 @@ DEFINE_bool(raid5, false, "enable RAID 5");
 DEFINE_bool(persist, false, "");
 DEFINE_uint64(tx_rate, 0, "");
 DEFINE_uint64(tmp, 0, "");
+// -------------------------------------------------------------------------------------
+DEFINE_uint32(background_batching, 0, "Defined how much entries to batch each time when a background thread runs.");

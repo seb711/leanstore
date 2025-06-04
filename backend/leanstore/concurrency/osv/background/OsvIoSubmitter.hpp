@@ -3,6 +3,7 @@
 #include "OsvBackgroundThreadBase.hpp"
 #include "leanstore/io/RequestStackLockfree.hpp"
 #include "leanstore/io/IoChannel.hpp"
+#include "leanstore/Config.hpp"
 #include <osv/leanstore_debug.hh>
 namespace mean
 {
@@ -20,11 +21,9 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
     // request_stack.pushed stores the io_requests that could be submitted but are not submitted yet
     // policy: run it if more than 1/4 of the queue size is used
     // attention: could starve if at some point no more items are pushed (should not happen in leanstore)
-    volatile auto submitStackSize = request_stack.submitStackSize();
-    volatile auto writeRequestStackSize = io_channel.write_request_stack.size();
+    volatile auto submitStackSize = abstraction_io_channel.submitable();
     volatile auto ioOutstanding =  io_channel.outstanding[0]; 
-    volatile auto desired = request_stack.max_entries / 8;
-    return (submitStackSize > 0) || (writeRequestStackSize > 0 && ioOutstanding < 127) ? 5 : 0; 
+    return (submitStackSize > FLAGS_background_batching && ioOutstanding < 63) ? 5 : 0; 
    // return (submitStackSize > 0) || (writeRequestStackSize > 0 && ioOutstanding < 63) ? 5 : 0; 
 
    }; 

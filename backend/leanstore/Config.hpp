@@ -82,3 +82,5 @@ DECLARE_bool(raid5);
 DECLARE_bool(persist);
 DECLARE_uint64(tx_rate);
 DECLARE_uint64(tmp);
+// -------------------------------------------------------------------------------------
+DECLARE_uint32(background_batching);
