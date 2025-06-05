@@ -191,8 +191,7 @@ void OsvJobManager::adjustWorkerCount(int workerThreads) {}
 void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
 {
    // leanstore_osv_debug::yield(); 
-
-   // leanstore::WorkerCounters::myCounters().time_counter_0++; 
+   leanstore::WorkerCounters::myCounters().time_counter_0++; 
    
    auto* waitargs = waiter_pool->acquire();
 
@@ -204,10 +203,18 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
    cb.callback = [](IoBaseRequest* req) {
       BlockingIoContext* waitDone = (BlockingIoContext*)(req->user.user_data.val.ptr);
       {
-         std::lock_guard<std::mutex> lock(waitDone->mtx);
-         waitDone->ready.store(true);
+         // std::lock_guard<std::mutex> lock(waitDone->mtx);
+         if (!waitDone->mtx.try_lock()) {
+            // this is a hack that ONLY works in this specific situation and to resolve the situation 
+            // this can only happen in the case that the workload thread has not entered the official wait
+            // loop 
+            waitDone->ready.store(true);
+         } else {
+            waitDone->ready.store(true);
+            waitDone->mtx.unlock(); 
+            waitDone->cv.notify_one();
+         }
       }
-      waitDone->cv.notify_one();
    };
    cb.user_data.val.ptr = waitargs;
 
@@ -219,7 +226,7 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
    {
       std::unique_lock<std::mutex> lock(waitargs->mtx);
       if (waitargs->ready.load() == false) {
-      waitargs->cv.wait(lock, [waitargs] { return waitargs->ready.load(); });
+         waitargs->cv.wait(lock, [waitargs] { return waitargs->ready.load(); });
       }
    }
 
