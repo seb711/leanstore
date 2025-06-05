@@ -65,7 +65,7 @@ void BufferManager::pageProviderCycle(int partition_id) {
 
 
    if (phase_1_condition(partition) > 64) {
-      picked = pageProviderPhase1(partition, 512, partition_id);
+      picked = pageProviderPhase1(partition, 128, partition_id);
       //u64 picked = pageProviderPhase1Vec(partition, 128);
       COUNTERS_BLOCK() {ThreadCounters::myCounters().pp_p1_picked += picked; }
    }
@@ -129,7 +129,7 @@ void BufferManager::pageProviderCycle(int partition_id) {
    }
    COUNTERS_BLOCK() { PPCounters::myCounters().pp_thread_rounds++; }
 
-   leanstore_osv_debug::trace_page_provider(picked, added, evicted); 
+   // leanstore_osv_debug::trace_page_provider(picked, added, evicted); 
 }
 
 void BufferManager::evict_bf(CoolingPartition& partition, FreedBfsBatch& freed_bfs_batch, BufferFrame& bf, OptimisticGuard& guard, bool& p1, bool& p2) {

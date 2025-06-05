@@ -24,21 +24,7 @@ int OsvPageProvider::process()
 
 
    while (true) {
-         leanstore_osv_debug::trace_page_provider_state(bf_ptr->cooling_partitions[partition_id].dram_free_list.counter, bf_ptr->cooling_partitions[partition_id].dram_free_list.counter, mean::exec::ioChannel().writeStackFreeSize(), bf_ptr->cooling_partitions[partition_id].cooling_queue.size()); 
-
-      if (bf_ptr->cooling_partitions[partition_id].dram_free_list.counter == 0 && counter++ > 10) {
-         std::vector<std::unique_ptr<std::unique_lock<mean::mutex>>> locks;
-
-         for (size_t io_partition_idx = 0; io_partition_idx < bf_ptr->io_partitions_count; io_partition_idx++) {
-            locks.push_back(std::make_unique<std::unique_lock<mean::mutex>>(bf_ptr->io_partitions[io_partition_idx].io_mutex));
-         }
-
          bf_ptr->pageProviderCycle(partition_id);
-         counter = 0;
-      } else {
-         bf_ptr->pageProviderCycle(partition_id);
-      }
-               leanstore_osv_debug::trace_page_provider_state(bf_ptr->cooling_partitions[partition_id].dram_free_list.counter, bf_ptr->cooling_partitions[partition_id].dram_free_list.counter, mean::exec::ioChannel().writeStackFreeSize(), bf_ptr->cooling_partitions[partition_id].cooling_queue.size()); 
 
       leanstore_osv_debug::yield(); 
    }

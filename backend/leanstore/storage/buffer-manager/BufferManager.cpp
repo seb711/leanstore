@@ -478,6 +478,9 @@ void BufferManager::readPageSync(u64 pid, u8* destination)
    auto start = mean::readTSC();
    mean::task::read(reinterpret_cast<char*>(destination), pid * PAGE_SIZE, bytes_left);
    auto now = mean::readTSC();
+   leanstore::WorkerCounters::myCounters().time_counter_1++; 
+   leanstore::WorkerCounters::myCounters().total_time_sum_1 +=  mean::tscDifferenceUs(now, start); 
+
 #else
    assert("false"); 
 #endif

@@ -183,14 +183,16 @@ void run_ycsb() {
            auto timeDiffIncWait = mean::tscDifferenceUs(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time);
 #endif
            WorkerCounters::myCounters().total_ltx_time += timeDiffIncWait;
+           if (current_cpu == 0) {
+            WorkerCounters::myCounters().tx++;
            WorkerCounters::myCounters().total_tx_time += timeDiff;
+         }
            WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
            WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
            // if (timeDiffIncWait < 10000000) {
            //   WorkerCounters::myCounters().total_tx_time_inc_wait += timeDiffIncWait;
            // }
            // WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
-           WorkerCounters::myCounters().tx++;
            WorkerCounters::myCounters().ltx++;
            // ThreadCounters::myCounters().tx++;
          running_threads_counter--;
