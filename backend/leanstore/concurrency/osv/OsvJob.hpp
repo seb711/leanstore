@@ -8,7 +8,7 @@
 #include "Time.hpp"
 #include "LockfreeObjectPool.hpp"
 
-#define JOB_QUEUE_SIZE (2048)
+#define JOB_QUEUE_SIZE (4096)
 
 constexpr size_t wait_for_count = JOB_QUEUE_SIZE / 4; 
 
@@ -22,8 +22,6 @@ using CallbackFunction = std::function<void(Job*)>;                // std::add_p
 struct JobArguments {
    LockfreeObjectPool<Job, JOB_QUEUE_SIZE>* pool;
    uint64_t key;
-   std::atomic<u64>* done;
-   std::atomic<u64>* started;
 
    JobArguments() : pool(nullptr), key(0) {};
 };
@@ -32,7 +30,6 @@ struct JobArguments {
 class Job
 {
   public:
-   jumpmu::JumpMUContext jumpctx;
    JobFunction* fun = nullptr;
    JobArguments args;
 

@@ -29,11 +29,12 @@ namespace storage
          && (jumpmu::user_jump_reason() == jumpmu::UserJumpReason::NoFreePages              \
             || jumpmu::user_jump_reason() == jumpmu::UserJumpReason::Lock)) {               \
       if (jumpmu::user_jump_reason() == jumpmu::UserJumpReason::NoFreePages) {              \
-         mean::task::yield(mean::TaskState::ReadyMem);                              \
+         mean::task::yield(mean::TaskState::ReadyMem);    \
+         leanstore_osv_debug::yield();                          \
       } else {                                                                      \
          mean::task::yield(mean::TaskState::ReadyJumpLock);                         \
       }                                                                             \
-   } else {                                                                         \
+   } else {         \
       if (FLAGS_backoff) {                                                          \
          for (u64 i = utils::RandomGenerator::getRandU64(0, mask); i; --i) {        \
             MYPAUSE();                                                              \
@@ -119,7 +120,7 @@ struct Guard {
       // maybe only if state == optimistic
       assert(state == GUARD_STATE::OPTIMISTIC || version == latch->ref().load());
       if (state == GUARD_STATE::OPTIMISTIC && version != latch->ref().load()) {
-         jumpmu::jump();
+         jumpmu::jump(jumpmu::UserJumpReason::Reason2);
       }
    }
    // -------------------------------------------------------------------------------------
@@ -164,7 +165,7 @@ struct Guard {
       assert(state == GUARD_STATE::UNINITIALIZED && latch != nullptr && state != GUARD_STATE::MOVED);
       version = latch->ref().load();
       if ((version & LATCH_EXCLUSIVE_BIT) == LATCH_EXCLUSIVE_BIT) {
-         jumpmu::jump();
+         jumpmu::jump(jumpmu::UserJumpReason::Reason2);
       } else {
          state = GUARD_STATE::OPTIMISTIC;
       }
@@ -236,7 +237,7 @@ struct Guard {
          latch->mutex.lock();  // changed from try_lock because of possible retries b/c lots of readers
          if (!latch->ref().compare_exchange_strong(expected, new_version)) {
             latch->mutex.unlock();
-            jumpmu::jump();
+            jumpmu::jump(jumpmu::UserJumpReason::Reason1);
          }
          version = new_version;
          state = GUARD_STATE::EXCLUSIVE;

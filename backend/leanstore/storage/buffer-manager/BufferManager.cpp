@@ -359,6 +359,10 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
             //raise(SIGINT);
          }
          swip_guard.recheck();
+         // if (partition.io_mutex.owner.load() != nullptr) {
+         //    std::cout << partition.io_mutex.owner.load() << std::endl; 
+         //    abort(); 
+         // }
          JMUW<std::unique_lock<mean::mutex>> g_guard(partition.io_mutex);
          ExclusiveUpgradeIfNeeded swip_x_guard(swip_guard);
          io_frame.mutex.unlock();
@@ -388,7 +392,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
          g_guard->unlock();
          io_frame.mutex.unlock();
          // -------------------------------------------------------------------------------------
-         jumpmu::jump();
+         jumpmu::jump(jumpmu::UserJumpReason::Reason1);
       }
    }
    // -------------------------------------------------------------------------------------
@@ -407,7 +411,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
          g_guard->unlock();
       }
       // -------------------------------------------------------------------------------------
-      jumpmu::jump();
+      jumpmu::jump(jumpmu::UserJumpReason::Reason2);
    }
    // -------------------------------------------------------------------------------------
    if (io_frame.state == IOFrame::STATE::READY) {
@@ -453,7 +457,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
          partition.io_ht.remove(pid);
       }
       g_guard->unlock();
-      jumpmu::jump();
+      jumpmu::jump(jumpmu::UserJumpReason::Reason3);
    }
    ensure(false);
 #pragma GCC diagnostic push

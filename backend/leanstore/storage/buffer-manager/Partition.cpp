@@ -23,7 +23,7 @@ void* malloc_huge(size_t size)
 HashTable::Entry::Entry(PID key) : key(key) {}
 HashTable::Entry::Entry() : key(0) {}
 // -------------------------------------------------------------------------------------
-HashTable::HashTable(u64 sizeInBits) : alloc_stack(1ull << sizeInBits)
+HashTable::HashTable(u64 sizeInBits) : alloc_stack(1ull << (sizeInBits))
 {
    uint64_t size = (1ull << sizeInBits);
    mask = size - 1;

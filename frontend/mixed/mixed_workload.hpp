@@ -2,7 +2,7 @@
 #include "leanstore/LeanStore.hpp"
 
 #define CYCLE 100000
-#define PROBABLITY 1000
+#define PROBABLITY 5000
 #define LONGRUNNING 1
 
 // we need one easy look up

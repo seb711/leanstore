@@ -61,7 +61,9 @@ void CRTable::open()
       [&](Column& col) { col << local_time_counter_2; });
     
     columns.emplace("time_counter_3",
-        [&](Column& col) { col << (local_time_counter_3 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_3) / local_time_counter_3 : 0); });
+        //[&](Column& col) { col << (local_time_counter_3 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_3) / local_time_counter_3 : 0); });
+              [&](Column& col) { col << local_time_counter_3; });
+
                             
                    // -------------------------------------------------------------------------------------
    columns.emplace("tx_latency_us_10p", [&](Column& col) { col << local_tx_lat10p_us; });

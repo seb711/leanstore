@@ -24,14 +24,13 @@ namespace mean
 // -------------------------------------------------------------------------------------
 class OsvJobManager : public OsvBackgroundThreadBase
 {
-   static const int MAX_REQUESTS = 4096;
-   LockfreeObjectPool<Job, JOB_QUEUE_SIZE>* pool;
+   static const int MAX_REQUESTS = 4096 * 2;
    LockfreeObjectPool<BlockingIoContext, MAX_REQUESTS>* waiter_pool;
 
    leanstore::storage::BufferManager* buffer_manager; 
    std::vector<std::unique_ptr<OsvBackgroundThreadBase>> backgroundThreads;
 
-   std::function<void(u64)> executed_fn; 
+   std::function<void(u64)>* executed_fn; 
 
    std::mutex mtx; 
    std::condition_variable condvar;

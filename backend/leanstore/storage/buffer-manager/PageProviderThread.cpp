@@ -129,7 +129,7 @@ void BufferManager::pageProviderCycle(int partition_id) {
    }
    COUNTERS_BLOCK() { PPCounters::myCounters().pp_thread_rounds++; }
 
-   // leanstore_osv_debug::trace_page_provider(picked, added, evicted); 
+   leanstore_osv_debug::trace_page_provider(picked, added, evicted); 
 }
 
 void BufferManager::evict_bf(CoolingPartition& partition, FreedBfsBatch& freed_bfs_batch, BufferFrame& bf, OptimisticGuard& guard, bool& p1, bool& p2) {

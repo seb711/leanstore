@@ -47,6 +47,8 @@ struct BufferFrame& FreeList::tryPop(JMUW<std::unique_lock<mean::mutex>>& lock)
          jumpmu::jump();
       }
    } else {
+      // std::cout << "no free pages " << counter << std::endl; 
+      leanstore_osv_debug::trace_finish_transaction(counter); 
       lock->unlock();
       jumpmu::jump(jumpmu::UserJumpReason::NoFreePages);
    }
