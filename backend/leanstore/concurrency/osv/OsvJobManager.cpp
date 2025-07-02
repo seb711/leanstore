@@ -28,7 +28,6 @@ namespace mean
 // -------------------------------------------------------------------------------------
 OsvJobManager::~OsvJobManager()
 {
-   if (waiter_pool) delete waiter_pool;
    shutdown();
 }
 // -------------------------------------------------------------------------------------
@@ -38,8 +37,6 @@ static std::mutex cb_mtx;
 // -------------------------------------------------------------------------------------
 void OsvJobManager::init(int workers_count, int exclusiveThreads, IoOptions ioOptions, [[maybe_unused]] int threadAffinityOffset)
 {
-   
-   waiter_pool = new LockfreeObjectPool<BlockingIoContext, MAX_REQUESTS>{};
 
    // init the pools that we currently need
    std::cout << "INIT OSV JOBBING MANAGER" << std::endl;
@@ -104,7 +101,7 @@ unsigned OsvJobManager::getPriority() {
       // AND the tasks currently in the queue (512) + the tasks that are added (512) + extra buffer (10) threads are in the buffer that can theoretically could be migrated to
       // AND the local task pool has enough entries to push to the task_queue
       leanstore_osv_debug::trace_parallelfor_state(task_queue_load, pool_load, 0, task_stack_size); 
-      return task_queue_load < 2048 && (pool_load) > 3072 && task_stack_size == 0 ? 15 : 0; // && (pool_load - (task_queue_load)) > 2048 && (pool->available.load() + leanstore_osv_debug::task_stack.size()) >= 2048 ? 10 : 0; 
+      return task_queue_load < 256 && (pool_load) > 2048 + 1024 + 512 + 128 ? 15 : 0; // && (pool_load - (task_queue_load)) > 2048 && (pool->available.load() + leanstore_osv_debug::task_stack.size()) >= 2048 ? 10 : 0; 
 
 };
 
@@ -119,7 +116,7 @@ unsigned OsvJobManager::getPriority() {
       assert(leanstore_osv_debug::task_stack.size() < 4096);
       leanstore_osv_debug::task_stack.push({executed_fn, id});
 
-      if (leanstore_osv_debug::task_stack.size() >= 512) { // FIXME: this is currently a constant 
+      if (leanstore_osv_debug::task_stack.size() >= 64) { // FIXME: this is currently a constant 
          leanstore_osv_debug::flush_to_runqueue();
          leanstore_osv_debug::yield(); 
       }
@@ -167,20 +164,13 @@ void OsvJobManager::adjustWorkerCount(int workerThreads) {}
 // -------------------------------------------------------------------------------------
 void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
 {
-   if (sched_getcpu() > 0) {
-      leanstore_osv_debug::yield();
-   }
    leanstore::WorkerCounters::myCounters().time_counter_0++; 
-   
-   auto* waitargs = waiter_pool->acquire();
 
-   waitargs->ready.store(false);
-   waitargs->magic = mean::readTSC();
-
+   jumpmu::thread_local_jumpmu.ready.store(false);
 
    UserIoCallback cb;
    cb.callback = [](IoBaseRequest* req) {
-      BlockingIoContext* waitDone = (BlockingIoContext*)(req->user.user_data.val.ptr);
+      jumpmu::JumpMUContext* waitDone = (jumpmu::JumpMUContext*)(req->user.user_data.val.ptr);
       #if true   
       {
          // std::lock_guard<std::mutex> lock(waitDone->mtx);
@@ -203,20 +193,18 @@ void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len
          waitDone->cv.notify_one();
       #endif
    };
-   cb.user_data.val.ptr = waitargs;
+   cb.user_data.val.ptr = &jumpmu::thread_local_jumpmu;
 
    assert(type == IoRequestType::Read);
    execIoChannel().push(type, data, addr, len, cb);
 
    auto start = mean::readTSC();
    {
-      std::unique_lock<std::mutex> lock(waitargs->mtx);
-      if (waitargs->ready.load() == false) {
-         waitargs->cv.wait(lock, [waitargs] { return waitargs->ready.load(); });
+      std::unique_lock<std::mutex> lock(jumpmu::thread_local_jumpmu.mtx);
+      if (jumpmu::thread_local_jumpmu.ready.load() == false) {
+         jumpmu::thread_local_jumpmu.cv.wait(lock, [] { return jumpmu::thread_local_jumpmu.ready.load(); });
       }
    }
-
-   waiter_pool->release(waitargs);
 }
 
 void OsvJobManager::registerExclusiveThread(std::string name, int, TaskFunction taskFun)

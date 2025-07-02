@@ -54,9 +54,13 @@ OP_RESULT BTreeLL::lookup(u8* key, u16 key_length, function<void(const u8*, u16)
       {
          leanstore::WorkerCounters::myCounters().time_counter_3++; 
          leanstore::WorkerCounters::myCounters().total_time_sum_3 +=  1; 
+         if (jumpmu::user_jump_reason() == jumpmu::UserJumpReason::Reason3) {
+            leanstore::WorkerCounters::myCounters().time_counter_1++; 
+            leanstore::WorkerCounters::myCounters().total_time_sum_1 +=  1; 
+         }
          if (jumpmu::user_jump_reason() == jumpmu::UserJumpReason::Reason2) {
-                     leanstore::WorkerCounters::myCounters().time_counter_2++; 
-         leanstore::WorkerCounters::myCounters().total_time_sum_2 +=  1; 
+            leanstore::WorkerCounters::myCounters().time_counter_2++; 
+            leanstore::WorkerCounters::myCounters().total_time_sum_2 +=  1; 
          }
          leanstore_osv_debug::yield(); 
          BACKOFF_STRATEGIES()

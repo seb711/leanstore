@@ -2,6 +2,7 @@
 // -------------------------------------------------------------------------------------
 #include "BlockedRange.hpp"
 #include "YieldLock.hpp"
+#include "PreemptLock.hpp"
 #include "Task.hpp"
 #include "leanstore/io/IoInterface.hpp"
 #include <osv/mutex.h>
@@ -14,6 +15,13 @@ namespace mean
 // -------------------------------------------------------------------------------------
 #if !defined(MEAN_USE_TASKING) && !defined(MEAN_USE_THREADING) && !defined(MEAN_USE_JOBBING)
 #define MEAN_USE_TASKING
+#endif
+
+
+#if defined(MEAN_USE_JOBBING)
+   using io_mutex = PreemptLock;
+#else
+   using io_mutex =  mean::mutex;
 #endif
 
 #if defined(MEAN_USE_THREADING)

@@ -54,6 +54,7 @@ IOFrame& HashTable::insert(PID key)
    uint64_t pos = hashKey(key) & mask;
    e->next = entries[pos];
    entries[pos] = e;
+   assert(e->value.mutex.owner.load() == nullptr); 
    return e->value;
 }
 // -------------------------------------------------------------------------------------
@@ -75,6 +76,7 @@ void HashTable::remove(HashTable::Handler& handler)
 {
    Entry* to_delete = *handler.holder;
    *handler.holder = (*handler.holder)->next;
+   assert(to_delete->value.mutex.owner.load() == nullptr); 
    alloc_stack.ret(to_delete);
 }
 // -------------------------------------------------------------------------------------

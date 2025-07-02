@@ -53,8 +53,9 @@ void CRTable::open()
         [&](Column& col) { col << local_time_counter_0; });
     
     columns.emplace("time_counter_1",
-        [&](Column& col) { col << (local_time_counter_1 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_1) / local_time_counter_1 : 0); });
-        
+    //     [&](Column& col) { col << (local_time_counter_1 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_1) / local_time_counter_1 : 0); });
+       [&](Column& col) { col << local_time_counter_1; });
+          
     
      columns.emplace("time_counter_2",
      //   [&](Column& col) { col << (local_time_counter_2 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_2) / local_time_counter_2 : 0); });

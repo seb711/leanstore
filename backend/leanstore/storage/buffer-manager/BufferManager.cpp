@@ -30,6 +30,9 @@
 #include <fstream>
 #include <iomanip>
 #include <set>
+
+
+
 // -------------------------------------------------------------------------------------
 // Local GFlags
 // -------------------------------------------------------------------------------------
@@ -302,10 +305,11 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
    swip_guard.unlock();  // otherwise we would get a deadlock, P->G, G->P
    const PID pid = swip_value.asPageID();
    IoPartition& partition = getIoPartition(pid);
-   JMUW<std::unique_lock<mean::mutex>> g_guard(partition.io_mutex);
+   JMUW<std::unique_lock<mean::io_mutex>> g_guard(partition.io_mutex);
    swip_guard.recheck();
    assert(!swip_value.isHOT());
    // -------------------------------------------------------------------------------------
+   leanstore_osv_debug::trace_finish_transaction(pid); 
    auto frame_handler = partition.io_ht.lookup(pid);
    if (!frame_handler) {
       BufferFrame& bf = randomCoolingPartition().dram_free_list.tryPop(g_guard);  // EXP
@@ -363,7 +367,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
          //    std::cout << partition.io_mutex.owner.load() << std::endl; 
          //    abort(); 
          // }
-         JMUW<std::unique_lock<mean::mutex>> g_guard(partition.io_mutex);
+         JMUW<std::unique_lock<mean::io_mutex>> g_guard(partition.io_mutex);
          ExclusiveUpgradeIfNeeded swip_x_guard(swip_guard);
          io_frame.mutex.unlock();
          swip_value.warm(&bf);
@@ -375,7 +379,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
             setOptimisticParentPointer(swip_guard, swip_value);
          }
          // -------------------------------------------------------------------------------------
-         if (io_frame.readers_counter.fetch_add(-1) == 1) {
+          if (io_frame.readers_counter.fetch_add(-1) == 1) {
             partition.io_ht.remove(pid);
          }
          // -------------------------------------------------------------------------------------
@@ -392,7 +396,11 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
          g_guard->unlock();
          io_frame.mutex.unlock();
          // -------------------------------------------------------------------------------------
-         jumpmu::jump(jumpmu::UserJumpReason::Reason1);
+         if (jumpmu::user_jump_reason() == jumpmu::UserJumpReason::Reason3) {
+            jumpmu::jump(jumpmu::UserJumpReason::Reason3);
+         } else {
+            jumpmu::jump(jumpmu::UserJumpReason::Reason1);
+         }
       }
    }
    // -------------------------------------------------------------------------------------
@@ -418,6 +426,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
       // -------------------------------------------------------------------------------------
       BufferFrame* volatile bf = io_frame.bf;
       {
+         // io_frame.readers_counter++;  // incremented while holding partition lock
          // We have to exclusively lock the bf because the page provider thread will
          // try to evict them when its IO is done
          bf->header.latch.assertNotExclusivelyLatched();
@@ -442,6 +451,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
             std::cout << "frame: " << io_frame.readers_counter << " bf.dt_id: " << bf->page.dt_id<< std::endl;
             //raise(SIGINT);
          }
+         
          if (io_frame.readers_counter.fetch_add(-1) == 1) {
             partition.io_ht.remove(pid);
          } else {
@@ -482,8 +492,8 @@ void BufferManager::readPageSync(u64 pid, u8* destination)
    auto start = mean::readTSC();
    mean::task::read(reinterpret_cast<char*>(destination), pid * PAGE_SIZE, bytes_left);
    auto now = mean::readTSC();
-   leanstore::WorkerCounters::myCounters().time_counter_1++; 
-   leanstore::WorkerCounters::myCounters().total_time_sum_1 +=  mean::tscDifferenceUs(now, start); 
+   // leanstore::WorkerCounters::myCounters().time_counter_1++; 
+   // leanstore::WorkerCounters::myCounters().total_time_sum_1 +=  mean::tscDifferenceUs(now, start); 
 
 #else
    assert("false"); 

@@ -30,7 +30,7 @@ void FreeList::push(BufferFrame& bf)
    counter++;
 }
 // -------------------------------------------------------------------------------------
-struct BufferFrame& FreeList::tryPop(JMUW<std::unique_lock<mean::mutex>>& lock)
+struct BufferFrame& FreeList::tryPop(JMUW<std::unique_lock<mean::io_mutex>>& lock)
 {
    BufferFrame* c_header = head;
    BufferFrame* free_bf = nullptr;
@@ -48,7 +48,7 @@ struct BufferFrame& FreeList::tryPop(JMUW<std::unique_lock<mean::mutex>>& lock)
       }
    } else {
       // std::cout << "no free pages " << counter << std::endl; 
-      leanstore_osv_debug::trace_finish_transaction(counter); 
+      // leanstore_osv_debug::trace_finish_transaction(counter); 
       lock->unlock();
       jumpmu::jump(jumpmu::UserJumpReason::NoFreePages);
    }

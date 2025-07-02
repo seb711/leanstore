@@ -398,6 +398,8 @@ u64 BufferManager::pageProviderPhase1(CoolingPartition& partition, const u64 req
    volatile u64 failed_cause_io = 0;
    volatile u64 failed_cause_cool = 0;
    volatile u64 failed_cause_iocoldone = 0;
+   volatile u64 failed_cause_not_all_children_evivted = 0;
+   volatile u64 failed_cause_recheck = 0;
    volatile u64 found = 0;
    volatile u64 attempts = 0;
    volatile u64 failed_attempts =
@@ -411,7 +413,7 @@ u64 BufferManager::pageProviderPhase1(CoolingPartition& partition, const u64 req
    while (failed_attempts < 10) {
       jumpmuTry()
       {
-         while (found < required && failed_attempts < 10) {
+         while (found < required && failed_attempts < 20) {
             COUNTERS_BLOCK() { PPCounters::myCounters().phase_1_counter++; }
             attempts++;
             OptimisticGuard r_guard(r_buffer->header.latch, true);
@@ -457,6 +459,7 @@ u64 BufferManager::pageProviderPhase1(CoolingPartition& partition, const u64 req
             if (picked_a_child_instead) {
                continue;  // restart the inner loop
             }
+            failed_cause_not_all_children_evivted += all_children_evicted ? 0 : 1; 
             repickIf(!all_children_evicted);
             // -------------------------------------------------------------------------------------
             [[maybe_unused]] Time find_parent_begin, find_parent_end;
@@ -521,6 +524,9 @@ u64 BufferManager::pageProviderPhase1(CoolingPartition& partition, const u64 req
             r_buffer = &partitionRandomBufferFrame(partition_id, max_partitions);
             // -------------------------------------------------------------------------------------
          } // while inner
+         if (failed_attempts >= 20 && found < 10) {
+            abort(); 
+         }
          failed_attempts = 0;
          jumpmu_break;
       }
@@ -545,17 +551,31 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
    ensure(partition.state.debug_thread == mean::exec::getId());
    COUNTERS_BLOCK() { PPCounters::myCounters().phase_2_counter++; }
    volatile s64 pages_left_to_iterate_partition = pages_to_iterate_partition;
+
+   
    //std::cout << "pl:" << p_i << " pages_left_to_iterate_partition: "  << pages_left_to_iterate_partition  << " q: " << partition.cooling_queue.size() << std::endl;
    volatile u64 added = 0;
    volatile bool evictedCalledd = false;
    volatile bool fromTheBeginning = false;
+
+   volatile u64 failed_not_cool = 0; 
+   volatile u64 failed_no_lock = 0; 
+   volatile u64 failed_used = 0; 
+
    //volatile s64 left_in_q = partition.cooling_queue.size();
    //const int submitMultiple = mean::exec::ioChannel().submitMin();
    BufferFrame* bf_arr;
    pages_left_to_iterate_partition = std::min(pages_to_iterate_partition, partition.cooling_queue.size());
+   unsigned count = 10; 
+   // leanstore_osv_debug::trace_page_provider_state(pages_left_to_iterate_partition, partition.outstanding, mean::exec::ioChannel().writeStackFreeSize(), partition.cooling_queue.size()); 
+   leanstore_osv_debug::trace_page_provider_state(pages_left_to_iterate_partition, partition.outstanding, mean::exec::ioChannel().writeStackFreeSize(), partition.cooling_queue.size()); 
+
    while (pages_left_to_iterate_partition > 0  
          && !mean::exec::ioChannel().writeStackFull() && partition.outstanding < (s64)IO_QUEUE_MAX_SIZE) {
+      
+
       if (!partition.cooling_queue.try_pop(bf_arr)) {
+         assert(partition.cooling_queue.size() == 0); 
          break;
       }
 
@@ -575,8 +595,9 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
          // Check if the BF got swizzled in or unswizzle another time in another partition
          if (bf.header.state != BufferFrame::STATE::COOL) {
             fromTheBeginning = true;
-
-            jumpmu::jump();
+            failed_not_cool++; 
+               jumpmu::jump(jumpmu::UserJumpReason::Reason3);
+         
          }
          if (!bf.header.isWB) {
             // Prevent evicting a page that already has an IO Frame with (possibly) threads working on it.
@@ -585,11 +606,13 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
                if (io_partition.io_mutex.try_lock()) {
                   if (io_partition.io_ht.lookup(bf.header.pid)) {
                      io_partition.io_mutex.unlock();
-                     jumpmu::jump();
+                     failed_used++; 
+                     jumpmu::jump(jumpmu::UserJumpReason::Reason1);
                   }
                   io_partition.io_mutex.unlock();
                } else {
-                  jumpmu::jump();
+                  failed_no_lock++; 
+                  jumpmu::jump(jumpmu::UserJumpReason::Reason2);
                }
             }
             pages_left_to_iterate_partition--;
@@ -679,8 +702,10 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
 
       }
       jumpmuCatch() {
-
-         if (bf.header.state == BufferFrame::STATE::COOL) {
+         /* if (count == 0) {
+            abort(); 
+         } */
+            if (bf.header.state == BufferFrame::STATE::COOL) {
             partition.cooling_bfs_counter++;
             partition.cooling_queue.push_back(&bf);
             ensure(partition.cooling_queue.size() == partition.cooling_bfs_counter);
@@ -695,6 +720,10 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
       }
    }
    ensure(mean::exec::ioChannel().submitMin() == 0 || added % mean::exec::ioChannel().submitMin() == 0);
+
+   if (added == 0 && partition.cooling_queue.size() > 10000) {
+      abort(); 
+   }
 
    return added;
 }

@@ -17,7 +17,7 @@ unsigned OsvPageProvider::getPriority() {
    // return bf_ptr->cooling_partitions[partition_id].dram_free_list.counter < 100 ? 1 : 0; 
 
    leanstore_osv_debug::trace_pageprovider_state(counter); 
-   return (counter < 500) ? 1 : 0; 
+   return (counter < 1000) ? 1 : 0; 
 }
 
 int OsvPageProvider::process()
@@ -28,6 +28,7 @@ int OsvPageProvider::process()
          // std::cout << "empty freelist " << bf_ptr->cooling_partitions[partition_id].dram_free_list.counter << std::endl; 
          leanstore_osv_debug::trace_background_result(bf_ptr->cooling_partitions[partition_id].dram_free_list.counter); 
          bf_ptr->pageProviderCycle(partition_id);
+         assert(bf_ptr->cooling_partitions[partition_id].dram_free_list.counter > 1000); 
 
       leanstore_osv_debug::yield(); 
    }

@@ -24,8 +24,7 @@ namespace mean
 // -------------------------------------------------------------------------------------
 class OsvJobManager : public OsvBackgroundThreadBase
 {
-   static const int MAX_REQUESTS = 4096 * 2;
-   LockfreeObjectPool<BlockingIoContext, MAX_REQUESTS>* waiter_pool;
+   static const int MAX_REQUESTS = 512;
 
    leanstore::storage::BufferManager* buffer_manager; 
    std::vector<std::unique_ptr<OsvBackgroundThreadBase>> backgroundThreads;

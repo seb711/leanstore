@@ -120,7 +120,7 @@ struct Guard {
       // maybe only if state == optimistic
       assert(state == GUARD_STATE::OPTIMISTIC || version == latch->ref().load());
       if (state == GUARD_STATE::OPTIMISTIC && version != latch->ref().load()) {
-         jumpmu::jump(jumpmu::UserJumpReason::Reason2);
+         jumpmu::jump(jumpmu::UserJumpReason::Reason3);
       }
    }
    // -------------------------------------------------------------------------------------

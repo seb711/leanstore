@@ -226,7 +226,7 @@ int main(int argc, char** argv)
    ioOptions.ioUringShareWq = FLAGS_io_uring_share_wq;
    ioOptions.raid5 = FLAGS_raid5;
 #ifndef MEAN_USE_TASKING
-   ioOptions.iodepth = 2048 + 512;
+   ioOptions.iodepth = 1024;
 #else 
    ioOptions.iodepth = (FLAGS_async_batch_size + FLAGS_worker_tasks) * 2; // hacky, how to take into account for remotes 
 #endif

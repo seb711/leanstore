@@ -188,8 +188,8 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
       return request_stack.full();
    }
    bool writeStackFull() override {
-      // return request_stack.free < 128;
-      return request_stack.free < (request_stack.max_entries * 0.5);
+      return request_stack.free < 128;
+      // return request_stack.free < (request_stack.max_entries * 0.5);
    }
    int writeStackFreeSize() override {
       return request_stack.free;

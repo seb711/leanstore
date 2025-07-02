@@ -4,6 +4,7 @@
 #include "Units.hpp"
 #include "leanstore/Config.hpp"
 #include "leanstore/concurrency/Mean.hpp"
+#include "leanstore/concurrency/PreemptLock.hpp"
 #include "leanstore/storage/buffer-manager/FreeList.hpp"
 #include "leanstore/utils/Misc.hpp"
 #include "leanstore/utils/PreallocationStack.hpp"
@@ -181,11 +182,17 @@ struct CoolingPartition {
 };
 struct IoPartition {
    // -------------------------------------------------------------------------------------
+#if defined(MEAN_USE_JOBBING)
+   PreemptLock io_mutex;
+#else
    mean::mutex io_mutex;
+#endif
    HashTable io_ht;
    IoPartition(u64 first_pid, u64 pid_distance, u64 free_bfs_limit, u64 cooling_bfs_limit);
    // -------------------------------------------------------------------------------------
-   IoPartition(u64 max_outsanding_ios) : io_ht(utils::getBitsNeeded(max_outsanding_ios)) { }
+   IoPartition(u64 max_outsanding_ios) : io_ht(utils::getBitsNeeded(max_outsanding_ios) + 2) {
+      std::cout << "max_outstanding_ios " << max_outsanding_ios << std::endl; 
+    }
    ~IoPartition();
    // -------------------------------------------------------------------------------------
 };
