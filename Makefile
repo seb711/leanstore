@@ -1,9 +1,10 @@
 .PHONY: module
 BUILD_DIR = build
-
-MEAN_TYPE ?= MEAN_USE_JOBBING  # Default value, can be overridden
+MEAN_TYPE ?= MEAN_USE_JOBBING # Default value, can be overridden
+IS_LINUX ?= 1 # Default to Linux, can be overridden with IS_LINUX=0
 
 module: install-dependencies build-shared cmake-configure
+
 LIBFAKEOSVDIR=$(OSV_BASE)/libfakeosv
 LIB_SHARED = $(LIBFAKEOSVDIR)/libfakeosv.so
 
@@ -19,6 +20,13 @@ install-dependencies:
 		libbz2-dev liblz4-dev libzstd-dev librocksdb-dev liblmdb-dev \
 		libwiredtiger-dev liburing-dev
 
+# Configure compiler flags based on IS_LINUX
+ifeq ($(IS_LINUX),1)
+    PLATFORM_FLAGS = -DIS_LINUX
+else
+    PLATFORM_FLAGS = 
+endif
+
 # Configure the project with CMake, specifying GCC 12 as the compiler, linking against libtbb, and adding -fPIC for shared lib
 .PHONY: cmake-configure
 cmake-configure:
@@ -26,9 +34,19 @@ cmake-configure:
 	cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Debug -DLEANSTORE_INCLUDE_OSV=1 \
 		-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
 		-DCMAKE_C_FLAGS="-fPIC" \
-		-DCMAKE_CXX_FLAGS="-fPIC -D$(MEAN_TYPE)" -DLIBFAKEOSV_PATH=$(LIB_SHARED) .. && make -j
+		-DCMAKE_CXX_FLAGS="-fPIC -D$(MEAN_TYPE) $(PLATFORM_FLAGS)" \
+		-DLIBFAKEOSV_PATH=$(LIB_SHARED) .. && make -j
 
 # Clean the build directory
 .PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR)
+
+# Help target to show usage
+.PHONY: help
+help:
+	@echo "Usage:"
+	@echo "  make module                    # Build with default settings (Linux)"
+	@echo "  make module IS_LINUX=0        # Build without Linux flag"
+	@echo "  make module MEAN_TYPE=CUSTOM  # Override mean type"
+	@echo "  make clean                     # Clean build directory"
