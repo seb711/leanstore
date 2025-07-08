@@ -31,6 +31,7 @@ class ThreadWithJump : public Thread
       bool job_set = false;
       bool job_done = false;
    } meta;
+   std::atomic<ThreadWithJump*> next; 
    leanstore::cr::Worker* this_worker;
    ThreadWithJump(std::function<void()> fun, std::string name = "Thread", int id = -1) : Thread(fun, name, id) {}
    int process() override
@@ -66,10 +67,10 @@ class ThreadingManager
 {
    int total_threads_count;
    std::atomic<int> running_threads;
-   std::vector<std::unique_ptr<ThreadWithJump>> all_threads;
+   std::vector<std::unique_ptr<ThreadWithJump>> exclusive_threads;
+   std::unordered_map<int, std::vector<std::unique_ptr<ThreadWithJump>>> worker_threads;
    int max_exclusive_threads;
    std::atomic<int> exclusiveThreadCounter = 0;
-   std::unordered_map<int, std::reference_wrapper<ThreadWithJump>> exclusiveThreads;
    static constexpr int MAX_WORKER_THREADS = 2048;
   public:
    leanstore::cr::Worker* workers[MAX_WORKER_THREADS];
@@ -96,11 +97,13 @@ class ThreadingManager
    // task
    // -------------------------------------------------------------------------------------
    void registerExclusiveThread(std::string name, int t_i, TaskFunction fun);
-   void parallelFor(BlockedRange range, std::function<void(u64, std::atomic<bool>& cancelable)> fun, int tasks, s64 bbgranularity = -1);
+   void parallelFor(BlockedRange range, std::function<void(u64, std::atomic<bool>& cancelable)> fun, int tasks, s64 bbgranularity = -1, bool rate_active = false);
    void scheduleTaskSync(TaskFunction fun);
    void yield(TaskState ts);
    void blockingIo(IoRequestType type, char* data, s64 addr, u64 len);
    Task& this_task();
+   void sleepAll(float sleep) {};
+
    // -------------------------------------------------------------------------------------
    // int getFd();
    // -------------------------------------------------------------------------------------
