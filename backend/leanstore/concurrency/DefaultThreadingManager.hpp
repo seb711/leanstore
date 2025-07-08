@@ -1,0 +1,104 @@
+#pragma once
+// -------------------------------------------------------------------------------------
+#include "BlockedRange.hpp"
+#include "MessageHandler.hpp"
+#include "Task.hpp"
+#include "ThreadBase.hpp"
+#include "leanstore/concurrency-recovery/Worker.hpp"
+#include "leanstore/concurrency/ThreadingManager.hpp"
+#include "leanstore/io/IoInterface.hpp"
+// -------------------------------------------------------------------------------------
+#include <condition_variable>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <osv/jumpmu.hh>
+#include <thread>
+#include <vector>
+
+#define USE_THREAD_POOL
+// -------------------------------------------------------------------------------------
+namespace mean
+{
+struct ThreadData {
+   // Your captured variables
+   jumpmu::JumpMUContext ctx = {};
+   uint64_t id = 0;
+   std::atomic<ThreadData*>* head_pointer;
+   std::mutex* threadDataPoolMutex;
+   std::condition_variable* threadDataPoolCV;
+   std::atomic<bool>* cancelable = nullptr;
+   std::function<void(u64, std::atomic<bool>& cancelable)>* fun = nullptr;
+
+   ThreadData* next = nullptr;
+
+   ThreadData(std::atomic<ThreadData*>* head_pointer, std::mutex * threadDataPoolMutex, std::condition_variable * threadDataPoolCV)
+       : head_pointer(head_pointer), threadDataPoolMutex(threadDataPoolMutex), threadDataPoolCV(threadDataPoolCV) {};
+   // Add other captured variables as needed
+};
+// -------------------------------------------------------------------------------------
+class DefaultThreadingManager
+{
+#ifdef USE_THREAD_POOL
+   std::mutex threadPoolMutex;
+   std::condition_variable threadPoolCV;
+
+   std::vector<std::unique_ptr<ThreadWithJump>> worker_threads;
+   std::atomic<ThreadWithJump*> thread_pool_head = {nullptr};
+#else
+   std::mutex threadDataPoolMutex;
+   std::condition_variable threadDataPoolCV;
+   std::vector<std::unique_ptr<ThreadData>> thread_data;
+   std::atomic<ThreadData*> thread_data_pool_head = {nullptr};
+#endif
+   int total_threads_count;
+   std::atomic<int> running_threads;
+   std::vector<std::unique_ptr<ThreadWithJump>> exclusive_threads;
+   int max_exclusive_threads;
+   std::atomic<int> exclusiveThreadCounter = 0;
+   static constexpr int MAX_WORKER_THREADS = 2048;
+
+  public:
+   leanstore::cr::Worker* workers[MAX_WORKER_THREADS];
+   // -------------------------------------------------------------------------------------
+   ~DefaultThreadingManager();
+   // -------------------------------------------------------------------------------------
+   // env
+   // -------------------------------------------------------------------------------------
+   void init(int workerThreads, [[maybe_unused]] int exclusvieThreads, IoOptions ioOptions, [[maybe_unused]] int threadAffinityOffset = 0);
+   void start(TaskFunction taskFun);
+   void shutdown();
+   void join();
+   std::string stats();
+   void adjustWorkerCount(int workerThreads);
+   void registerPageProvider(void* bf_ptr, int partitions_count);
+   std::string printCountersHeader();
+   std::string printCounters(int te_id);
+   // -------------------------------------------------------------------------------------
+   // exec
+   // -------------------------------------------------------------------------------------
+   int execId();
+   IoChannel& execIoChannel();
+   // -------------------------------------------------------------------------------------
+   // task
+   // -------------------------------------------------------------------------------------
+   void registerExclusiveThread(std::string name, int t_i, TaskFunction fun);
+   void parallelFor(BlockedRange range,
+                    std::function<void(u64, std::atomic<bool>& cancelable)> fun,
+                    int tasks,
+                    s64 bbgranularity = -1,
+                    bool rate_active = false);
+   void scheduleTaskSync(TaskFunction fun);
+   void yield(TaskState ts);
+   void blockingIo(IoRequestType type, char* data, s64 addr, u64 len);
+   Task& this_task();
+   void sleepAll(float sleep) {};
+
+   // -------------------------------------------------------------------------------------
+   // int getFd();
+   // -------------------------------------------------------------------------------------
+   int workerCount();
+};
+// -------------------------------------------------------------------------------------
+}  // namespace mean
+// -------------------------------------------------------------------------------------
