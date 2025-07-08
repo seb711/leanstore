@@ -4,6 +4,7 @@
 // -------------------------------------------------------------------------------------
 #include "TaskManager.hpp"
 #include "ThreadingManager.hpp"
+#include "DefaultThreadingManager.hpp"
 #include "osv/OsvJobManager.hpp"
 // -------------------------------------------------------------------------------------
 #include <mutex>
@@ -12,7 +13,14 @@ namespace mean
 {
 // -------------------------------------------------------------------------------------
 // defaults set in hpp
-#ifdef MEAN_USE_THREADING
+#ifdef IS_LINUX
+#pragma message ("Compiling with IS_LINUX enabled")
+#endif
+
+#ifdef MEAN_USE_DEFAULT_THREADING
+#pragma message ("Compiling with MEAN_USE_THREADING enabled")
+using ExecEnv = DefaultThreadingManager;
+#elifdef MEAN_USE_THREADING
 #pragma message ("Compiling with MEAN_USE_THREADING enabled")
 using ExecEnv = ThreadingManager;
 #elif defined(MEAN_USE_TASKING)
@@ -97,9 +105,9 @@ void registerExclusiveThread(std::string name, int id, TaskFunction fun)
 {
    env::_instance.registerExclusiveThread(name, id, fun);
 }
-void parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>&)> fun, int tasks, s64 granularity)
+void parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>&)> fun, int tasks, s64 granularity, bool rate_active)
 {
-   env::_instance.parallelFor(bb, fun, tasks, granularity);
+   env::_instance.parallelFor(bb, fun, tasks, granularity, rate_active);
 }
 void scheduleTaskSync(TaskFunction fun)
 {

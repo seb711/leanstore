@@ -176,12 +176,12 @@ void run_ycsb() {
            WorkerCounters::myCounters().tx++;
            // ThreadCounters::myCounters().tx++;
            mean::task::yield();
-         running_threads_counter--;
+            running_threads_counter--;
       };
       mean::BlockedRange bb(0, (u64)1000000000000ul);
       auto startTsc = mean::readTSC();
       auto startTP = mean::getTimePoint();
-      mean::task::parallelFor(bb, ycsb_tx, FLAGS_worker_tasks, 100000);
+      mean::task::parallelFor(bb, ycsb_tx, FLAGS_worker_tasks, 100000, true);
       auto diffTSC = mean::tscDifferenceNs(mean::readTSC(), startTsc) / 1e9;
       auto diffTP = mean::timePointDifference(mean::getTimePoint(), startTP) / 1e9;
       std::cout << "done: time: " << diffTP << " tsc: " << diffTSC << std::endl;
@@ -207,7 +207,7 @@ int main(int argc, char** argv)
    ioOptions.iodepth = (FLAGS_async_batch_size + FLAGS_worker_tasks)*2; // hacky, how to take into account for remotes 
    // -------------------------------------------------------------------------------------
    if (FLAGS_nopp) {
-      ioOptions.channelCount = FLAGS_worker_threads;
+      ioOptions.channelCount = 1; // FLAGS_worker_threads;
       mean::env::init(
          FLAGS_worker_threads, //std::min(std::thread::hardware_concurrency(), FLAGS_tpcc_warehouse_count),
          0/*FLAGS_pp_threads*/, ioOptions);

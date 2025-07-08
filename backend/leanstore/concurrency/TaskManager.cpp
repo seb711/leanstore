@@ -222,7 +222,7 @@ void TaskManager::registerPageProvider(void* bf_ptr, int partitions_count) {
  * The default granularity is ((end-start)/threads/tasks/some factor)
  * If a single cycle through the loop is very short, bbgranularity should be set accordingly higher.
  */
-void TaskManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>& cancelable)> fun, const int tasks, s64 bbgranularity)
+void TaskManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>& cancelable)> fun, const int tasks, s64 bbgranularity, bool rate_active)
 {
    ensure(tasks > 0);
    const int threads = workerCount();

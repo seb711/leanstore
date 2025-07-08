@@ -13,11 +13,11 @@
 namespace mean
 {
 // -------------------------------------------------------------------------------------
-#if !defined(MEAN_USE_TASKING) && !defined(MEAN_USE_THREADING) && !defined(MEAN_USE_JOBBING)
+#if !defined(MEAN_USE_TASKING) && !defined(MEAN_USE_THREADING) && !defined(MEAN_USE_JOBBING) && !defined(MEAN_USE_DEFAULT_THREADING)
 #define MEAN_USE_TASKING
 #endif
 
-#if defined(MEAN_USE_THREADING)
+#if defined(MEAN_USE_THREADING) || defined(MEAN_USE_DEFAULT_THREADING)
 using mutex = std::mutex;
 #elif defined(MEAN_USE_JOBBING) && defined(NDEBUG)
 using mutex = lockfree::mutex;
@@ -56,7 +56,7 @@ int getId();
 namespace task
 {
 void registerExclusiveThread(std::string name, int id, TaskFunction fun);
-void parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>&)> fun, int tasks, s64 granularity = -1);
+void parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>&)> fun, int tasks, s64 granularity = -1, bool rate_active=false);
 void scheduleTaskSync(TaskFunction fun);
 // -------------------------------------------------------------------------------------
 void yield(TaskState ts = TaskState::Ready);
