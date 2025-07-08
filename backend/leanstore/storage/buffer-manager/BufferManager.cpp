@@ -86,7 +86,7 @@ BufferManager::BufferManager()
    // -------------------------------------------------------------------------------------
    
    // Init SSD pool
-   /*
+   #if (defined(MEAN_USE_THREADING) || defined(MEAN_USE_DEFAULT_THREADING)) && defined(IS_LINUX)
    int flags = O_RDWR | O_DIRECT;
    if (FLAGS_trunc) {
      flags |= O_TRUNC | O_CREAT;
@@ -103,7 +103,8 @@ BufferManager::BufferManager()
      free(dummy_data);
      fsync(ssd_fd);
    }
-   ensure(fcntl(ssd_fd, F_GETFL) != -1);*/
+   ensure(fcntl(ssd_fd, F_GETFL) != -1);
+   #endif
    
    // -------------------------------------------------------------------------------------
    // Background threads
@@ -478,6 +479,22 @@ void BufferManager::readPageSync(u64 pid, u8* destination)
    auto start = mean::readTSC();
    mean::task::read(reinterpret_cast<char*>(destination), pid * PAGE_SIZE, bytes_left);
    auto now = mean::readTSC();
+#elif defined(MEAN_USE_THREADING)
+#if defined(IS_LINUX)
+   const int bytes_read = pread(ssd_fd, destination, bytes_left, pid * PAGE_SIZE + (PAGE_SIZE - bytes_left));
+#else 
+   auto start = mean::readTSC();
+   mean::task::read(reinterpret_cast<char*>(destination), pid * PAGE_SIZE, bytes_left);
+   auto now = mean::readTSC(); 
+#endif
+#elif defined(MEAN_USE_DEFAULT_THREADING)
+#if defined(IS_LINUX)
+   const int bytes_read = pread(ssd_fd, destination, bytes_left, pid * PAGE_SIZE + (PAGE_SIZE - bytes_left));
+#else 
+   auto start = mean::readTSC();
+   mean::task::read(reinterpret_cast<char*>(destination), pid * PAGE_SIZE, bytes_left);
+   auto now = mean::readTSC(); 
+#endif
 #else
    assert("false"); 
 #endif
