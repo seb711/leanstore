@@ -14,3 +14,7 @@ target_include_directories(ycsb_shared PRIVATE ${SHARED_INCLUDE_DIRECTORY})
 add_executable(tpcc tpc-c/tpcc.cpp)
 target_link_libraries(tpcc leanstore Threads::Threads )
 target_include_directories(tpcc PRIVATE ${SHARED_INCLUDE_DIRECTORY})
+
+add_executable(mixed mixed/mixed.cpp)
+target_link_libraries(mixed leanstore Threads::Threads )
+target_include_directories(mixed PRIVATE ${SHARED_INCLUDE_DIRECTORY})
