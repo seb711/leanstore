@@ -1,6 +1,5 @@
 // -------------------------------------------------------------------------------------
 #include "TaskManager.hpp"
-#include "ConnectedIoChannel.hpp"
 #include "leanstore/concurrency/Mean.hpp"
 #include "leanstore/concurrency/Task.hpp"
 #include "leanstore/io/IoInterface.hpp"
@@ -222,7 +221,7 @@ void TaskManager::registerPageProvider(void* bf_ptr, int partitions_count) {
  * The default granularity is ((end-start)/threads/tasks/some factor)
  * If a single cycle through the loop is very short, bbgranularity should be set accordingly higher.
  */
-void TaskManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>& cancelable)> fun, const int tasks, s64 bbgranularity, bool rate_active)
+void TaskManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>&)> fun, const int tasks, s64 bbgranularity, bool rate_active)
 {
    ensure(tasks > 0);
    const int threads = workerCount();
@@ -233,16 +232,16 @@ void TaskManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atom
    const unsigned int totalTasks = threads*tasks;
    std::atomic<u64> bbnow = {bb.begin};
    std::atomic<u64> doneTasks = {0};
-   std::atomic<bool> cancelable = {false};
+   std::atomic<bool> cancleable = {false}; 
    int startedTasks = 0;
    for (int thr = 0; thr < threads; thr++) {
       for (int ta = 0; ta < tasks; ta++) {
          startedTasks++;
-         sendTask(thr + exclusiveThreads, [&bbnow, &bb, &cancelable, &doneTasks, totalTasks, fun, bbgranularity, originTask, originExecId] {
+         sendTask(thr + exclusiveThreads, [&cancleable, &threads, &tasks, &rate_active, &bbnow, &bb,  &doneTasks, totalTasks, fun, bbgranularity, originTask, originExecId] {
             // work stealing
             u64 start = 0;
             u64 end = 0;
-            while (start < bb.end && !cancelable) {
+            while (start < bb.end) {
                bool ok = false;
                while (!ok) {
                   start = bbnow.load();
@@ -251,12 +250,45 @@ void TaskManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atom
                   ok = bbnow.compare_exchange_strong(start, end);
                }
                //TaskExecutor::localExec().disableMessagePoller = true;
-               if (ok && !cancelable) {
+               if (ok ) {
                   assert(start >= bb.begin && start < bb.end);
                   //std::string s = "load: start: " + std::to_string(start) + " end: " + std::to_string(end) + " bbs: " + std::to_string(bb.begin) +  " bbe: " + std::to_string(bb.end);
                   //std::cout << s << std::endl;
+
+                  auto nextStartTime = mean::readTSC();
+                  u64 longLat = 0;
+
+                  const float rate = FLAGS_tx_rate / (threads * tasks);
+                  std::random_device rd;
+                  std::mt19937 gen(rd());
+                  std::exponential_distribution<> expDist(rate);
+
                   for (u64 id = start; id < end; id++) {
-                     fun(id, cancelable);
+                     fun(id, cancleable);
+
+                      // this has to be done in order to simulate the latency
+                     while (true) {
+                        mean::task::yield();
+                        auto now = mean::readTSC();
+                        if (rate == 0 or !rate_active)
+                           break;
+                        if (now >= nextStartTime) {
+                           if (mean::tscDifferenceS(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time) > 1) {
+                              longLat++;
+                              nextStartTime = now;
+                              std::cout << "reset start time" << std::endl;
+                              if (longLat % 100000 == 0) {
+                                 // std::cout << "thr: " << mean::exec::getId() << " long latency: " << longLat << std::endl;
+                              }
+                           }
+                           auto d = expDist(gen);
+                           jumpmu::thread_local_jumpmu_ctx->tx_start_time = nextStartTime;
+                           nextStartTime += mean::nsToTSC(d * 1e9);
+                           // std::cout << "next: " << nextStartTime << std::flush << std::endl;
+                           break;
+                        }
+                     }
+                     // END: LATENCY TESTS
                   }
                }
                //TaskExecutor::localExec().disableMessagePoller = false;
