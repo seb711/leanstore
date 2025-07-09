@@ -314,7 +314,11 @@ void ThreadingManager::scheduleTaskSync(TaskFunction fun)
 // -------------------------------------------------------------------------------------
 void ThreadingManager::yield([[maybe_unused]] TaskState ts)
 {
-   // do nothing?
+   #ifdef IS_LINUX
+   std::this_thread::yield(); 
+   #else
+   leanstore_osv_debug::yield(); 
+   #endif
 }
 // -------------------------------------------------------------------------------------
 void ThreadingManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
