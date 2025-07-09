@@ -21,10 +21,14 @@ ZipfGenerator::ZipfGenerator(u64 ex_n, double theta) : n(ex_n - 1), theta(theta)
 // -------------------------------------------------------------------------------------
 double ZipfGenerator::zeta(u64 n, double theta)
 {
-   double ans = 0;
-   for (u64 i = 1; i <= n; i++)
-      ans += std::pow(1.0 / n, theta);
+   #ifdef CORRECT_ZETA
+   double ans = 0.0;
+   for (u64 i = 1; i <= n; ++i)
+      ans += 1.0 / std::pow(static_cast<double>(i), theta);
    return ans;
+   #else
+   return std::pow(n, 1 - theta) / (1 - theta);
+   #endif
 }
 // -------------------------------------------------------------------------------------
 uint64_t ZipfGenerator::rand()
