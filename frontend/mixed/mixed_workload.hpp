@@ -1,7 +1,8 @@
 #include "types.hpp"
 #include "leanstore/LeanStore.hpp"
+#include <osv/leanstore_debug.hh>
 
-#define CYCLE 10000
+#define CYCLE 150000
 #define PROBABLITY 5000
 #define LONGRUNNING 1
 #define MAX_ENTRIES 1000000000
@@ -39,7 +40,7 @@ class Workload {
       void scanSeqTbl() {
          unsigned curr = highest_inserted.load(); 
          BytesPayload<120> result;  /// FIXME remove this check
-         for (uint64_t t = 10; t < CYCLE; t++) {
+         for (uint64_t t = 100; t < CYCLE; t++) {
             kv_store.lookup1({curr - t}, [&](const item_t& item) { result = item.i_data; });
          }
       }
