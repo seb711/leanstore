@@ -24,6 +24,7 @@ struct WorkerCounters {
    atomic<u64> free_list_pop_failed = 0;
    atomic<u64> restarts_counter = 0;
    atomic<u64> tx = 0;
+   atomic<u64> ltx = 0;
    atomic<u64> setup_tx = 0;
    atomic<u64> wait_tx = 0;
    atomic<u64> tx_abort = 0;
@@ -32,9 +33,10 @@ struct WorkerCounters {
    atomic<u64> total_wait_tx_time = 0;
    atomic<u64> total_ios = 0; 
    atomic<u64> total_tx_time = 0;
+   atomic<u64> total_ltx_time = 0;
    atomic<u64> total_tx_time_inc_wait = 0;
-   Hist<int, u64> tx_latency_hist{100000, 0, 500000};
-   Hist<int, u64> tx_latency_hist_incwait{100000, 0, 500000};
+   Hist<int, u64> tx_latency_hist{100000, 0, 1000000};
+   Hist<int, u64> tx_latency_hist_incwait{100000, 0, 1000000};
    Hist<int, u64> ssd_read_latency{5000, 0, 50000};
    Hist<int, u64> ssd_write_latency{5000, 0, 50000};
 
