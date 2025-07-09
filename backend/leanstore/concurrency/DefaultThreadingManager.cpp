@@ -231,6 +231,7 @@ void DefaultThreadingManager::registerPageProvider(void* bf_ptr, int partitions_
    }
 }
 
+#ifndef USE_THREAD_POOL
 void* threadFunction(void* arg)
 {
    ThreadData* data = static_cast<ThreadData*>(arg);
@@ -257,6 +258,7 @@ void* threadFunction(void* arg)
 
    return nullptr;
 };
+#endif
 
 void DefaultThreadingManager::parallelFor(BlockedRange bb,
                                           std::function<void(u64, std::atomic<bool>& cancelable)> fun,
@@ -269,9 +271,24 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
    // TODO: PIN THE THREAD TO CORE 0
    cpu_set_t cpuset;
    CPU_ZERO(&cpuset);
-   CPU_SET(2, &cpuset);
+   CPU_SET(1, &cpuset);
    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 
+#ifndef IS_LINUX
+   leanstore_osv_debug::set_priority(0.1); 
+#else
+   pthread_t thread = pthread_self();  // Or another thread's ID
+   struct sched_param param;
+
+   // Set priority
+   param.sched_priority = 10;
+
+   // Apply to existing thread
+   int result = pthread_setschedparam(thread, SCHED_FIFO, &param);
+   if (result != 0) {
+      perror("pthread_setschedparam failed");
+   }
+#endif
    ensure(tasks > 0);
    // Token bucket for parallelization limit
    const int maxConcurrentThreads = FLAGS_worker_per_threads;
@@ -375,22 +392,24 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
 #endif
 
       // Rate limiting simulation
-      while (FLAGS_tx_rate > 0 && rate_active) {
+      while (true) {
          mean::task::yield();
          auto now = mean::readTSC();
-
-         if (now >= localNextStartTime) {
+         if (FLAGS_tx_rate == 0 or !rate_active)
+            break;
+         if (now >= nextStartTime) {
             if (mean::tscDifferenceS(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time) > 1) {
-               localLongLat++;
-               localNextStartTime = now;
-               if (localLongLat % 100000 == 0) {
-                  // Thread-safe output would require additional synchronization
-                  // std::cout << "thr: " << mean::exec::getId() << " long latency: " << localLongLat << std::endl;
+               longLat++;
+               nextStartTime = now;
+               std::cout << "reset start time" << std::endl;
+               if (longLat % 100000 == 0) {
+                  // std::cout << "thr: " << mean::exec::getId() << " long latency: " << longLat << std::endl;
                }
             }
             auto d = expDist(gen);
-            jumpmu::thread_local_jumpmu_ctx->tx_start_time = localNextStartTime;
-            localNextStartTime += mean::nsToTSC(d * 1e9);
+            jumpmu::thread_local_jumpmu_ctx->tx_start_time = nextStartTime;
+            nextStartTime += mean::nsToTSC(d * 1e9);
+            // std::cout << "next: " << nextStartTime << std::flush << std::endl;
             break;
          }
       }
