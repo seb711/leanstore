@@ -132,7 +132,7 @@ void DefaultThreadingManager::init(int workers_count, int exclusiveThreads, IoOp
       auto thread_data_obj = std::make_unique<ThreadData>(
          &thread_data_pool_head,   // head_pointer
          &threadDataPoolMutex,     // threadDataPoolMutex
-         &threadDataPoolCV        // threadDataPoolCV
+                                                          &threadDataPoolCV        // threadDataPoolCV
       );
       thread_data.push_back(std::move(thread_data_obj));
 
@@ -269,7 +269,7 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
    // TODO: PIN THE THREAD TO CORE 0
    cpu_set_t cpuset;
    CPU_ZERO(&cpuset);
-   CPU_SET(0, &cpuset);
+   CPU_SET(2, &cpuset);
    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 
    ensure(tasks > 0);
@@ -285,6 +285,8 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
    std::exponential_distribution<> expDist(FLAGS_tx_rate);
    auto nextStartTime = mean::readTSC();
    u64 longLat = 0;
+   auto localNextStartTime = mean::readTSC();
+   u64 localLongLat = 0;
 
    u64 start = bb.begin;
    u64 end = bb.end;
@@ -305,9 +307,6 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
 #endif
 
    for (u64 id = start; id < end; id++) {
-      auto localNextStartTime = mean::readTSC();
-      u64 localLongLat = 0;
-
 #ifndef USE_THREAD_POOL
       // Create thread with CPU affinity set before it starts
       pthread_t thread;
@@ -368,8 +367,11 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
       assert(old_top);
 
       assert(old_top->meta.job_set == false);
-
-      old_top->sendTask([=, &fun, &id, &cancelable] { fun(id, cancelable); });
+      auto startTime = jumpmu::thread_local_jumpmu_ctx->tx_start_time; 
+      old_top->sendTask([=, &fun, &id, &cancelable] {
+         jumpmu::thread_local_jumpmu_ctx->tx_start_time = startTime;
+         fun(id, cancelable);
+      });
 #endif
 
       // Rate limiting simulation
