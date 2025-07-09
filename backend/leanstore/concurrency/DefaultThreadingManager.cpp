@@ -238,7 +238,7 @@ void* threadFunction(void* arg)
 
    // Thread starts here already pinned to core 1
    jumpmu::thread_local_jumpmu_ctx = &data->ctx;
-
+   jumpmu::thread_local_jumpmu_ctx->tx_start_time = data->timestamp; 
    // Execute the function for this specific id
    (*data->fun)(data->id, *data->cancelable);
 
@@ -275,7 +275,7 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 
 #ifndef IS_LINUX
-   leanstore_osv_debug::set_priority(0.1); 
+   // leanstore_osv_debug::set_priority(0.1); 
 #else
    pthread_t thread = pthread_self();  // Or another thread's ID
    struct sched_param param;
@@ -284,8 +284,8 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
    param.sched_priority = 10;
 
    // Apply to existing thread
-   int result = pthread_setschedparam(thread, SCHED_FIFO, &param);
-   if (result != 0) {
+   int ressched = pthread_setschedparam(thread, SCHED_FIFO, &param);
+   if (ressched != 0) {
       perror("pthread_setschedparam failed");
    }
 #endif
@@ -348,7 +348,7 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
       old_top->fun = &fun;
       old_top->id = id;
       old_top->cancelable = &cancelable;
-
+      old_top->timestamp = jumpmu::thread_local_jumpmu_ctx->tx_start_time; 
       pthread_create(&thread, &attr, threadFunction, old_top);
 
       // Move thread to active threads list
@@ -402,9 +402,6 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
                longLat++;
                nextStartTime = now;
                std::cout << "reset start time" << std::endl;
-               if (longLat % 100000 == 0) {
-                  // std::cout << "thr: " << mean::exec::getId() << " long latency: " << longLat << std::endl;
-               }
             }
             auto d = expDist(gen);
             jumpmu::thread_local_jumpmu_ctx->tx_start_time = nextStartTime;
@@ -428,6 +425,11 @@ void DefaultThreadingManager::scheduleTaskSync(TaskFunction fun)
 void DefaultThreadingManager::yield([[maybe_unused]] TaskState ts)
 {
    // do nothing?
+   #ifdef IS_LINUX
+   std::this_thread::yield(); 
+   #else
+   // leanstore_osv_debug::yield(); 
+   #endif
 }
 // -------------------------------------------------------------------------------------
 void DefaultThreadingManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)

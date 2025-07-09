@@ -24,6 +24,7 @@ struct ThreadData {
    // Your captured variables
    jumpmu::JumpMUContext ctx = {};
    uint64_t id = 0;
+   uint64_t timestamp = 0;
    std::atomic<ThreadData*>* head_pointer;
    std::mutex* threadDataPoolMutex;
    std::condition_variable* threadDataPoolCV;
