@@ -207,7 +207,7 @@ int main(int argc, char** argv)
    ioOptions.iodepth = (FLAGS_async_batch_size + FLAGS_worker_tasks)*2; // hacky, how to take into account for remotes 
    // -------------------------------------------------------------------------------------
    if (FLAGS_nopp) {
-      ioOptions.channelCount = 1; // FLAGS_worker_threads;
+      ioOptions.channelCount = FLAGS_worker_threads;
       mean::env::init(
          FLAGS_worker_threads, //std::min(std::thread::hardware_concurrency(), FLAGS_tpcc_warehouse_count),
          0/*FLAGS_pp_threads*/, ioOptions);
