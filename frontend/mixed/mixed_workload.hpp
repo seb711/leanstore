@@ -2,7 +2,7 @@
 #include "leanstore/LeanStore.hpp"
 #include <osv/leanstore_debug.hh>
 
-#define CYCLE 150000
+#define CYCLE 200000
 #define PROBABLITY 5000
 #define LONGRUNNING 1
 #define MAX_ENTRIES 1000000000
