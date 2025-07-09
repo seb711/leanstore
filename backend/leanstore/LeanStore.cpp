@@ -113,9 +113,9 @@ void LeanStore::printObjStats() {
 void LeanStore::startProfilingThread()
 {
    std::thread profiling_thread([&]() {
-      /* cpu_set_t cpuset;
+      cpu_set_t cpuset;
       CPU_ZERO(&cpuset);
-      CPU_SET(0, &cpuset);
+      CPU_SET(2, &cpuset);
       auto thread = pthread_self();
       int s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
       if (s != 0) {
@@ -124,7 +124,7 @@ void LeanStore::startProfilingThread()
       s = pthread_getaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
       if (s != 0) {
          ensure(false, "[startProfilingThread] Affinity could not be set.");
-      } */
+      } 
 
       // posix_check(pthread_setname_np(pthread_self(), "profiling") == 0);
       // -------------------------------------------------------------------------------------
