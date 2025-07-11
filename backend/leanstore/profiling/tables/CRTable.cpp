@@ -114,7 +114,7 @@ void CRTable::open()
 }
 // -------------------------------------------------------------------------------------
 template <typename CountersClass, typename FieldAccessor>
-u64 getPercentileOfField(std::array<std::atomic<CountersClass*>, MAX_CORES>& counters, FieldAccessor field_accessor, int percentile)
+u64 getPercentileOfField(std::array<std::atomic<CountersClass*>, MAX_CORES>& counters, FieldAccessor field_accessor, float percentile)
 {
    u64 max = 0;
    for (size_t t = 0; t < MAX_CORES; t++) {
@@ -162,10 +162,10 @@ void CRTable::next()
    local_time_counter_3 = sum(WorkerCounters::worker_counters, &WorkerCounters::time_counter_3);
    local_tx_lat99p_us = getPercentileOfField(
        WorkerCounters::worker_counters,
-       [](const WorkerCounters& wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist); }, 99);
+       [](const WorkerCounters& wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist); }, 99.0);
     local_tx_lat99pi_us = getPercentileOfField(
        WorkerCounters::worker_counters,
-       [](const WorkerCounters& wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist_incwait); }, 99);
+       [](const WorkerCounters& wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist_incwait); }, 99.0);
    /* 
    // lat10p = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> const auto& { return wc.tx_latency_hist; }, 10);
    local_tx_lat10p_us = getPercentileOfField(
