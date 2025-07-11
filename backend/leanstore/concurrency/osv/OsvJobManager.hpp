@@ -32,6 +32,26 @@ class OsvJobManager
    leanstore::storage::BufferManager* buffer_manager; 
    std::vector<std::unique_ptr<OsvBackgroundThreadBase>> backgroundThreads;
 
+
+   std::atomic<u64> waiting_threads{0}; 
+   std::atomic<u64> open_tasks{0}; 
+   std::atomic<u64> started_tasks{0}; 
+   std::atomic<u64> done_tasks{0}; 
+
+   std::mutex queue_mtx; 
+   std::condition_variable queue_cv; 
+
+   int total_threads_count;
+   int max_exclusive_threads;
+   std::atomic<int> running_threads = {0};
+   std::atomic<int> exclusiveThreadCounter = {0};
+   std::vector<std::unique_ptr<ThreadWithJump>> exclusiveThreadList;
+   std::unordered_map<int, std::reference_wrapper<ThreadWithJump>> exclusiveThreadMap;
+   static constexpr int MAX_WORKER_THREADS = 2048;
+   std::mutex mtx;
+public:
+   leanstore::cr::Worker* workers[MAX_WORKER_THREADS];   
+
 public:
    ~OsvJobManager();
    // -------------------------------------------------------------------------------------
@@ -63,7 +83,7 @@ public:
    // task
    // -------------------------------------------------------------------------------------
    void registerExclusiveThread(std::string name, int t_i, TaskFunction fun);
-   void parallelFor(BlockedRange range, std::function<void(u64, std::atomic<bool>& cancelable)> fun, int tasks, s64 bbgranularity = -1);
+   void parallelFor(BlockedRange range, std::function<void(u64, std::atomic<bool>& cancelable)> fun, int tasks, s64 bbgranularity = -1, bool rate_active=false);
    void scheduleTaskSync(TaskFunction fun);
    void yield(TaskState ts);
    void blockingIo(IoRequestType type, char* data, s64 addr, u64 len);
