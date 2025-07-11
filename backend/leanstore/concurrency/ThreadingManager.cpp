@@ -104,7 +104,7 @@ void ThreadingManager::init(int workers_count, int exclusiveThreads, IoOptions i
                 running_threads--;
              },
              "w_" + std::to_string(t_i), t_i);
-         thread->setCpuAffinityBeforeStart(t_i);
+         thread->setCpuAffinityBeforeStart(t_i + exclusiveThreads);
          thread->setNameBeforeStart("worker_" + std::to_string(t_i) + "_" + std::to_string(c_i));
          worker_threads[t_i].push_back(std::move(thread));
          worker_threads[t_i].back()->start();
@@ -249,7 +249,7 @@ void ThreadingManager::parallelFor(BlockedRange bb,
       BlockedRange rangePart(start, start + range);
 
       worker_threads[c_i][thr % FLAGS_worker_per_threads]->sendTask(
-          [&allDoneMutex, &threadsDone, &allDone, threads, fun, rangePart, &cancelable, &rate_active] {
+          [&, thr, c_i] {
              jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext();
              // work stealing
              u64 start = rangePart.begin;
