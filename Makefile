@@ -7,10 +7,13 @@ module: install-dependencies build-shared cmake-configure
 
 LIBFAKEOSVDIR=$(OSV_BASE)/libfakeosv
 LIB_SHARED = $(LIBFAKEOSVDIR)/libfakeosv.so
+LIBJUMPMU=$(LIBFAKEOSVDIR)/libjumpmu.so
 
 .PHONY: build-shared
 build-shared:
-	$(MAKE) -C $(LIBFAKEOSVDIR)
+	$(MAKE) -C $(LIBFAKEOSVDIR) all
+
+
 
 # Install required dependencies using apt-get
 .PHONY: install-dependencies

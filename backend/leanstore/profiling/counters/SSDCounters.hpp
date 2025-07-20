@@ -1,11 +1,11 @@
 #pragma once
 #include "Units.hpp"
 // -------------------------------------------------------------------------------------
-
 #include "PerfEvent.hpp"
 #include "leanstore/utils/Hist.hpp"
 // -------------------------------------------------------------------------------------
 #include <atomic>
+#include <mutex>
 #include <unordered_map>
 // -------------------------------------------------------------------------------------
 namespace leanstore
@@ -29,15 +29,18 @@ struct SSDCounters {
    atomic<u64> writes[max_ssds] = {0};
    atomic<u64> reads[max_ssds] = {0};
    // -------------------------------------------------------------------------------------
-   explicit SSDCounters(int core) : core_id(core), ti_id(ssd_counter++) {}
+   SSDCounters() { 
+      t_id = ssds_counter++;  
+      SSDCounters::ssd_counters_mut.lock(); 
+      SSDCounters::ssd_counters.push_back(this); 
+      SSDCounters::ssd_counters_mut.unlock(); 
+   }
    // -------------------------------------------------------------------------------------
-   static std::atomic<uint64_t> ssd_counter;
-   static std::array<std::atomic<SSDCounters*>, MAX_CORES> ssd_counters; // Per-core storage
-   static std::mutex ssd_counters_mut; // Fallback mutex
+   static atomic<u64> ssds_counter;
+   // static tbb::enumerable_thread_specific<WorkerCounters> worker_counters;
+   static std::vector<SSDCounters*> ssd_counters;
+   static std::mutex ssd_counters_mut;
    static SSDCounters& myCounters(); 
-
-   int core_id;
-   int ti_id;
 };
 }  // namespace leanstore
 // -------------------------------------------------------------------------------------

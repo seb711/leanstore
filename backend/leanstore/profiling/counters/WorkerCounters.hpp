@@ -35,8 +35,8 @@ struct WorkerCounters {
    atomic<u64> total_tx_time = 0;
    atomic<u64> total_ltx_time = 0;
    atomic<u64> total_tx_time_inc_wait = 0;
-   Hist<int, u64> tx_latency_hist{100000, 0, 1000000};
-   Hist<int, u64> tx_latency_hist_incwait{100000, 0, 1000000};
+   Hist<int, u64> tx_latency_hist{100000, 0, 100000};
+   Hist<int, u64> tx_latency_hist_incwait{100000, 0, 10000000};
    Hist<int, u64> ssd_read_latency{5000, 0, 50000};
    Hist<int, u64> ssd_write_latency{5000, 0, 50000};
 
@@ -84,15 +84,20 @@ struct WorkerCounters {
    atomic<u64> submit_calls = 0;
    atomic<u64> submitted = 0;
    // -------------------------------------------------------------------------------------
-   explicit WorkerCounters(int core) : core_id(core), ti_id(workers_counter++) {}
+   WorkerCounters() { 
+      t_id = workers_counter++;  
+      WorkerCounters::worker_counters_mut.lock(); 
+      printf("new worker counter %p\n", this); 
+      WorkerCounters::worker_counters.push_back(this); 
+      WorkerCounters::worker_counters_mut.unlock(); 
+   }
    // -------------------------------------------------------------------------------------
-   static std::atomic<uint64_t> workers_counter;
-   static std::array<std::atomic<WorkerCounters*>, MAX_CORES> worker_counters; // Per-core storage
-   static std::mutex worker_counters_mut; // Fallback mutex
+   static atomic<u64> workers_counter;
+   // static tbb::enumerable_thread_specific<WorkerCounters> worker_counters;
+   static std::vector<WorkerCounters*> worker_counters;
+   static std::mutex worker_counters_mut;
    static WorkerCounters& myCounters(); 
-
-   int core_id;
-   int ti_id;
+   // static tbb::enumerable_thread_specific<WorkerCounters>::reference myCounters() { return worker_counters.local(); }
 };
 }  // namespace leanstore
 // -------------------------------------------------------------------------------------

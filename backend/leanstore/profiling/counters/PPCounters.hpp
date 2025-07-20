@@ -3,13 +3,15 @@
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 #include <atomic>
-#include <mutex>
 #include <unordered_map>
-#include <array>
+#include <mutex>
+#include <vector>
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {
 struct PPCounters {
+      atomic<u64> t_id = 9999;                // used by tpcc
+
    // ATTENTION: These counters should be only used by page provider threads or slow path worker code
    atomic<s64> phase_1_ms = 0, phase_2_ms = 0, phase_3_ms = 0, poll_ms = 0;
    // Phase 1 detailed
@@ -41,15 +43,18 @@ struct PPCounters {
    atomic<u64> outstandinig_99p9 = 0;
    atomic<u64> outstandinig_read = 0;
    atomic<u64> outstandinig_write = 0;
-   // -------------------------------------------------------------------------------------
-   explicit PPCounters(int core) : core_id(core), t_id(pp_counter++) {}
-   // -------------------------------------------------------------------------------------
-   static std::atomic<uint64_t> pp_counter;
-   static std::array<std::atomic<PPCounters*>, MAX_CORES> pp_counters; // Per-core storage
-   static std::mutex pp_counters_mut; // Fallback mutex
-   static PPCounters& myCounters(); 
 
-   int core_id;
-   int t_id;
+   PPCounters() { 
+      t_id = pps_counter++;  
+      PPCounters::pp_counters_mut.lock(); 
+      PPCounters::pp_counters.push_back(this); 
+      PPCounters::pp_counters_mut.unlock(); 
+   }
+   // -------------------------------------------------------------------------------------
+   static atomic<u64> pps_counter;
+   // static tbb::enumerable_thread_specific<WorkerCounters> worker_counters;
+   static std::vector<PPCounters*> pp_counters;
+   static std::mutex pp_counters_mut;
+   static PPCounters& myCounters(); 
 };
 }  // namespace leanstore

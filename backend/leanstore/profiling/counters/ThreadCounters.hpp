@@ -33,15 +33,19 @@ struct ThreadCounters {
    atomic<u64> pp_p23_evicted = 0; 
    atomic<u64> pp_p2_iopushed = 0; 
    // -------------------------------------------------------------------------------------
-   explicit ThreadCounters(int core) : core_id(core), ti_id(thread_counter++) {}
    // -------------------------------------------------------------------------------------
-   static std::atomic<uint64_t> thread_counter;
-   static std::array<std::atomic<ThreadCounters*>, MAX_CORES> thread_counters; // Per-core storage
-   static std::mutex thread_counters_mut; // Fallback mutex
+    ThreadCounters() { 
+      t_id = threads_counter++;  
+      ThreadCounters::thread_counters_mut.lock(); 
+      ThreadCounters::thread_counters.push_back(this); 
+      ThreadCounters::thread_counters_mut.unlock(); 
+   }
+   // -------------------------------------------------------------------------------------
+   static atomic<u64> threads_counter;
+   // static tbb::enumerable_thread_specific<WorkerCounters> worker_counters;
+   static std::vector<ThreadCounters*> thread_counters;
+   static std::mutex thread_counters_mut;
    static ThreadCounters& myCounters(); 
-
-   int core_id;
-   int ti_id;
 };
 }  // namespace leanstore
 // -------------------------------------------------------------------------------------

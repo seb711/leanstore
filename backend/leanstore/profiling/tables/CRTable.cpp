@@ -37,36 +37,40 @@ void CRTable::open()
    // -------------------------------------------------------------------------------------
    columns.emplace("tx_avg_runtime_us",
                    [&](Column& col) { col << (local_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_tx_time) / local_tx : 0); });
-    columns.emplace("ltx_latency_us",
-                    [&](Column& col) { col << (local_ltx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_ltx_time) / local_ltx : 0); });
-   
-    columns.emplace("tx_setup_latency_us",
-                    [&](Column& col) { col << (local_setup_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_setup_tx_time) / local_setup_tx : 0); });
+   columns.emplace("ltx_latency_us", [&](Column& col) {
+      col << (local_ltx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_ltx_time) / local_ltx : 0);
+   });
 
-    columns.emplace("tx_wait_latency_us",
-        [&](Column& col) { col << (local_thread_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_wait_tx_time) / local_thread_tx : 0); });
-    
-    // columns.emplace("time_counter_0",
-    //     [&](Column& col) { col << (local_time_counter_0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_0) / local_time_counter_0 : 0); });
+   columns.emplace("tx_setup_latency_us", [&](Column& col) {
+      col << (local_setup_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_setup_tx_time) / local_setup_tx : 0);
+   });
 
-     columns.emplace("time_counter_0",
-        [&](Column& col) { col << local_time_counter_0; });
-    
-    columns.emplace("time_counter_1",
-    //     [&](Column& col) { col << (local_time_counter_1 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_1) / local_time_counter_1 : 0); });
-       [&](Column& col) { col << local_time_counter_1; });
-          
-    
-     columns.emplace("time_counter_2",
-     //   [&](Column& col) { col << (local_time_counter_2 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_2) / local_time_counter_2 : 0); });
-      [&](Column& col) { col << local_time_counter_2; });
-    
-    columns.emplace("time_counter_3",
-        //[&](Column& col) { col << (local_time_counter_3 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_3) / local_time_counter_3 : 0); });
-              [&](Column& col) { col << local_time_counter_3; });
+   columns.emplace("tx_wait_latency_us", [&](Column& col) {
+      col << (local_thread_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_wait_tx_time) / local_thread_tx : 0);
+   });
 
-                            
-                   // -------------------------------------------------------------------------------------
+   // columns.emplace("time_counter_0",
+   //     [&](Column& col) { col << (local_time_counter_0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_0) /
+   //     local_time_counter_0 : 0); });
+
+   columns.emplace("time_counter_0", [&](Column& col) { col << local_time_counter_0; });
+
+   columns.emplace("time_counter_1",
+                   //     [&](Column& col) { col << (local_time_counter_1 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_1) /
+                   //     local_time_counter_1 : 0); });
+                   [&](Column& col) { col << local_time_counter_1; });
+
+   columns.emplace("time_counter_2",
+                   //   [&](Column& col) { col << (local_time_counter_2 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_2) /
+                   //   local_time_counter_2 : 0); });
+                   [&](Column& col) { col << local_time_counter_2; });
+
+   columns.emplace("time_counter_3",
+                   //[&](Column& col) { col << (local_time_counter_3 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_3) /
+                   //local_time_counter_3 : 0); });
+                   [&](Column& col) { col << local_time_counter_3; });
+
+   // -------------------------------------------------------------------------------------
    columns.emplace("tx_latency_us_10p", [&](Column& col) { col << local_tx_lat10p_us; });
    columns.emplace("tx_latency_us_25p", [&](Column& col) { col << local_tx_lat25p_us; });
    columns.emplace("tx_latency_us_50p", [&](Column& col) { col << local_tx_lat50p_us; });
@@ -78,8 +82,7 @@ void CRTable::open()
    columns.emplace("tx_latency_us_inc_wait", [&](Column& col) {
       col << (local_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_tx_time_inc_wait) / local_tx : 0);
    });
-   
-   
+
    // avg runtime
    columns.emplace("tx_p99_runtime_us", [&](Column& col) { col << local_tx_lat99p_us; });
 
@@ -113,14 +116,13 @@ void CRTable::open()
    columns.emplace("wal_total", [&](Column& col) { col << wal_total; });
 }
 // -------------------------------------------------------------------------------------
+
 template <typename CountersClass, typename FieldAccessor>
-u64 getPercentileOfField(std::array<std::atomic<CountersClass*>, MAX_CORES>& counters, FieldAccessor field_accessor, float percentile)
+u64 getPercentileOfField(std::vector<CountersClass*>& counters, FieldAccessor field_accessor, float percentile)
 {
    u64 max = 0;
-   for (size_t t = 0; t < MAX_CORES; t++) {
-        if (counters[t]) {
-            max = std::max(max, field_accessor(*counters[t]).getPercentile(percentile));
-        }
+   for (auto& counterInstance : counters) {
+      max = std::max(max, field_accessor(*counterInstance).getPercentile(percentile));
    }
    return max;
    /*j
@@ -163,10 +165,10 @@ void CRTable::next()
    local_tx_lat99p_us = getPercentileOfField(
        WorkerCounters::worker_counters,
        [](const WorkerCounters& wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist); }, 99.0);
-    local_tx_lat99pi_us = getPercentileOfField(
+   local_tx_lat99pi_us = getPercentileOfField(
        WorkerCounters::worker_counters,
        [](const WorkerCounters& wc) -> auto& { return const_cast<Hist<int, long unsigned int>&>(wc.tx_latency_hist_incwait); }, 99.0);
-   /* 
+   /*
    // lat10p = getPercentileOfField(WorkerCounters::worker_counters, [](const WorkerCounters &wc) -> const auto& { return wc.tx_latency_hist; }, 10);
    local_tx_lat10p_us = getPercentileOfField(
        WorkerCounters::worker_counters,
@@ -241,16 +243,16 @@ void CRTable::next()
    // for (typename decltype(WorkerCounters::worker_counters)::iterator i = WorkerCounters::worker_counters.begin(); i !=
    // WorkerCounters::worker_counters.end(); ++i) {*/
    int counters = 0;
-   for (size_t t = 0; t < MAX_CORES; t++) {
-      if (WorkerCounters::worker_counters[t].load()) {
-         WorkerCounters::worker_counters[t].load()->tx_latency_hist.resetData();
-         WorkerCounters::worker_counters[t].load()->tx_latency_hist_incwait.resetData();
-         WorkerCounters::worker_counters[t].load()->ssd_read_latency.resetData();
-         WorkerCounters::worker_counters[t].load()->ssd_write_latency.resetData();
-         counters++;
-      }
-   } 
- 
+   // lat10p = getPercentileOfField(WorkerCounters::worker_counters, [](WorkerCounters &wc) -> const auto& { return wc.tx_latency_hist; }, 10);
+
+   for (typename decltype(WorkerCounters::worker_counters)::iterator i = WorkerCounters::worker_counters.begin();
+        i != WorkerCounters::worker_counters.end(); ++i) {
+      (*i)->tx_latency_hist.resetData();
+      (*i)->tx_latency_hist_incwait.resetData();
+      (*i)->ssd_read_latency.resetData();
+      (*i)->ssd_write_latency.resetData();
+      counters++;
+   }
 
    clear();
    for (auto& c : columns) {

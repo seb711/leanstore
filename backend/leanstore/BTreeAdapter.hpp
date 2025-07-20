@@ -38,14 +38,14 @@ struct BTreeInterface {
 using OP_RESULT = leanstore::storage::btree::OP_RESULT;
 template <typename Key, typename Payload>
 struct BTreeVSAdapter : BTreeInterface<Key, Payload> {
-   leanstore::storage::btree::BTreeInterface& btree;
+   leanstore::storage::btree::BTreeLL& btree;
 
-   BTreeVSAdapter(leanstore::storage::btree::BTreeInterface& btree) : btree(btree) {}
+   BTreeVSAdapter(leanstore::storage::btree::BTreeLL& btree) : btree(btree) {}
 
    bool lookup(Key k, Payload& v) override
    {
       u8 key_bytes[sizeof(Key)];
-      return btree.lookup(key_bytes, fold(key_bytes, k), [&](const u8* payload, u16 payload_length) { memcpy(&v.value, payload, payload_length); }) ==
+      return btree.lookup1(key_bytes, fold(key_bytes, k), reinterpret_cast<u8*>(&v.value)) ==
             OP_RESULT::OK;
    }
    void insert(Key k, Payload& v) override

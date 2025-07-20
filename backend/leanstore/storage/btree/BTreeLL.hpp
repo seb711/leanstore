@@ -44,6 +44,7 @@ class BTreeLL : public BTreeInterface, public BTreeGeneric
       u8 payload[];
    };
    // -------------------------------------------------------------------------------------
+   OP_RESULT lookup1(u8* key, u16 key_length, u8* payload);
    virtual OP_RESULT lookup(u8* key, u16 key_length, function<void(const u8*, u16)> payload_callback) override;
    virtual OP_RESULT insert(u8* key, u16 key_length, u8* value, u16 value_length) override;
    virtual OP_RESULT updateSameSize(u8* key, u16 key_length, function<void(u8* value, u16 value_size)>, WALUpdateGenerator = {{}, {}, 0}) override;

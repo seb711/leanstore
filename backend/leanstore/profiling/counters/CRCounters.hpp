@@ -1,15 +1,16 @@
 #pragma once
 #include "Units.hpp"
 // -------------------------------------------------------------------------------------
+#include <mutex>
+#include <vector>
 
 // -------------------------------------------------------------------------------------
 #include <atomic>
-#include <mutex>
-#include <array>
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {
 struct CRCounters {
+   atomic<u64> t_id = 9999;                // used by tpcc
    atomic<s64> worker_id = -1;
    atomic<u64> written_log_bytes = 0;
    atomic<u64> wal_reserve_blocked = 0;
@@ -24,15 +25,19 @@ struct CRCounters {
    atomic<u64> gct_rounds = 0;
    atomic<u64> gct_committed_tx = 0;
    // -------------------------------------------------------------------------------------
-   explicit CRCounters(int core) : core_id(core), t_id(cr_counter++) {}
    // -------------------------------------------------------------------------------------
-   static std::atomic<uint64_t> cr_counter;
-   static std::array<std::atomic<CRCounters*>, MAX_CORES> cr_counters; // Per-core storage
-   static std::mutex cr_counters_mut; // Fallback mutex
+   CRCounters() { 
+      t_id = crs_counter++;  
+      CRCounters::cr_counters_mut.lock(); 
+      CRCounters::cr_counters.push_back(this); 
+      CRCounters::cr_counters_mut.unlock(); 
+   }
+   // -------------------------------------------------------------------------------------
+   static atomic<u64> crs_counter;
+   // static tbb::enumerable_thread_specific<WorkerCounters> worker_counters;
+   static std::vector<CRCounters*> cr_counters;
+   static std::mutex cr_counters_mut;
    static CRCounters& myCounters(); 
-
-   int core_id;
-   int t_id;
 };
 }  // namespace leanstore
 // -------------------------------------------------------------------------------------

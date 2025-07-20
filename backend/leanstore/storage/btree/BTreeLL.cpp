@@ -18,6 +18,46 @@ namespace storage
 namespace btree
 {
 // -------------------------------------------------------------------------------------
+OP_RESULT BTreeLL::lookup1(u8* key, u16 key_length, u8* payload) 
+{
+   volatile u32 mask = 1;
+   while (true) {
+      jumpmuTry()
+      {
+         HybridPageGuard<BTreeNode> leaf;
+         findLeafCanJump(leaf, key, key_length);
+         // -------------------------------------------------------------------------------------
+         DEBUG_BLOCK()
+         {
+            s16 sanity_check_result = leaf->compareKeyWithBoundaries(key, key_length);
+            leaf.recheck();
+            if (sanity_check_result != 0) {
+               cout << leaf->count << endl;
+            }
+            ensure(sanity_check_result == 0);
+         }
+         // -------------------------------------------------------------------------------------
+         s16 pos = leaf->lowerBound<true>(key, key_length);
+         if (pos != -1) {
+            memcpy(payload, leaf->getPayload(pos), leaf->getPayloadLength(pos));
+            leaf.recheck();
+            jumpmu_return OP_RESULT::OK;
+         } else {
+            leaf.recheck();
+            //raise(SIGTRAP);
+            static uint64_t nf = 0;
+            cout << "not found: " << nf++ << endl;
+            jumpmu_return OP_RESULT::NOT_FOUND;
+         }
+      }
+      jumpmuCatch()
+      {
+         BACKOFF_STRATEGIES()
+         WorkerCounters::myCounters().dt_restarts_read[dt_id]++;
+      }
+   }
+   return OP_RESULT::UNREACHABLE;
+}
 OP_RESULT BTreeLL::lookup(u8* key, u16 key_length, function<void(const u8*, u16)> payload_callback)
 {
    volatile u32 mask = 1;
