@@ -149,35 +149,34 @@ void run_ycsb()
    {
       auto start = mean::getSeconds();
       auto ycsb_tx = [&](u64 i, std::atomic<bool>& cancelled) {
-         while (true) {
-            running_threads_counter++;
+         running_threads_counter++;
 
-            auto before = mean::readTSC();
-            YCSBKey key = zipf_random->rand();
-            jumpmu::thread_local_jumpmu_ctx->pid = i;
-            assert(key < ycsb_tuple_count);
-            YCSBPayload result;
-            if (FLAGS_ycsb_read_ratio == 100 || utils::RandomGenerator::getRandU64(0, 100) < FLAGS_ycsb_read_ratio) {
-               table.lookup(key, result);
-            } else {
-               YCSBPayload payload;
-               utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
-               table.update(key, payload);
-            }
-            auto now = mean::readTSC();
-            auto timeDiff = mean::tscDifferenceNs(now, before);
-            // trace_finish_transaction(i);
-            // auto timeDiffIncWait = mean::tscDifferenceUs(now, tx_start_time);
-            WorkerCounters::myCounters().total_tx_time += timeDiff;
-            WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
-            // if (timeDiffIncWait < 10000000) {
-            //   WorkerCounters::myCounters().total_tx_time_inc_wait += timeDiffIncWait;
-            // }
-            // WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
-            WorkerCounters::myCounters().tx++;
-            // ThreadCounters::myCounters().tx++;
-            running_threads_counter--;
+         auto before = mean::readTSC();
+         YCSBKey key = zipf_random->rand();
+         jumpmu::thread_local_jumpmu_ctx->pid = i;
+         assert(key < ycsb_tuple_count);
+         YCSBPayload result;
+         if (FLAGS_ycsb_read_ratio == 100 || utils::RandomGenerator::getRandU64(0, 100) < FLAGS_ycsb_read_ratio) {
+            table.lookup(key, result);
+         } else {
+            YCSBPayload payload;
+            utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
+            table.update(key, payload);
          }
+         auto now = mean::readTSC();
+         auto timeDiff = mean::tscDifferenceUs(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time);
+
+         // trace_finish_transaction(i);
+         // auto timeDiffIncWait = mean::tscDifferenceUs(now, tx_start_time);
+         WorkerCounters::myCounters().total_tx_time += timeDiff;
+         WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
+         // if (timeDiffIncWait < 10000000) {
+         //   WorkerCounters::myCounters().total_tx_time_inc_wait += timeDiffIncWait;
+         // }
+         // WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
+         WorkerCounters::myCounters().tx++;
+         // ThreadCounters::myCounters().tx++;
+         running_threads_counter--;
       };
       mean::BlockedRange bb(0, (u64)1000000000000ul);
       auto startTsc = mean::readTSC();
