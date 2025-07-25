@@ -267,10 +267,10 @@ void TaskManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atom
                      fun(id, cancleable);
 
                       // this has to be done in order to simulate the latency
-                     /* while (true) {
+                              while (true) {
                         mean::task::yield();
                         auto now = mean::readTSC();
-                        if (rate == 0 or !rate_active)
+                                 if (rate == 0 or !rate_active or (mean::tscDifferenceS(now, globalStartTime) < 30))
                            break;
                         if (now >= nextStartTime) {
                            if (mean::tscDifferenceS(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time) > 1) {
@@ -287,7 +287,7 @@ void TaskManager::parallelFor(BlockedRange bb, std::function<void(u64, std::atom
                            // std::cout << "next: " << nextStartTime << std::flush << std::endl;
                            break;
                         }
-                     } */
+                              }
                      // END: LATENCY TESTS
                   }
                }
