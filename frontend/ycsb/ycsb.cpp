@@ -164,8 +164,11 @@ void run_ycsb() {
                table.update(key, payload);
             }
            auto now = mean::readTSC();
-           auto timeDiff = mean::tscDifferenceUs(now, before);
-           // trace_finish_transaction(i); 
+#ifdef NEW_JUMPMU
+           auto timeDiff = mean::tscDifferenceUs(now, jumpmu::thread_local_jumpmu.tx_start_time);
+#else
+           auto timeDiff = mean::tscDifferenceUs(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time);
+#endif           // trace_finish_transaction(i); 
            // auto timeDiffIncWait = mean::tscDifferenceUs(now, tx_start_time);
            WorkerCounters::myCounters().total_tx_time += timeDiff;
            WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
