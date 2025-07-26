@@ -76,6 +76,8 @@ void DefaultThreadingManager::init(int workers_count, int exclusiveThreads, IoOp
    }
 
 #ifdef USE_THREAD_POOL
+   for (int w_i = 0; w_i < workers_count; w_i++) {
+
    for (size_t t_i = 0; t_i < FLAGS_worker_per_threads; t_i++) {
       auto thread = std::make_unique<ThreadWithJump>(
           [&, t_i]() {
@@ -117,8 +119,8 @@ void DefaultThreadingManager::init(int workers_count, int exclusiveThreads, IoOp
              running_threads--;
           },
           "w_" + std::to_string(t_i), t_i);
-      thread->setCpuAffinityBeforeStart(1);
-      thread->setNameBeforeStart("worker_" + std::to_string(t_i));
+      thread->setCpuAffinityBeforeStart(w_i + exclusiveThreads);
+         thread->setNameBeforeStart("worker_" + std::to_string(t_i) + "_" + std::to_string(w_i));
       worker_threads.push_back(std::move(thread));
       worker_threads.back()->start();
 
@@ -126,6 +128,8 @@ void DefaultThreadingManager::init(int workers_count, int exclusiveThreads, IoOp
       thread_head->next = thread_pool_head.load();
       thread_pool_head.store(thread_head);
    }
+
+}
 
 #else
    for (size_t t_i = 0; t_i < FLAGS_worker_per_threads; t_i++) {
@@ -384,7 +388,8 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
       assert(old_top);
 
       assert(old_top->meta.job_set == false);
-      auto startTime = jumpmu::thread_local_jumpmu_ctx->tx_start_time; 
+      auto startTime = jumpmu::thread_local_jumpmu_ctx->tx_start_time;
+
       old_top->sendTask([=, &fun, &id, &cancelable] {
          jumpmu::thread_local_jumpmu_ctx->tx_start_time = startTime;
          fun(id, cancelable);
@@ -411,7 +416,7 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
          }
       }
    }
-
+   
    delete jumpmu::thread_local_jumpmu_ctx;
 }
 // -------------------------------------------------------------------------------------
