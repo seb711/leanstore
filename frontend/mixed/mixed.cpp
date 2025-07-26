@@ -137,8 +137,8 @@ void run_ycsb()
             WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiffIncWait);
             WorkerCounters::myCounters().tx++;
          } else {
-            WorkerCounters::myCounters().total_ltx_time += timeDiffIncWait;
-            WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
+            WorkerCounters::myCounters().total_ltx_time += timeDiffIncWait; // / 1000
+            WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait ); // / 1000
             WorkerCounters::myCounters().ltx++;
          }
          running_threads_counter--;
@@ -183,8 +183,12 @@ int main(int argc, char** argv)
                       0 /*FLAGS_pp_threads*/, ioOptions);
    } else {
          std::cout << "init" << std::endl; 
-      ioOptions.channelCount = 1; // this should be refactored in the future
-      mean::env::init(FLAGS_worker_threads, FLAGS_pp_threads, ioOptions);
+#ifdef MEAN_USE_JOBBING
+      ioOptions.channelCount = 1;  // FLAGS_worker_threads + FLAGS_pp_threads;
+#else
+      ioOptions.channelCount = FLAGS_worker_threads + FLAGS_pp_threads;
+#endif      
+mean::env::init(FLAGS_worker_threads, FLAGS_pp_threads, ioOptions);
                std::cout << "init finished" << std::endl; 
    }
    std::cout << "run process2" << std::endl; 

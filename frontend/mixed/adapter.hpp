@@ -58,6 +58,26 @@ struct LeanStoreAdapter {
       }
    }
 
+      template <class Fn>
+   void update1(const typename Record::Key& key, const Fn& fn, storage::btree::WALUpdateGenerator wal_update_generator)
+   {
+      u8 folded_key[Record::maxFoldLength()];
+      u16 folded_key_len = Record::foldRecord(folded_key, key);
+      const auto res = btree->updateSameSize(
+          folded_key, folded_key_len,
+          [&](u8* payload, u16 payload_length) {
+             static_cast<void>(payload_length);
+             assert(payload_length == sizeof(Record));
+             Record& typed_payload = *reinterpret_cast<Record*>(payload);
+             fn(typed_payload);
+          },
+          wal_update_generator);
+      ensure(res != btree::OP_RESULT::NOT_FOUND);
+      if (res == btree::OP_RESULT::ABORT_TX) {
+         cr::Worker::my().abortTX();
+      }
+   }
+
    template <class Fn>
    void lookup1(const typename Record::Key& key, const Fn& fn)
    {

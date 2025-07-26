@@ -5,7 +5,7 @@
 #define CYCLE 200000
 #define PROBABLITY 5000
 #define LONGRUNNING 1
-#define MAX_ENTRIES 1000000000
+#define MAX_ENTRIES 8380000
 
 class Workload {
    private: 
@@ -23,7 +23,7 @@ class Workload {
          kv_store.lookup1({w_id}, [&](const item_t& item) { result = item.i_data; });
       }
       // we need one easy look up
-      void writeTblSeq() {
+      void newIncrEntry() {
          BytesPayload<120> payload;
          utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(BytesPayload<120>));
          auto key = current_idx.fetch_add(1);
@@ -36,13 +36,23 @@ class Workload {
          }
 
       }
+
+      void updateRnd() {
+         uint64_t key = zipf_random.rand();
+         BytesPayload<120> payload;
+         utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(BytesPayload<120>));
+
+         kv_store.update1({key}, [&](item_t& item) { item.i_data = payload; }, WALUpdate1(item_t, i_data));
+      }
+
       // we need one scan
       void scanSeqTbl() {
          unsigned curr = highest_inserted.load(); 
-         BytesPayload<120> result;  /// FIXME remove this check
-         for (uint64_t t = 100; t < CYCLE; t++) {
-            kv_store.lookup1({curr - t}, [&](const item_t& item) { result = item.i_data; });
-         }
+
+         kv_store.scanDesc({highest_inserted}, [&] (const item_t::Key& key, const item_t& payload) {
+            if (curr - key.i_id > CYCLE) return false; 
+            return true; 
+         }, [](){}); 
       }
 
    public: 
@@ -50,12 +60,19 @@ class Workload {
       Workload(LeanStoreAdapter<item_t>& kv_store) : zipf_random(0, MAX_ENTRIES, FLAGS_zipf_factor),  current_idx(0), highest_inserted(0), twister(), kv_store(kv_store), last_scan(mean::readTSC()) {}; 
 
       int tx() {
-         if (mean::tscDifferenceMs(mean::readTSC(), last_scan) > 500) {
+
+         if (false && mean::tscDifferenceMs(mean::readTSC(), last_scan) > 25) {
              last_scan.store(mean::readTSC()); 
              scanSeqTbl(); 
              return 1; 
          } else {
-            writeTblSeq(); 
+            int rnd = leanstore::utils::RandomGenerator::getRand(0, 100);
+
+            if (rnd < 60) {
+               newIncrEntry(); 
+            } else {
+               updateRnd(); 
+            }
             return 0; 
          }
       }
@@ -64,7 +81,7 @@ class Workload {
          if (current_idx.load() % 10000 == 0) {
             std::cout << current_idx.load() << std::endl; 
          }
-         writeTblSeq(); 
+         newIncrEntry(); 
          return 0; 
       }
 }; 
