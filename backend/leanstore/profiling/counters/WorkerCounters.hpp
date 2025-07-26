@@ -84,7 +84,7 @@ struct WorkerCounters {
    atomic<u64> submit_calls = 0;
    atomic<u64> submitted = 0;
    // -------------------------------------------------------------------------------------
-   explicit WorkerCounters(int core) : core_id(core), ti_id(workers_counter++) {}
+   explicit WorkerCounters(int core) :  t_id(workers_counter++), core_id(core){}
    // -------------------------------------------------------------------------------------
    static std::atomic<uint64_t> workers_counter;
    static std::array<std::atomic<WorkerCounters*>, MAX_CORES> worker_counters; // Per-core storage
@@ -92,7 +92,6 @@ struct WorkerCounters {
    static WorkerCounters& myCounters(); 
 
    int core_id;
-   int ti_id;
 };
 }  // namespace leanstore
 // -------------------------------------------------------------------------------------
