@@ -13,6 +13,11 @@ target_link_libraries(tpcc leanstore Threads::Threads custom_memcmp)
 target_link_options(tpcc PRIVATE -Wl,-wrap,memcmp  -Wl,-wrap,memcpy -Wl,-wrap,memmove)
 target_include_directories(tpcc PRIVATE ${SHARED_INCLUDE_DIRECTORY})
 
+add_executable(tpcch tpc-ch/tpcc.cpp)
+target_link_libraries(tpcch leanstore Threads::Threads custom_memcmp)
+target_link_options(tpcc PRIVATE -Wl,-wrap,memcmp  -Wl,-wrap,memcpy -Wl,-wrap,memmove)
+target_include_directories(tpcc PRIVATE ${SHARED_INCLUDE_DIRECTORY})
+
 add_executable(mixed mixed/mixed.cpp)
 target_link_libraries(mixed leanstore Threads::Threads custom_memcmp)
 target_link_options(mixed PRIVATE -Wl,-wrap,memcmp  -Wl,-wrap,memcpy -Wl,-wrap,memmove)
