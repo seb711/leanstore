@@ -126,7 +126,7 @@ struct CoolingPartition {
    s64 outstanding = 0;
    // -------------------------------------------------------------------------------------
    const u64 pid_distance;
-   std::mutex pids_mutex;  // protect free pids vector
+   mean::io_mutex pids_mutex;  // protect free pids vector
    std::vector<PID> freed_pids;
    u64 next_pid;
    // -------------------------------------------------------------------------------------
@@ -142,7 +142,7 @@ struct CoolingPartition {
    // -------------------------------------------------------------------------------------
    inline PID nextPID()
    {
-      std::unique_lock<std::mutex> g_guard(pids_mutex);
+      std::unique_lock<mean::io_mutex> g_guard(pids_mutex);
       if (freed_pids.size()) {
          const u64 pid = freed_pids.back();
          freed_pids.pop_back();
@@ -156,13 +156,13 @@ struct CoolingPartition {
    }
    void freePage(PID pid)
    {
-      std::unique_lock<std::mutex> g_guard(pids_mutex);
+      std::unique_lock<mean::io_mutex> g_guard(pids_mutex);
       freed_pids.push_back(pid);
    }
    u64 allocatedPages() { return next_pid / pid_distance; }
    u64 freedPages()
    {
-      std::unique_lock<std::mutex> g_guard(pids_mutex);
+      std::unique_lock<mean::io_mutex> g_guard(pids_mutex);
       return freed_pids.size();
    }
    // -------------------------------------------------------------------------------------
@@ -176,7 +176,7 @@ struct CoolingPartition {
 };
 struct IoPartition {
    // -------------------------------------------------------------------------------------
-   mean::mutex io_mutex;
+   mean::io_mutex io_mutex;
    HashTable io_ht;
    IoPartition(u64 first_pid, u64 pid_distance, u64 free_bfs_limit, u64 cooling_bfs_limit);
    // -------------------------------------------------------------------------------------

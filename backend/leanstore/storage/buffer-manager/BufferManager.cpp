@@ -360,7 +360,11 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
             //raise(SIGINT);
          }
          swip_guard.recheck();
-         JMUW<std::unique_lock<mean::mutex>> g_guard(partition.io_mutex);
+         // if (partition.io_mutex.owner.load() != nullptr) {
+         //    std::cout << partition.io_mutex.owner.load() << std::endl; 
+         //    abort(); 
+         // }
+         JMUW<std::unique_lock<mean::io_mutex>> g_guard(partition.io_mutex);
          ExclusiveUpgradeIfNeeded swip_x_guard(swip_guard);
          io_frame.mutex.unlock();
          swip_value.warm(&bf);

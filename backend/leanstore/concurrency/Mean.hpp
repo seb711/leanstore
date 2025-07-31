@@ -1,6 +1,7 @@
 #pragma once
 // -------------------------------------------------------------------------------------
 #include "BlockedRange.hpp"
+#include "PreemptLock.hpp"
 #include "Task.hpp"
 #include "YieldLock.hpp"
 #include "DebugLock.hpp"
@@ -17,6 +18,8 @@ namespace mean
 #define MEAN_USE_TASKING
 #endif
 
+
+
 #if defined(MEAN_USE_THREADING) || defined(MEAN_USE_DEFAULT_THREADING)
 using mutex = std::mutex;
 #elif defined(MEAN_USE_JOBBING) && defined(NDEBUG)
@@ -25,6 +28,12 @@ using mutex = lockfree::mutex;
 using mutex = lockfree::mutex; // DebugLock;
 #else
 using mutex = YieldLock;
+#endif
+
+#ifdefMEAN_USE_TASKING
+using io_mutex = YieldLock;
+#else
+using io_mutex = PreemptLock;
 #endif
 
 using TaskFunction = std::function<void()>;  // std::add_pointer_t<void()>;

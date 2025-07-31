@@ -14,7 +14,7 @@ namespace storage
 struct FreeList {
    atomic<BufferFrame*> head = nullptr;
    atomic<u64> counter = 0;
-   BufferFrame& tryPop(JMUW<std::unique_lock<mean::mutex>>& lock);
+   BufferFrame& tryPop(JMUW<std::unique_lock<mean::io_mutex>>& lock);
    BufferFrame& pop();
    void batchPush(BufferFrame* head, BufferFrame* tail, u64 counter);
    void push(BufferFrame& bf);
