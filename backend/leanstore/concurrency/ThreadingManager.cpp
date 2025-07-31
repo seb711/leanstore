@@ -322,14 +322,23 @@ void ThreadingManager::yield([[maybe_unused]] TaskState ts)
 // -------------------------------------------------------------------------------------
 void ThreadingManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
 {
-   leanstore_osv_debug::Waiter waiter{};
+   leanstore_osv_debug::Waiter waiter{}; 
 
    UserIoCallback cb;
    cb.callback = [](IoBaseRequest* req) {
       leanstore_osv_debug::Waiter* waiter = (leanstore_osv_debug::Waiter*)(req->user.user_data.val.ptr);
+      #if true   
       {
-         waiter->wake();
+         // std::lock_guard<std::mutex> lock(waitDone->mtx);
+         waiter->wake(); 
       }
+      #else 
+         {
+            std::lock_guard<std::mutex> lock(waitDone->mtx);
+            waitDone->ready.store(true);
+         }
+         waitDone->cv.notify_one();
+      #endif
    };
    cb.user_data.val.ptr = &waiter;
 
@@ -338,7 +347,7 @@ void ThreadingManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 
 
    auto start = mean::readTSC();
    {
-      waiter.wait();
+      waiter.wait(); 
    }
 }
 Task& ThreadingManager::this_task()
