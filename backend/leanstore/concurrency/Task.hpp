@@ -2,6 +2,7 @@
 // -------------------------------------------------------------------------------------
 #include "MessageHandler.hpp"
 #include "leanstore/io/IoAbstraction.hpp"
+#include "YieldLock.hpp"
 #include <osv/jumpmu.hh>
 // -------------------------------------------------------------------------------------
 #include "boost/context/continuation.hpp"
