@@ -17,6 +17,7 @@
 #include <vector>
 
 #define USE_THREAD_POOL
+#define USE_PRIORITY_BACKGROUND
 // -------------------------------------------------------------------------------------
 namespace mean
 {
@@ -52,6 +53,11 @@ class DefaultThreadingManager
    std::vector<std::unique_ptr<ThreadData>> thread_data;
    std::atomic<ThreadData*> thread_data_pool_head = {nullptr};
 #endif
+
+#ifdef USE_PRIORITY_BACKGROUND
+   std::vector<std::unique_ptr<OsvBackgroundThreadBase>> backgroundThreads;
+#endif
+
    int total_threads_count;
    std::atomic<int> running_threads;
    std::vector<std::unique_ptr<ThreadWithJump>> exclusive_threads;

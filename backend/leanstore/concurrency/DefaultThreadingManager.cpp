@@ -15,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include "leanstore/concurrency/osv/background/OsvPageProvider.hpp"
 
 // -------------------------------------------------------------------------------------
 namespace mean
@@ -40,6 +41,7 @@ void DefaultThreadingManager::init(int workers_count, int exclusiveThreads, IoOp
    IoInterface::initInstance(ioOptions);
    ensure(total_threads_count < MAX_WORKER_THREADS);
 
+#ifndef USE_PRIORITY_BACKGROUND
    for (int t_i = 0; t_i < exclusiveThreads; t_i++) {
       auto thread = std::make_unique<ThreadWithJump>(
           [&, t_i]() {
@@ -73,6 +75,7 @@ void DefaultThreadingManager::init(int workers_count, int exclusiveThreads, IoOp
       exclusive_threads.push_back(std::move(thread));
       exclusive_threads.back()->start();
    }
+#endif
 
 #ifdef USE_THREAD_POOL
    for (int w_i = 0; w_i < workers_count; w_i++) {
@@ -127,7 +130,7 @@ void DefaultThreadingManager::init(int workers_count, int exclusiveThreads, IoOp
       thread_head->next = thread_pool_head.load();
       thread_pool_head.store(thread_head);
    }
-
+   std::cout << "finished init" << std::endl; 
 }
 
 #else
@@ -144,8 +147,14 @@ void DefaultThreadingManager::init(int workers_count, int exclusiveThreads, IoOp
       thread_data_pool_head.store(thread_data_head);
    }
 #endif
+
+#ifndef USE_PRIORITY_BACKGROUND
    while (running_threads < total_threads_count) {
    }
+#else
+   while (running_threads < (workers_count * FLAGS_worker_per_threads)) {
+   }
+#endif
 }
 // -------------------------------------------------------------------------------------
 void DefaultThreadingManager::start(TaskFunction taskFun)
@@ -222,7 +231,8 @@ void DefaultThreadingManager::registerPageProvider(void* bf_ptr, int partitions_
 {
    auto buffer_manager = static_cast<leanstore::storage::BufferManager*>(bf_ptr);
    for (int t_i = 0; t_i < partitions_count; t_i++) {
-      printf("register pp thread\n");
+
+#ifndef USE_PRIORITY_BACKGROUND
       registerExclusiveThread("pp", t_i, [buffer_manager, t_i, this]() {
          auto& iochannel = execIoChannel();
          while (true) {
@@ -231,6 +241,9 @@ void DefaultThreadingManager::registerPageProvider(void* bf_ptr, int partitions_
             iochannel.poll();
          }
       });
+#else
+      backgroundThreads.push_back(std::make_unique<OsvPageProvider>(buffer_manager, t_i, 1));
+#endif
    }
 }
 
@@ -272,10 +285,12 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
    jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext();
 
    // TODO: PIN THE THREAD TO CORE 0
+#ifdef USE_PRIORITY_BACKGROUND
    cpu_set_t cpuset;
    CPU_ZERO(&cpuset);
    CPU_SET(1, &cpuset);
    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+#endif
 
 #ifndef IS_LINUX
    // leanstore_osv_debug::set_priority(0.1); 
@@ -438,16 +453,23 @@ void DefaultThreadingManager::yield([[maybe_unused]] TaskState ts)
 // -------------------------------------------------------------------------------------
 void DefaultThreadingManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
 {
-   // this is only relevant for the OSv runs / in Linux we can only use
-   // pread because all the waits are not possible in Linux
-   leanstore_osv_debug::Waiter waiter{};
+   leanstore_osv_debug::Waiter waiter{}; 
 
    UserIoCallback cb;
    cb.callback = [](IoBaseRequest* req) {
       leanstore_osv_debug::Waiter* waiter = (leanstore_osv_debug::Waiter*)(req->user.user_data.val.ptr);
+      #if true   
       {
-         waiter->wake();
+         // std::lock_guard<std::mutex> lock(waitDone->mtx);
+         waiter->wake(); 
       }
+      #else 
+         {
+            std::lock_guard<std::mutex> lock(waitDone->mtx);
+            waitDone->ready.store(true);
+         }
+         waitDone->cv.notify_one();
+      #endif
    };
    cb.user_data.val.ptr = &waiter;
 
@@ -456,7 +478,7 @@ void DefaultThreadingManager::blockingIo(IoRequestType type, char* data, s64 add
 
    auto start = mean::readTSC();
    {
-      waiter.wait();
+      waiter.wait(); 
    }
 }
 Task& DefaultThreadingManager::this_task()
