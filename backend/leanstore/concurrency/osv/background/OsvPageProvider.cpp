@@ -2,35 +2,33 @@
 
 namespace mean
 {
-OsvPageProvider::OsvPageProvider(leanstore::storage::BufferManager* bf_ptr, int pid)
-    : OsvBackgroundThreadBase("page_provider", pid), bf_ptr(bf_ptr), partition_id(pid) {
-      start(); 
+OsvPageProvider::OsvPageProvider(leanstore::storage::BufferManager* bf_ptr, int pid, int affinity)
+    : OsvBackgroundThreadBase("page_provider", sched::thread_background::page_provider, pid, affinity), bf_ptr(bf_ptr), partition_id(pid) {
+      start_background_work(); 
     };
 
 OsvPageProvider::~OsvPageProvider() {};
 
 unsigned OsvPageProvider::getPriority() {
-   // bf_ptr->cooling_partitions[partition_id].dram_free_list.counter counts the currently free lists
+      // bf_ptr->cooling_partitions[partition_id].dram_free_list.counter counts the currently free lists
    // policy: run it if <10% are free
-   return bf_ptr->cooling_partitions[partition_id].dram_free_list.counter < 100 ? 5 : 0; 
+   auto counter = bf_ptr->cooling_partitions[partition_id].dram_free_list.counter.load();
+   // std::cout << "[page provider] counter = " << counter << std::endl;
+   // return bf_ptr->cooling_partitions[partition_id].dram_free_list.counter < 100 ? 1 : 0; 
+
+   leanstore_osv_debug::trace_pageprovider_state(counter); 
+   return (counter < 1000) ? 1 : 0; 
 }
 
 int OsvPageProvider::process()
 {
    while (true) {
-      if (bf_ptr->cooling_partitions[partition_id].dram_free_list.counter == 0 && counter++ > 10) {
-         std::vector<std::unique_ptr<std::unique_lock<mean::mutex>>> locks;
-
-         for (size_t io_partition_idx = 0; io_partition_idx < bf_ptr->io_partitions_count; io_partition_idx++) {
-            locks.push_back(std::make_unique<std::unique_lock<mean::mutex>>(bf_ptr->io_partitions[io_partition_idx].io_mutex));
-         }
-
+         // std::cout << "empty freelist " << bf_ptr->cooling_partitions[partition_id].dram_free_list.counter << std::endl; 
+         leanstore_osv_debug::trace_background_result(bf_ptr->cooling_partitions[partition_id].dram_free_list.counter); 
          bf_ptr->pageProviderCycle(partition_id);
+         // assert(bf_ptr->cooling_partitions[partition_id].dram_free_list.counter > 1000); 
 
-         counter = 0;
-      } else {
-         bf_ptr->pageProviderCycle(partition_id);
-      }
+      leanstore_osv_debug::yield(); 
    }
 
    return 0;

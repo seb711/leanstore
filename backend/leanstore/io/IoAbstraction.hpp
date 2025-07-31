@@ -46,18 +46,19 @@ class Raid0Channel : public IoChannel
    TIoChannel& io_channel;
    IoOptions io_options;
 
-   // std::unique_ptr<OsvIoSubmitter<TImplRequest>> io_submitter_thread; 
-   // std::unique_ptr<OsvIoPoller<TImplRequest>> io_poller_thread; 
+#ifndef MEAN_USE_TASKING
+   std::unique_ptr<OsvIoSubmitter<TImplRequest, TIoChannel>> io_submitter_thread; 
+   std::unique_ptr<OsvIoPoller<TImplRequest, TIoChannel>> io_poller_thread; 
+#endif
 
-#if defined(MEAN_USE_JOBBING) || defined(MEAN_USE_THREADING) || defined(MEAN_USE_DEFAULT_THREADING)
-RequestStackLock<RaidRequest<TImplRequest>> request_stack;
+#if defined(MEAN_USE_JOBBING) || defined(MEAN_USE_DEFAULT_THREADING)
+RequestStackLockfree<RaidRequest<TImplRequest>> request_stack;
 #else
 RequestStack<RaidRequest<TImplRequest>> request_stack;
 #endif
    u64 pushTimeout = 0;
    int outstanding = 0;
    u64 pushed = 0;
-   u64 pushedFromRemote = 0;
    u64 completed = 0;
    // ------------------------------------------------------------------------------------
 //#define IO_TRACE_ON
@@ -75,15 +76,15 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
    Raid0 raid;
    static const u64 CHUNK_SIZE = 64*1024;
    // -------------------------------------------------------------------------------------
-   RemoteIoChannelClient remote_client;
-   // -------------------------------------------------------------------------------------
   public:
    Raid0Channel(TIoEnvironment& io_env, TIoChannel& io_channel, IoOptions io_options, u64 channelId, u64 totalChannels) // TODO
-      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(2048), raid(io_env.deviceCount(), CHUNK_SIZE)
+      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(io_options.iodepth), raid(io_env.deviceCount(), CHUNK_SIZE)
    {
       // ATTENTION: HERE WE NOW INIT THE BACKGROUND THREADS
-      // io_submitter_thread = std::make_unique<OsvIoSubmitter<TImplRequest>>(*this, request_stack, 0); 
-      // io_poller_thread = std::make_unique<OsvIoPoller<TImplRequest>>(*this, request_stack, 0); 
+   #ifndef MEAN_USE_TASKING
+      io_submitter_thread = std::make_unique<OsvIoSubmitter<TImplRequest, TIoChannel>>(*this, io_channel, request_stack, 0, 1); 
+      io_poller_thread = std::make_unique<OsvIoPoller<TImplRequest, TIoChannel>>(io_channel, request_stack, 0, 1); 
+   #endif
       // END ATTENTION
 #ifdef IO_TRACE_ON
       trace.reserve(100e6);
@@ -117,6 +118,29 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
       return &req->base;
    }
    // -------------------------------------------------------------------------------------
+   void pushRequestToIoChannel(RaidRequest<TImplRequest>* req) {
+      int device;
+         u64 raidedOffset;
+         assert(req->base.len <= CHUNK_SIZE);
+         raid.calc(req->base.addr, device, raidedOffset);
+         req->base.device = device;
+         req->base.offset = raidedOffset;
+         req->base.innerCallback.user_data.val.ptr = req;
+         req->base.innerCallback.user_data2.val.ptr = this;
+         req->base.innerCallback.callback = [](IoBaseRequest* req) {
+            auto rr = reinterpret_cast<RaidRequest<TImplRequest>*>(req->innerCallback.user_data.val.ptr);
+            rr->base.user.callback(&rr->base);
+            auto this_ptr = (Raid0Channel<TIoEnvironment, TIoChannel,TImplRequest>*)req->innerCallback.user_data2.val.ptr;
+            auto ch = reinterpret_cast<Raid0Channel<TIoEnvironment, TIoChannel,TImplRequest>*>(this_ptr);
+            rr->base.stats.completion_time = readTSC();
+            if (!rr->base.reuse_request) {
+               ch->request_stack.returnToFreeList(rr);
+            }
+         };
+         outstanding++;
+         io_channel._push(req);
+         return; 
+   }
    void pushIoRequest(IoBaseRequest* base_req) override { 
       const std::size_t offset = offsetof(RaidRequest<TImplRequest>, base);
       char *raid_request_ptr_char = reinterpret_cast<char *>(base_req) - offset; // a bit of a hack
@@ -129,7 +153,7 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
       }
       req->base.out_of_place_addr = req->base.addr;
       pushed++;
-      request_stack.pushToSubmitStack(req);
+      pushRequestToIoChannel(req);
    };
    // -------------------------------------------------------------------------------------
    void _push(const IoBaseRequest& usr) override { 
@@ -144,66 +168,10 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
    }
    // -------------------------------------------------------------------------------------
    int submitable() override {
-      if (remote_client.remote_count > 0) {
-         for (int i = 0; i < remote_client.remote_count; i++) {
-            if (!remote_client.remotes[i]->submit_ring.empty()) {
-               return 1;
-            }
-         }
-      }
-      return request_stack.submitStackSize();
+      return io_channel.submitable.load();
    };
    int _submit() override { 
-      //  
-      if (remote_client.remote_count > 0) {
-         for (int i = 0; i < remote_client.remote_count; i++) {
-            IoBaseRequest* req;
-            while (request_stack.free > request_stack.max_entries*0.25 && remote_client.remotes[i]->submit_ring.try_pop(req)) {
-               // from remote to local
-               push(req->type, req->data, req->addr, req->len, req->innerCallback, req->write_back);
-               pushedFromRemote++;
-            }
-         }
-      }
       // look at all pushed requests, calculate raid, push them to below, submit
-      RaidRequest<TImplRequest>* req;
-      while (request_stack.popFromSubmitStack(req)) {
-         int device;
-         u64 raidedOffset;
-         assert(req->base.len <= CHUNK_SIZE);
-         raid.calc(req->base.addr, device, raidedOffset);
-         req->base.device = device;
-         req->base.offset = raidedOffset;
-         req->base.innerCallback.user_data.val.ptr = req;
-         req->base.innerCallback.user_data2.val.ptr = this;
-         req->base.innerCallback.callback = [](IoBaseRequest* req) {
-            auto rr = reinterpret_cast<RaidRequest<TImplRequest>*>(req->innerCallback.user_data.val.ptr);
-            rr->base.user.callback(&rr->base);
-            auto this_ptr = (Raid0Channel<TIoEnvironment, TIoChannel,TImplRequest>*)req->innerCallback.user_data2.val.ptr;
-            auto ch = reinterpret_cast<Raid0Channel<TIoEnvironment, TIoChannel,TImplRequest>*>(this_ptr);
-            /*COUNTERS_BLOCK()*/ { ch->counters.handleCompletedReq(*req); leanstore::SSDCounters::myCounters().polled[req->device]++; }
-            rr->base.stats.completion_time = readTSC();
-#ifdef IO_TRACE_ON
-            this_ptr->trace.emplace_back((int)rr->base.type, rr->base.addr, nanoFromTsc(rr->base.stats.submit_time), tscDifferenceUs(readTSC(), rr->base.stats.submit_time));
-#endif
-            if (!rr->base.reuse_request) {
-               ch->request_stack.returnToFreeList(rr);
-            }
-         };
-         outstanding++;
-         COUNTERS_BLOCK() {
-            if (req->base.type == IoRequestType::Write) {
-               counters.outstandingWrite++;
-            } else if (req->base.type == IoRequestType::Read) {
-               counters.outstandingRead++;
-            }
-         }
-         COUNTERS_BLOCK() { leanstore::SSDCounters::myCounters().pushed[device]++; }
-         COUNTERS_BLOCK() { counters.handleSubmitReq(req->base); }
-			req->base.stats.submit_time = readTSC();
-         io_channel._push(req);
-         __builtin_prefetch(&req->impl,0,1);
-      }
       return io_channel._submit();
    };
    int _poll(int min = 0) override { 
@@ -220,10 +188,11 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
       return request_stack.full();
    }
    bool writeStackFull() override {
-      return request_stack.free < (request_stack.max_entries * 0.5);
+      return request_stack.free < 128;
+      // return request_stack.free < (request_stack.max_entries * 0.5);
    }
-   void registerRemoteChannel(RemoteIoChannel* rem) override {
-      remote_client.registerRemote(rem); 
+   int writeStackFreeSize() override {
+      return request_stack.free;
    }
    void pushBlocking(IoRequestType type, char* data, s64 addr, u64 len, bool write_back = false) override {
       io_channel.pushBlocking(type, data, addr, len, write_back);
@@ -271,6 +240,7 @@ class RaidEnv : public RaidEnvironment {
                throw std::logic_error("not implemented");
                //ch = std::unique_ptr<IoChannel>(new Raid5Channel<TIoEnvironment, TIoChannel, TImplRequest>(*io_env, io_env->getIoChannel(i), io_options, i, io_options.channelCount));
             } else {
+                     std::cout << "create channels: " << i << std::endl;
                ch = std::unique_ptr<IoChannel>(new Raid0Channel<TIoEnvironment, TIoChannel, TImplRequest>(*io_env, io_env->getIoChannel(i), io_options, i, io_options.channelCount));
                      std::cout << "created channels: " << i << std::endl;
             }

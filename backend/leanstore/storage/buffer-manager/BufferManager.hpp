@@ -76,7 +76,7 @@ class BufferManager
   private:
    void evict_bf(CoolingPartition& partition, FreedBfsBatch& freed_bfs_batch, BufferFrame& bf, OptimisticGuard& guard, bool& p1, bool& p2);
    int pageProviderPhase2(CoolingPartition& partition, u64 pages_to_iterate_partition, FreedBfsBatch&  freed_bfs_batch);
-   void pageProviderPhase3evict(CoolingPartition& partition, FreedBfsBatch&  freed_bfs_batch);
+   int pageProviderPhase3evict(CoolingPartition& partition, FreedBfsBatch&  freed_bfs_batch);
    // -------------------------------------------------------------------------------------
    atomic<u64> bg_threads_counter = 0;
    atomic<bool> bg_threads_keep_running = true;

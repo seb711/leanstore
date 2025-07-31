@@ -86,3 +86,4 @@ DEFINE_uint64(tx_rate, 0, "");
 DEFINE_uint64(tmp, 0, "");
 // -------------------------------------------------------------------------------------
 DEFINE_uint64(worker_per_threads, 10, "");
+DEFINE_uint32(background_batching, 4, "Defined how much entries to batch each time when a background thread runs.");

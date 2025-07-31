@@ -53,19 +53,25 @@ u64 OsvEnv::storageSize()
 
 void* OsvEnv::allocIoMemory(size_t size, size_t align)
 {
+   // printf("try to allocate %lu bytes\n", size); 
    void* buffer = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
    null_check(buffer, "Memory allocation failed");
    madvise(buffer, size, MADV_HUGEPAGE);
+   // printf("finished try to allocate %lu bytes\n", size); 
+
    return buffer;
 }
 
 void* OsvEnv::allocIoMemoryChecked(size_t size, size_t align)
 {
+   // printf("try to allocate %lu bytes\n", size); 
    void* buffer = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
    assert(buffer != MAP_FAILED);
    madvise(buffer, size, MADV_HUGEPAGE);
    null_check(buffer, "Memory allocation failed");
+   // printf("finished try to allocate %lu bytes\n", size); 
    return buffer;
 }
 
@@ -95,9 +101,8 @@ DeviceInformation OsvEnv::getDeviceInfo()
 // Channel
 // -------------------------------------------------------------------------------------
 OsvChannel::OsvChannel(IoOptions ioOptions, NVMeMultiController& controller, int queue)
-    : options(ioOptions), controller(controller), queue(queue), lbaSize(controller.nsLbaDataSize()), outstanding(controller.deviceCount())
+    : options(ioOptions), controller(controller), queue(queue), lbaSize(controller.nsLbaDataSize()), outstanding(controller.deviceCount(), 0)
 {
-   write_request_stack.reserve(ioOptions.iodepth);
    int c = controller.deviceCount();
    for (int i = 0; i < c; i++) {
       qpairs.emplace_back(controller.controller[i].qpairs[queue]);
@@ -136,7 +141,13 @@ void OsvChannel::_push(RaidRequest<OsvIoReq>* req)
 
       req->base.innerCallback.callback(&req->base);
    });
-   write_request_stack.push_back(req);
+
+   submitable++; 
+   RaidRequest<OsvIoReq>* old_top; 
+   do {
+      old_top = write_request_head.load(); 
+      req->impl.next = old_top;
+   } while (!write_request_head.compare_exchange_weak(old_top, req)); 
 }
 
 void OsvChannel::_printSpecializedCounters(std::ostream& ss)

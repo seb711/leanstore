@@ -4,6 +4,7 @@
 #include <osv/nvme-structs.h>
 // -------------------------------------------------------------------------------------
 #include "../Raid.hpp"
+#include "leanstore/concurrency/Mean.hpp"
 // -------------------------------------------------------------------------------------
 #include <cassert>
 #include <cstdint>
@@ -15,6 +16,7 @@
 #include <stdexcept>
 #include <thread>
 #include <vector>
+#include <atomic>
 // -------------------------------------------------------------------------------------
 #define checkThrow(test, message)         \
    do {                                   \
@@ -40,6 +42,7 @@ enum class OsvIoReqType {
 struct OsvIoReq;
 using OsvIoReqCallback = void (*)(OsvIoReq* req);
 struct OsvIoReq {
+   std::atomic<mean::RaidRequest<OsvIoReq>*> next; 
    char* buf;
    uint64_t lba;
    uint64_t append_lba;  // do not know why we needed that initially

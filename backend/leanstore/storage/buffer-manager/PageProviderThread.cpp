@@ -53,13 +53,19 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
 void BufferManager::pageProviderCycle(int partition_id) {
    using Time = decltype(std::chrono::high_resolution_clock::now());
 
+
    /*
     * Phase 1:
     */
+   u64 picked = 0; 
    ensure(partition_id < (int)cooling_partitions_count);
    CoolingPartition& partition = cooling_partitions[partition_id];
+
+
+
+
    if (phase_1_condition(partition) > 64) {
-      u64 picked = pageProviderPhase1(partition, 128, partition_id);
+      picked = pageProviderPhase1(partition, 64, partition_id);
       //u64 picked = pageProviderPhase1Vec(partition, 128);
       COUNTERS_BLOCK() {ThreadCounters::myCounters().pp_p1_picked += picked; }
    }
@@ -78,9 +84,10 @@ void BufferManager::pageProviderCycle(int partition_id) {
       PPCounters::myCounters().pp_qlen_cnt++;
    }
    // -------------------------------------------------------------------------------------
+   int added = 0; 
    if (pages_to_iterate_partition > 0) {
       pages_to_iterate_partition = std::max(pages_to_iterate_partition , (s64)1);
-      int added = pageProviderPhase2(partition, pages_to_iterate_partition, partition.state.freed_bfs_batch);
+      added = pageProviderPhase2(partition, pages_to_iterate_partition, partition.state.freed_bfs_batch);
       COUNTERS_BLOCK() { PPCounters::myCounters().phase_2_added += added; }
    }
    // -------------------------------------------------------------------------------------
@@ -104,7 +111,7 @@ void BufferManager::pageProviderCycle(int partition_id) {
    COUNTERS_BLOCK() { partition.state.poll_end = std::chrono::high_resolution_clock::now(); }
    [[maybe_unused]] Time async_wb_begin, async_wb_end;
    // -------------------------------------------------------------------------------------
-   pageProviderPhase3evict(partition, partition.state.freed_bfs_batch);
+   int evicted = pageProviderPhase3evict(partition, partition.state.freed_bfs_batch);
    // -------------------------------------------------------------------------------------
    COUNTERS_BLOCK()
    {
@@ -121,6 +128,8 @@ void BufferManager::pageProviderCycle(int partition_id) {
       partition.pushFreeList();
    }
    COUNTERS_BLOCK() { PPCounters::myCounters().pp_thread_rounds++; }
+
+   leanstore_osv_debug::trace_page_provider(picked, added, evicted); 
 }
 
 void BufferManager::evict_bf(CoolingPartition& partition, FreedBfsBatch& freed_bfs_batch, BufferFrame& bf, OptimisticGuard& guard, bool& p1, bool& p2) {
@@ -389,6 +398,8 @@ u64 BufferManager::pageProviderPhase1(CoolingPartition& partition, const u64 req
    volatile u64 failed_cause_io = 0;
    volatile u64 failed_cause_cool = 0;
    volatile u64 failed_cause_iocoldone = 0;
+   volatile u64 failed_cause_not_all_children_evivted = 0;
+   volatile u64 failed_cause_recheck = 0;
    volatile u64 found = 0;
    volatile u64 attempts = 0;
    volatile u64 failed_attempts =
@@ -402,7 +413,7 @@ u64 BufferManager::pageProviderPhase1(CoolingPartition& partition, const u64 req
    while (failed_attempts < 10) {
       jumpmuTry()
       {
-         while (found < required && failed_attempts < 10) {
+         while (found < required && failed_attempts < 20) {
             COUNTERS_BLOCK() { PPCounters::myCounters().phase_1_counter++; }
             attempts++;
             OptimisticGuard r_guard(r_buffer->header.latch, true);
@@ -448,6 +459,7 @@ u64 BufferManager::pageProviderPhase1(CoolingPartition& partition, const u64 req
             if (picked_a_child_instead) {
                continue;  // restart the inner loop
             }
+            failed_cause_not_all_children_evivted += all_children_evicted ? 0 : 1; 
             repickIf(!all_children_evicted);
             // -------------------------------------------------------------------------------------
             [[maybe_unused]] Time find_parent_begin, find_parent_end;
@@ -512,6 +524,9 @@ u64 BufferManager::pageProviderPhase1(CoolingPartition& partition, const u64 req
             r_buffer = &partitionRandomBufferFrame(partition_id, max_partitions);
             // -------------------------------------------------------------------------------------
          } // while inner
+         if (failed_attempts >= 20 && found < 10) {
+            // abort(); 
+         }
          failed_attempts = 0;
          jumpmu_break;
       }
@@ -536,19 +551,34 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
    ensure(partition.state.debug_thread == mean::exec::getId());
    COUNTERS_BLOCK() { PPCounters::myCounters().phase_2_counter++; }
    volatile s64 pages_left_to_iterate_partition = pages_to_iterate_partition;
+
+   
    //std::cout << "pl:" << p_i << " pages_left_to_iterate_partition: "  << pages_left_to_iterate_partition  << " q: " << partition.cooling_queue.size() << std::endl;
    volatile u64 added = 0;
    volatile bool evictedCalledd = false;
    volatile bool fromTheBeginning = false;
+
+   volatile u64 failed_not_cool = 0; 
+   volatile u64 failed_no_lock = 0; 
+   volatile u64 failed_used = 0; 
+
    //volatile s64 left_in_q = partition.cooling_queue.size();
    //const int submitMultiple = mean::exec::ioChannel().submitMin();
    BufferFrame* bf_arr;
    pages_left_to_iterate_partition = std::min(pages_to_iterate_partition, partition.cooling_queue.size());
+   unsigned count = 10; 
+   // leanstore_osv_debug::trace_page_provider_state(pages_left_to_iterate_partition, partition.outstanding, mean::exec::ioChannel().writeStackFreeSize(), partition.cooling_queue.size()); 
+   leanstore_osv_debug::trace_page_provider_state(pages_left_to_iterate_partition, partition.outstanding, mean::exec::ioChannel().writeStackFreeSize(), partition.cooling_queue.size()); 
+
    while (pages_left_to_iterate_partition > 0  
-         && !mean::exec::ioChannel().writeStackFull() && partition.outstanding < (s64)partition.io_queue.max_size) {
+         && !mean::exec::ioChannel().writeStackFull() && partition.outstanding < (s64)IO_QUEUE_MAX_SIZE) {
+      
+
       if (!partition.cooling_queue.try_pop(bf_arr)) {
+         assert(partition.cooling_queue.size() == 0); 
          break;
       }
+
       pages_left_to_iterate_partition--;
       partition.cooling_bfs_counter--;
       ensure(partition.cooling_queue.size() == partition.cooling_bfs_counter);
@@ -565,7 +595,9 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
          // Check if the BF got swizzled in or unswizzle another time in another partition
          if (bf.header.state != BufferFrame::STATE::COOL) {
             fromTheBeginning = true;
-            jumpmu::jump();
+            failed_not_cool++; 
+               jumpmu::jump(jumpmu::UserJumpReason::Reason3);
+         
          }
          if (!bf.header.isWB) {
             // Prevent evicting a page that already has an IO Frame with (possibly) threads working on it.
@@ -574,18 +606,19 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
                if (io_partition.io_mutex.try_lock()) {
                   if (io_partition.io_ht.lookup(bf.header.pid)) {
                      io_partition.io_mutex.unlock();
-                     jumpmu::jump();
+                     failed_used++; 
+                     jumpmu::jump(jumpmu::UserJumpReason::Reason1);
                   }
                   io_partition.io_mutex.unlock();
                } else {
-                  //std::cout << "io_mutex " << std::endl;
-                  jumpmu::jump();
+                  failed_no_lock++; 
+                  jumpmu::jump(jumpmu::UserJumpReason::Reason2);
                }
             }
             pages_left_to_iterate_partition--;
             if (bf.isDirty()) {
                ensure(partition.outstanding >= 0);
-               if (!mean::exec::ioChannel().writeStackFull() && partition.outstanding < (s64)partition.io_queue.max_size) {
+               if (!mean::exec::ioChannel().writeStackFull() && partition.outstanding < (s64) IO_QUEUE_MAX_SIZE) {
                   {
                      ExclusiveGuard ex_guard(o_guard);
                      assert(!bf.header.isWB);
@@ -629,13 +662,13 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
                               jumpmu_break;
                            }
                            jumpmuCatch() {
-                              std::cout << "pp2 io callback catch: " << (int)written_bf.header.state << std::endl;
+                              // std::cout << "pp2 io callback catch: " << (int)written_bf.header.state << std::endl;
                            }
                         }
                         partition.state.done++;
                         //std::cout << "i: " << &written_bf << std::endl;
-                        partition.io_queue.push_back(&written_bf);
-                        partition.io_queue2.push_back(&written_bf);
+                        partition.io_queue.push(&written_bf);
+                        partition.io_queue2.push(&written_bf);
                      };
                      bf.page.magic_debugging_number = wb_pid;
                      bf.page.magic_debugging_number_end = wb_pid;
@@ -643,8 +676,7 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
                            reinterpret_cast<char*>(&bf.page), PAGE_SIZE * wb_pid, PAGE_SIZE, /*reinterpret_cast<uintptr_t>(&bf), pid,*/ cb, true);
                      partition.state.submitted++;
                      partition.outstanding++; // 1
-                     ensure(partition.outstanding <= (s64)partition.io_queue.max_size);
-                     added++;
+                     // ensure(partition.outstanding <= (s64)IO_QUEUE_MAX_SIZE);
                      COUNTERS_BLOCK() { ThreadCounters::myCounters().pp_p2_iopushed++; }
                   }
                } else {
@@ -666,9 +698,14 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
             // is already write back, do nothing skip
             //std::cout << "is allready write back" << std::endl;
          }
+               added++; 
+
       }
       jumpmuCatch() {
-         if (bf.header.state == BufferFrame::STATE::COOL) {
+         /* if (count == 0) {
+            abort(); 
+         } */
+            if (bf.header.state == BufferFrame::STATE::COOL) {
             partition.cooling_bfs_counter++;
             partition.cooling_queue.push_back(&bf);
             ensure(partition.cooling_queue.size() == partition.cooling_bfs_counter);
@@ -684,25 +721,30 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
    }
    ensure(mean::exec::ioChannel().submitMin() == 0 || added % mean::exec::ioChannel().submitMin() == 0);
 
+   if (added == 0 && partition.cooling_queue.size() > 10000) {
+      abort(); 
+   }
+
    return added;
 }
 // -------------------------------------------------------------------------------------
-void BufferManager::pageProviderPhase3evict(CoolingPartition& partition, FreedBfsBatch& freed_bfs_batch) {
+int BufferManager::pageProviderPhase3evict(CoolingPartition& partition, FreedBfsBatch& freed_bfs_batch) {
    static std::atomic<u64> bla = 0;
    // no lock required as only this thread is accessing the io_queue
    // -------------------------------------------------------------------------------------
    BufferFrame* bf_ptr;
-   int in = partition.io_queue2.size();
+   int in = partition.io_queue2.read_available();
    volatile int cntDone = 0;
    volatile int cntCatch = 0;
-   while (!partition.io_queue2.empty() && in-- > 0) {
-      ensure(partition.io_queue.try_pop(bf_ptr));
+   // std::cout << "partition.io_queue2.size(): " << (partition.io_queue2.empty() ? "empty " : "not empty ") << mean::exec::ioChannel().getOpen() << "open ios" << std::endl; 
+   while (!partition.io_queue2.empty() && in-- > 0) { // && in-- > 0
+      ensure(partition.io_queue.pop(bf_ptr));
       //std::cout << "e: " << bf_ptr << std::endl;
       //ensure(bf_ptr == partition.io_queue2.front());
-      bf_ptr = partition.io_queue2.front();
-      partition.io_queue2.pop_front();
+      partition.io_queue2.pop(bf_ptr);
+      // partition.io_queue2.pop_front();
       ensure(partition.outstanding >= 0);
-      ensure(partition.outstanding <= (s64)partition.io_queue.max_size);
+      ensure(partition.outstanding <= (s64)IO_QUEUE_MAX_SIZE);
       partition.outstanding--; // 2
 
       BufferFrame& bf = *bf_ptr;
@@ -737,18 +779,20 @@ void BufferManager::pageProviderPhase3evict(CoolingPartition& partition, FreedBf
          cntCatch++;
          if (!jumpCool) {
             partition.outstanding++; // 3
-            partition.io_queue.push_back(bf_ptr);
-            partition.io_queue2.push_back(bf_ptr);
+            partition.io_queue.push(bf_ptr);
+            partition.io_queue2.push(bf_ptr);
             //bf.header.state = BufferFrame::STATE::IOLOST2;
-            ensure(partition.outstanding <= (s64)partition.io_queue.max_size);
+            ensure(partition.outstanding <= (s64)IO_QUEUE_MAX_SIZE);
          } else if (bf.header.state == BufferFrame::STATE::IOCOLDDONE) {
             partition.outstanding++; // 4
-            partition.io_queue.push_back(bf_ptr);
-            partition.io_queue2.push_back(bf_ptr);
+            partition.io_queue.push(bf_ptr);
+            partition.io_queue2.push(bf_ptr);
          }
          //*/
       }
    }
+
+   return cntDone;
 }
 // -------------------------------------------------------------------------------------
 }  // namespace storage

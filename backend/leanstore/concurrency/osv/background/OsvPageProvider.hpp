@@ -22,7 +22,7 @@ class OsvPageProvider : public OsvBackgroundThreadBase
 
    public: 
    // -------------------------------------------------------------------------------------
-   OsvPageProvider(leanstore::storage::BufferManager* bf_ptr, int pid);
+   OsvPageProvider(leanstore::storage::BufferManager* bf_ptr, int pid, int affinity);
    ~OsvPageProvider();
    // -------------------------------------------------------------------------------------
    OsvPageProvider(const OsvPageProvider&) = delete;
