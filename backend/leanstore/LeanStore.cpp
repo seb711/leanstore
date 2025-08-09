@@ -115,7 +115,11 @@ void LeanStore::startProfilingThread()
    std::thread profiling_thread([&]() {
       cpu_set_t cpuset;
       CPU_ZERO(&cpuset);
+   #ifdef MEAN_USE_JOBBING
       CPU_SET(2, &cpuset);
+   #else
+      CPU_SET(3, &cpuset);
+   #endif
       auto thread = pthread_self();
       int s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
       if (s != 0) {
