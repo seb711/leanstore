@@ -136,8 +136,21 @@ struct BTreeNode : public BTreeNodeHeader {
    inline void copyKeyWithoutPrefix(u16 slotId, u8* out_after_prefix) { memcpy(out_after_prefix, getKey(slotId), getKeyLen(slotId)); }
    inline void copyFullKey(u16 slotId, u8* out)
    {
-      memcpy(out, getPrefix(), prefix_length);
-      memcpy(out + prefix_length, getKey(slotId), getKeyLen(slotId));
+      // memcpy(out, getPrefix(), prefix_length);
+      // memcpy(out + prefix_length, getKey(slotId), getKeyLen(slotId));
+
+      // Copy prefix
+      u8* prefix = getPrefix(); 
+      for (u16 i = 0; i < prefix_length; ++i) {
+         out[i] = prefix[i];
+      }
+    
+      // Copy key
+      u8* key = getKey(slotId); 
+      u16 keyLen = getKeyLen(slotId); 
+      for (u16 i = 0; i < keyLen; ++i) {
+         out[prefix_length + i] = key[i];
+      }
    }
    // -------------------------------------------------------------------------------------
    static inline s32 cmpKeys(const u8* a, const u8* b, u16 aLength, u16 bLength)
