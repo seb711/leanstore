@@ -113,6 +113,22 @@ void run_tpcc()
       ensure((bool)((bb.end - bb.begin) > 0));
       mean::task::parallelFor(bb, load_fun, 1);
 #else
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+#ifdef MEAN_USE_JOBBING
+      CPU_SET(2, &cpuset);
+   #else
+      CPU_SET(3, &cpuset);
+   #endif      
+      auto thread = pthread_self();
+      int s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
+      if (s != 0) {
+         ensure(false, "[startProfilingThread] Affinity could not be set.");
+      }
+      s = pthread_getaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
+      if (s != 0) {
+         ensure(false, "[startProfilingThread] Affinity could not be set.");
+      } 
 #ifndef NEW_JUMPMU
       jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext{};
 #endif
