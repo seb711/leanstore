@@ -4,6 +4,9 @@ atomic<u64> scanned_elements = 0;
 // load
 
 Integer warehouseCount;
+std::atomic<uint64_t> last_scan;
+std::atomic<uint64_t> last_scanned_wr;
+
 // -------------------------------------------------------------------------------------
 static constexpr INTEGER OL_I_ID_C = 7911;  // in range [0, 8191]
 static constexpr INTEGER C_ID_C = 259;      // in range [0, 1023]
@@ -171,7 +174,7 @@ void loadDistrinct(Integer w_id)
 {
    for (Integer i = 1; i < 11; i++) {
       district.insert({w_id, i}, {randomastring<10>(6, 10), randomastring<20>(10, 20), randomastring<20>(10, 20), randomastring<20>(10, 20),
-                                  randomastring<2>(2, 2), randomzip(), randomNumeric(0.0000, 0.2000), 3000000, 3001});
+                                  randomastring<2>(2, 2), randomzip(), randomNumeric(0.0000, 0.2000), 3000000, 30001});
    }
 }
 
@@ -195,25 +198,25 @@ void loadCustomer(Integer w_id, Integer d_id)
                                             randomastring<2>(2, 2), randomzip(), randomnstring(16, 16), 0, c_credit, 50000.00,
                                             randomNumeric(0.0000, 0.5000), -10.00, 1, 0, 0, randomastring<500>(300, 500)});
       customerwdl.insert({w_id, d_id, c_last, c_first}, {i + 1});
-      Integer t_id = (Integer)WorkerCounters::myCounters().t_id;
-      Integer h_id = (Integer)WorkerCounters::myCounters().variable_for_workload++;
+      Integer t_id = static_cast<Integer>(WorkerCounters::myCounters().t_id.load());
+      Integer h_id =  WorkerCounters::variable_for_workloads[t_id].fetch_add(1);
       history.insert({t_id, h_id}, {i + 1, d_id, w_id, d_id, w_id, now, 10.00, randomastring<24>(12, 24)});
    }
 }
 
 void loadOrders(Integer w_id, Integer d_id)
 {
-   Timestamp now = currentTimestamp();
+   Timestamp now = 0.0;
    vector<Integer> c_ids;
-   for (Integer i = 1; i <= 3000; i++)
+   for (Integer i = 1; i <= 30000; i++)
       c_ids.push_back(i);
    shuffle(c_ids.begin(), c_ids.end(), random_generator);
    Integer o_id = 1;
    for (Integer o_c_id : c_ids) {
-      Integer o_carrier_id = (o_id < 2101) ? rnd(10) + 1 : 0;
+      Integer o_carrier_id = (o_id < 21010) ? rnd(10) + 1 : 0;
       Numeric o_ol_cnt = rnd(10) + 5;
 
-      order.insert({w_id, d_id, o_id}, {o_c_id, 0, o_carrier_id, o_ol_cnt, 1});
+      order.insert({w_id, d_id, o_id}, {o_c_id, now, o_carrier_id, o_ol_cnt, 1});
       if (FLAGS_order_wdc_index) {
          order_wdc.insert({w_id, d_id, o_c_id, o_id}, {});
       }
@@ -221,15 +224,15 @@ void loadOrders(Integer w_id, Integer d_id)
       for (Integer ol_number = 1; ol_number <= o_ol_cnt; ol_number++) {
          Timestamp ol_delivery_d = 0;
          if (o_id < 2101)
-            ol_delivery_d = 0;
-         Numeric ol_amount = (o_id < 2101) ? 0 : randomNumeric(0.01, 9999.99);
+            ol_delivery_d = now;
+         Numeric ol_amount = (o_id < 21010) ? 0 : randomNumeric(0.01, 9999.99);
          const Integer ol_i_id = rnd(ITEMS_NO) + 1;
          orderline.insert({w_id, d_id, o_id, ol_number}, {ol_i_id, w_id, ol_delivery_d, 5, ol_amount, randomastring<24>(24, 24)});
       }
       o_id++;
    }
 
-   for (Integer i = 2100; i <= 3000; i++)
+   for (Integer i = 21010; i <= 30000; i++)
       neworder.insert({w_id, d_id, i}, {});
 }
 
@@ -723,7 +726,7 @@ void paymentById(Integer w_id, Integer d_id, Integer c_w_id, Integer c_d_id, Int
 
    Varchar<24> h_new_data = Varchar<24>(w_name) || Varchar<24>("    ") || d_name;
    Integer t_id = (Integer)WorkerCounters::myCounters().t_id.load();
-   Integer h_id = (Integer)WorkerCounters::myCounters().variable_for_workload++;
+   Integer h_id =  WorkerCounters::variable_for_workloads[t_id].fetch_add(1);
    history.insert({t_id, h_id}, {c_id, c_d_id, c_w_id, d_id, w_id, datetime, h_amount, h_new_data});
 }
 
@@ -837,7 +840,7 @@ void paymentByName(Integer w_id,
 
    Varchar<24> h_new_data = Varchar<24>(w_name) || Varchar<24>("    ") || d_name;
    Integer t_id = Integer(WorkerCounters::myCounters().t_id.load());
-   Integer h_id = (Integer)WorkerCounters::myCounters().variable_for_workload++;
+   Integer h_id =  WorkerCounters::variable_for_workloads[t_id].fetch_add(1);
    history.insert({t_id, h_id}, {c_id, c_d_id, c_w_id, d_id, w_id, datetime, h_amount, h_new_data});
 }
 
@@ -866,7 +869,7 @@ void analyticalQuery(Integer w_id)
    SELECT i.*, w.*, s.*
    FROM item i
    JOIN stock s ON s.s_i_id = i.i_id
-   JOIN warehouse w ON s.s_w_id = w.w_id 
+   JOIN warehouse w ON s.s_w_id = w.w_id
    WHERE i.i_price <= 75 AND (s.s_quantity < 20 AND s.s_order_cnt >= 10);
    */
    item.scan(
@@ -916,72 +919,86 @@ void analyticalQuery2(Integer w_id)
       JOIN DISTRICT d ON (o.O_D_ID = d.D_ID AND o.O_W_ID = d.D_W_ID)
       JOIN WAREHOUSE w ON (o.O_W_ID = w.W_ID)
    WHERE
-      w.W_ID = {w_id}
       o.O_ENTRY_D >= CURRENT_TIMESTAMP - INTERVAL '30' SECONDS
       AND o.O_CARRIER_ID IS NULL
    GROUP BY
       w.W_ID, d.D_ID, w.W_NAME, d.D_NAME
    */
 
-   Timestamp currentTime = currentTimestamp();
-   Varchar<10> w_name;
+   for (Integer w_id = 1; w_id <= FLAGS_tpcc_warehouse_count; w_id++) {
+      Timestamp currentTime = currentTimestamp();
+      Varchar<10> w_name;
 
-   warehouse.lookup1({w_id}, [&](const warehouse_t& wrec) { w_name = wrec.w_name; });
+      warehouse.lookup1({w_id}, [&](const warehouse_t& wrec) { w_name = wrec.w_name; });
 
-   district.scan(
-       {w_id, 0},
-       [&](const district_t::Key& dkey, const district_t& drec) {
-          if (dkey.d_w_id != w_id)
-             return false;
+      std::vector<Integer> dkeys{};
+      std::vector<Varchar<10>> drecs{};
+      std::vector<Integer> maxids{};
 
-          Varchar<10> d_name = drec.d_name;
-          Integer recent_orders = 0;
-          Integer total_items_ordered = 0;
-          Integer avg_items_per_order_sum = 0l;
-          Integer avg_items_per_order_cnt = 0l;
-          Timestamp last_order_time = 0;
-          Integer scanned = 0;
+      district.scan(
+         {w_id, 1},
+         [&](const district_t::Key& dkey, const district_t& drec) {
+            if (dkey.d_w_id != w_id)
+               return false;
 
-          order.scanDesc(
-              {w_id, dkey.d_id, drec.d_next_o_id - 1},
-              [&](const order_t::Key& okey, const order_t& orec) {
-                 if (okey.o_w_id != w_id || okey.o_d_id != dkey.d_id)
-                    return false;
-                 if (mean::tscDifferenceS(currentTime, orec.o_entry_d) > 60)
-                    return false;
-                 scanned++;
+            dkeys.push_back(dkey.d_id);
+            drecs.push_back(drec.d_name);
+            maxids.push_back(drec.d_next_o_id);
+            return true;
+         },
+         []() {});
 
-                 recent_orders++;
-                 total_items_ordered += orec.o_ol_cnt;
-                 avg_items_per_order_sum += orec.o_ol_cnt;
-                 avg_items_per_order_cnt++;
-                 last_order_time = std::max(last_order_time, orec.o_entry_d);
+      for (size_t t = 0; t < dkeys.size(); t++) {
+         volatile Varchar<10> d_name = drecs[t];
+         volatile Integer recent_orders = 0;
+         volatile Integer total_items_ordered = 0;
+         volatile Integer avg_items_per_order_sum = 0l;
+         volatile Integer avg_items_per_order_cnt = 0l;
+         volatile Timestamp last_order_time = 0;
+         volatile Integer scanned = 0;
 
-                 return true;
-              },
-              [&]() {});
-          // std::cout << scanned << std::endl;
-          return true;
-       },
-       []() {});
+         order.scanDesc(
+            {w_id, dkeys[t], maxids[t] - 1},
+            [&](const order_t::Key& okey, const order_t& orec) {
+               if (okey.o_w_id != w_id || okey.o_d_id != dkeys[t])
+                  return false;
+               if (mean::tscDifferenceS(currentTime, orec.o_entry_d) > 60)
+                  return false;
+               scanned++;
+               leanstore::WorkerCounters::myCounters().time_counter_1++; 
+
+               recent_orders++;
+               total_items_ordered += orec.o_ol_cnt;
+               avg_items_per_order_sum += orec.o_ol_cnt;
+               avg_items_per_order_cnt++;
+               last_order_time = std::max(static_cast<Timestamp>(last_order_time), orec.o_entry_d);
+
+               return true;
+            },
+            [&]() {});
+      }
+         
+   }
+   // std::cout << scanned << std::endl;
 }
 
 // was: [w_begin, w_end]
 int tx(Integer w_id)
 {
    // micro-optimized version of weighted distribution
-   int rnd = leanstore::utils::RandomGenerator::getRand(0, 100);
-
-   if (rnd < 49) {
-      newOrderRnd(w_id);
-      return 0;
+   if (mean::tscDifferenceMs(mean::readTSC(), last_scan) > 500) {
+      last_scan.store(mean::readTSC());
+      analyticalQuery2((last_scanned_wr.fetch_add(1) % FLAGS_tpcc_warehouse_count) + 1);
+      return 1;
+   } else {
+      // micro-optimized version of weighted distribution
+      int rnd = leanstore::utils::RandomGenerator::getRand(0, 100);
+      if (rnd <= 49) {
+         newOrderRnd(w_id);
+         return 0;
+      } else {
+         paymentRnd(w_id);
+         return 0;
+      }
    }
-   rnd -= 50;
-   if (rnd < 48) {
-      paymentRnd(w_id);
-      return 0;
-   }
-
-   analyticalQuery(w_id);
-   return 1;
 }
