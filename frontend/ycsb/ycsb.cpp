@@ -85,8 +85,13 @@ void run_ycsb() {
       };
       mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks, 100000);
 #else
+#ifdef NEW_JUMPMU
+            jumpmu::thread_local_jumpmu.pid = -2; 
+#else
       jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext(); 
       jumpmu::thread_local_jumpmu_ctx->pid = -2; 
+#endif 
+
       // auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>&) {
       for (int i = 0; i < bb.end; i++) {
          // vector<u64> keys(range.size());
@@ -153,7 +158,11 @@ void run_ycsb() {
 
             auto before = mean::readTSC();
             YCSBKey key = zipf_random->rand();
+#ifdef NEW_JUMPMU
+            jumpmu::thread_local_jumpmu.pid = i; 
+#else
             jumpmu::thread_local_jumpmu_ctx->pid = i; 
+#endif 
             assert(key < ycsb_tuple_count);
             YCSBPayload result;
             if (FLAGS_ycsb_read_ratio == 100 || utils::RandomGenerator::getRandU64(0, 100) < FLAGS_ycsb_read_ratio) {
@@ -169,9 +178,10 @@ void run_ycsb() {
 #else
            auto timeDiff = mean::tscDifferenceUs(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time);
 #endif           // trace_finish_transaction(i); 
-           // auto timeDiffIncWait = mean::tscDifferenceUs(now, tx_start_time);
+           auto timeDiffIncWait = mean::tscDifferenceUs(now, before);
            WorkerCounters::myCounters().total_tx_time += timeDiff;
            WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
+           WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
            // if (timeDiffIncWait < 10000000) {
            //   WorkerCounters::myCounters().total_tx_time_inc_wait += timeDiffIncWait;
            // }
