@@ -123,7 +123,11 @@ void DefaultThreadingManager::init(int workers_count, int exclusiveThreads, IoOp
              running_threads--;
           },
           "w_" + std::to_string(t_i), t_i);
+#ifdef USE_SAME_THREAD
+      thread->setCpuAffinityBeforeStart(w_i);
+#else
       thread->setCpuAffinityBeforeStart(w_i + exclusiveThreads);
+#endif
          thread->setNameBeforeStart("worker_" + std::to_string(t_i) + "_" + std::to_string(w_i));
       worker_threads.push_back(std::move(thread));
       worker_threads.back()->start();
