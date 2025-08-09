@@ -89,6 +89,7 @@ void run_ycsb()
       };
       mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks, 100000, false);
 #else
+#ifndef NEW_JUMPMU
       jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext(); 
       for (uint64_t i = 0; i < bb.end; i++) {
          wl.insert();
@@ -151,7 +152,9 @@ void run_ycsb()
       auto diffTP = mean::timePointDifference(mean::getTimePoint(), startTP) / 1e9;
       std::cout << "done: time: " << diffTP << " tsc: " << diffTSC << std::endl;
    }
+   #ifndef NEW_JUMPMU
    delete  jumpmu::thread_local_jumpmu_ctx; 
+   #endif
    mean::env::shutdown();
    cout << "-------------------------------------------------------------------------------------" << endl;
    // -------------------------------------------------------------------------------------
