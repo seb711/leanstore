@@ -91,6 +91,7 @@ void run_ycsb()
 #else
 #ifndef NEW_JUMPMU
       jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext(); 
+#endif
       for (uint64_t i = 0; i < bb.end; i++) {
          wl.insert();
       }
