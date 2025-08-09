@@ -2,10 +2,10 @@
 #include "leanstore/LeanStore.hpp"
 #include <osv/leanstore_debug.hh>
 
-#define CYCLE 200000
+#define CYCLE 1000000
 #define PROBABLITY 5000
 #define LONGRUNNING 1
-#define MAX_ENTRIES 8380000
+#define MAX_ENTRIES 134217728
 
 class Workload {
    private: 
@@ -38,7 +38,7 @@ class Workload {
       }
 
       void updateRnd() {
-         uint64_t key = zipf_random.rand();
+         uint64_t key = zipf_random.rand() % (current_idx.load(std::memory_order_relaxed) & 0xffff0000);
          BytesPayload<120> payload;
          utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(BytesPayload<120>));
 
@@ -61,14 +61,14 @@ class Workload {
 
       int tx() {
 
-         if (false && mean::tscDifferenceMs(mean::readTSC(), last_scan) > 25) {
+         if (mean::tscDifferenceMs(mean::readTSC(), last_scan) > 500) {
              last_scan.store(mean::readTSC()); 
              scanSeqTbl(); 
              return 1; 
          } else {
             int rnd = leanstore::utils::RandomGenerator::getRand(0, 100);
 
-            if (rnd < 60) {
+            if (rnd < 50) {
                newIncrEntry(); 
             } else {
                updateRnd(); 
@@ -78,7 +78,7 @@ class Workload {
       }
 
       int insert() {
-         if (current_idx.load() % 10000 == 0) {
+         if (current_idx.load() % 1000000 == 0) {
             std::cout << current_idx.load() << std::endl; 
          }
          newIncrEntry(); 
