@@ -28,6 +28,9 @@ ThreadingManager::~ThreadingManager()
 // -------------------------------------------------------------------------------------
 void ThreadingManager::init(int workers_count, int exclusiveThreads, IoOptions ioOptions, [[maybe_unused]] int threadAffinityOffset)
 {
+#ifdef USE_SAME_THREAD
+   exclusiveThreads = workers_count; 
+#endif
    // ensure(ioOptions.engine == "libaio" || ioOptions.engine == "liburing");
    total_threads_count = (workers_count * FLAGS_worker_per_threads) + exclusiveThreads;
    max_exclusive_threads = exclusiveThreads;
@@ -104,7 +107,11 @@ void ThreadingManager::init(int workers_count, int exclusiveThreads, IoOptions i
                 running_threads--;
              },
              "w_" + std::to_string(t_i), t_i);
+#ifdef USE_SAME_THREAD
+         thread->setCpuAffinityBeforeStart(t_i);
+#else
          thread->setCpuAffinityBeforeStart(t_i + exclusiveThreads);
+#endif
          thread->setNameBeforeStart("worker_" + std::to_string(t_i) + "_" + std::to_string(c_i));
          worker_threads[t_i].push_back(std::move(thread));
          worker_threads[t_i].back()->start();
@@ -208,6 +215,7 @@ void ThreadingManager::registerPageProvider(void* bf_ptr, int partitions_count)
    for (int t_i = 0; t_i < partitions_count; t_i++) {
       printf("register pp thread\n");
       registerExclusiveThread("pp", t_i, [buffer_manager, t_i, this]() {
+         leanstore_osv_debug::set_priority(0.1); 
          auto& iochannel = execIoChannel();
          while (true) {
             buffer_manager->pageProviderCycle(t_i);
@@ -276,7 +284,7 @@ void ThreadingManager::parallelFor(BlockedRange bb,
                       if (mean::tscDifferenceS(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time) > 1) {
                          longLat++;
                          nextStartTime = now;
-                         // std::cout << "reset start time" << std::endl;
+                         std::cout << "reset start time" << std::endl;
                          if (longLat % 100000 == 0) {
                             // std::cout << "thr: " << mean::exec::getId() << " long latency: " << longLat << std::endl;
                          }

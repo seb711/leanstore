@@ -15,6 +15,8 @@
 #include <condition_variable>
 #include <mutex>
 // -------------------------------------------------------------------------------------
+// #define USE_SAME_THREAD // this flag is for measuring the performance if everything runs on the same thread
+
 namespace mean
 {
 // -------------------------------------------------------------------------------------

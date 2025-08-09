@@ -31,6 +31,10 @@ DefaultThreadingManager::~DefaultThreadingManager()
 void DefaultThreadingManager::init(int workers_count, int exclusiveThreads, IoOptions ioOptions, [[maybe_unused]] int threadAffinityOffset)
 {
    // ensure(ioOptions.engine == "libaio" || ioOptions.engine == "liburing");
+#ifdef USE_SAME_THREAD
+   exclusiveThreads = workers_count; 
+#endif
+
 #ifdef USE_THREAD_POOL
    total_threads_count = (workers_count * FLAGS_worker_per_threads) + exclusiveThreads;
 #else
