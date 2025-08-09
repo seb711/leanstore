@@ -166,9 +166,9 @@ void TaskExecutor::cycle()
          messageHandler.poll(this);
          counters.msgPollCalled++;
       }
-      DEBUG_TASK_COUNTERS_BLOCK(
+      /* DEBUG_TASK_COUNTERS_BLOCK(
          const auto pollerStart = readTSC(); counters.msgPollDuration += (pollerStart - ioPollEnd) > 0 ? pollerStart - ioPollEnd : 0 ; pushCyTrace('m', pollerStart);
-      )
+      ) */
       /*
          if (pollers.size() > 0) {
       // std::cout << "run pollers..." << std::endl;
@@ -180,6 +180,7 @@ void TaskExecutor::cycle()
       }
       }
       */
+     /*
       if (cycles % everyPP  == 0) {
          pageProviderCycle();
       }
@@ -217,8 +218,8 @@ void TaskExecutor::cycle()
             auto now = getSeconds();
             if (now - counterUpdateTime > 0.99999) {
                counterUpdateTime = now;
-               /*COUNTERS_BLOCK()*/ { ioChannel.counters.updateLeanStoreCounters(); }
-               /*COUNTERS_BLOCK()*/ { ioChannel.counters.reset(); }
+               { ioChannel.counters.updateLeanStoreCounters(); }
+               { ioChannel.counters.reset(); }
             }
          }
       }
@@ -229,7 +230,7 @@ void TaskExecutor::cycle()
          if (subDration > leanstore::ThreadCounters::myCounters().exec_cycl_max_task_us) { leanstore::ThreadCounters::myCounters().exec_cycl_max_subm_us = subDration; }
          counters.ioSubDuration += subDration;
          pushCyTrace('s', taskStart);
-      )
+      ) */
       // -------------------------------------------------------------------------------------
       // schedule next task
       const int maxTasksRun = 1;
@@ -267,9 +268,6 @@ void TaskExecutor::cycle()
                counters.tasksWaiting++;
                waitingTaskCount++;
                waitIoTaskCount++;
-#ifndef NDEBUG
-               waiting_tasks[task] = std::tuple(TaskState::WaitIo, getTimePoint(), false);
-#endif
                break;
             case TaskState::ReadyMem:
                COUNTERS_BLOCK() { leanstore::ThreadCounters::myCounters().exec_tasks_st_ready_mem++; }
@@ -296,17 +294,6 @@ void TaskExecutor::cycle()
          }
          COUNTERS_BLOCK() { leanstore::ThreadCounters::myCounters().exec_tasks_run++; }
       }
-#ifndef NDEBUG
-      auto now = getTimePoint();
-      for (auto& tt: waiting_tasks) {
-         auto diff = timePointDifferenceMs(now, std::get<1>(tt.second));
-         if (diff > 1000 && !std::get<2>(tt.second)) {
-            std::get<2>(tt.second) = true;
-            std::cout << "io is stuck " << tt.first << " diff: " << std::dec << diff << std::endl;
-            //raise(SIGINT);
-         }
-      }
-#endif
       if (tasksRun == 0) {
          COUNTERS_BLOCK() { leanstore::ThreadCounters::myCounters().exec_no_tasks_run++; }
          cyclesNothingRun++;
@@ -324,20 +311,16 @@ void TaskExecutor::cycle()
       } else {
          cyclesNothingRun = 0;
       }
-      DEBUG_TASK_COUNTERS_BLOCK(
+      
+      /* DEBUG_TASK_COUNTERS_BLOCK(
          const auto taskEnd = readTSC();
          const auto taskDuration = taskEnd - taskStart;
          counters.taskDuration += taskDuration;
          const auto totalDuration = taskEnd - lastCycle;
          if (taskDuration > leanstore::ThreadCounters::myCounters().exec_cycl_max_task_us) { leanstore::ThreadCounters::myCounters().exec_cycl_max_task_us = taskDuration; }
          if (totalDuration > leanstore::ThreadCounters::myCounters().exec_cycl_max_dur) { leanstore::ThreadCounters::myCounters().exec_cycl_max_dur = totalDuration; }
-         /*
-            if (totalDuration / 2 / 1000 > 10000) {
-            std::cout << "long cycle.. thr: " << mean::exec::getId() << " duration: " << totalDuration / 2 / 1000<<  std::endl;
-            }
-            */
          lastCycle = taskEnd; pushCyTrace('t', taskEnd);
-         )
+         ) */
          // std::this_thread::sleep_for(std::chrono::seconds(1));
    }
    printCyTrace();
@@ -390,9 +373,6 @@ void TaskExecutor::pushTask(TaskFunction fun)
 void TaskExecutor::moveReady(Task* task)
 {
    task->state = TaskState::Ready;
-#ifndef NDEBUG
-   waiting_tasks.erase(task);
-#endif
    waitingTaskCount--;
    waitIoTaskCount--;
    tasks_io_done.push_back(task);

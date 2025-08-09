@@ -53,7 +53,7 @@ class Raid0Channel : public IoChannel
 #if defined(MEAN_USE_JOBBING) || defined(MEAN_USE_THREADING) || defined(MEAN_USE_DEFAULT_THREADING)
 RequestStackLock<RaidRequest<TImplRequest>> request_stack;
 #else
-RequestStack<RaidRequest<TImplRequest>> request_stack;
+RequestStackLockfree<RaidRequest<TImplRequest>> request_stack;
 #endif
    u64 pushTimeout = 0;
    int outstanding = 0;

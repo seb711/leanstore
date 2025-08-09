@@ -39,12 +39,37 @@ void TaskManager::init(int workerThreads, int exclusiveThreads, IoOptions ioOpti
    messageManager = std::make_unique<MessageHandlerManager>(workerThreads + exclusiveThreads);
    IoInterface::initInstance(ioOptions);
    // exclusive
-   for (int i = 0; i < exclusiveThreads; i++) {
-      execs.push_back(std::make_unique<TaskExecutor>(messageManager->getMessageHandler(i), IoInterface::instance().getIoChannel(i), i));
-      execs.back()->setCpuAffinityBeforeStart(i + threadAffinityOffset);
-      workers[i] = new leanstore::cr::Worker(i, workers, workerThreads + exclusiveThreads);
-      execs.back()->this_worker = workers[i];
+   for (int t_i = 0; t_i < exclusiveThreads; t_i++) {
+      auto thread = std::make_unique<ThreadWithJump>(
+          [&, t_i]() {
+             // this is the setup code so to say
+
+             // -------------------------------------------------------------------------------------
+             std::string name = std::to_string(t_i);
+             leanstore::cr::Worker::tls_ptr = workers[t_i];
+             // -------------------------------------------------------------------------------------
+             while (ThreadBase::this_thread().keepRunning()) {
+                auto& meta = static_cast<ThreadWithJump*>(&ThreadBase::this_thread())->meta;
+                std::unique_lock guard(meta.mutex);
+                meta.cv.wait(guard, [&]() { return ThreadBase::this_thread().keepRunning() == false || meta.job_set; });
+                if (!ThreadBase::this_thread().keepRunning()) {
+                   break;
+                }
+                meta.wt_ready = false;
+                meta.task();
+                meta.wt_ready = true;
+                meta.job_done = true;
+                meta.job_set = false;
+                meta.cv.notify_one();
+             }
+          },
+          "w_" + std::to_string(t_i), t_i);
+      thread->setCpuAffinityBeforeStart(t_i);
+      thread->setNameBeforeStart("exclusive_" + std::to_string(t_i));
+      exclusive_threads.push_back(std::move(thread));
+      exclusive_threads.back()->start();
    }
+
    // workers
    adjustWorkerCount(workerThreads);
 }
@@ -68,14 +93,14 @@ void TaskManager::adjustWorkerCount(int workerThreads) {
          int id = i + exclusiveThreads;
          ensure(id < ioChannels);
          // physical channel
-         execs.push_back(std::make_unique<TaskExecutor>(messageManager->getMessageHandler(id), IoInterface::instance().getIoChannel(id), id));
+         execs.push_back(std::make_unique<TaskExecutor>(messageManager->getMessageHandler(id), execIoChannel(), id));
          execs.back()->setCpuAffinityBeforeStart(id + threadAffinityOffset);
          workers[id] = new leanstore::cr::Worker(id, workers, workerThreads + exclusiveThreads);
          execs.back()->this_worker = workers[id];
       }
    }
    runningExecs = workerThreads;
-   reflowPageProviderPartitions();
+   // reflowPageProviderPartitions();
 }
 void TaskManager::reflowPageProviderPartitions() {
    if (partitions_count <= 0) {
@@ -194,26 +219,31 @@ int TaskManager::execId()
 // -------------------------------------------------------------------------------------
 IoChannel& TaskManager::execIoChannel()
 {
-   return TaskExecutor::localExec().ioChannel;
+   return IoInterface::instance().getIoChannel(0);
 }
 // -------------------------------------------------------------------------------------
 // task
 // -------------------------------------------------------------------------------------
 void TaskManager::registerExclusiveThread(std::string name, int, TaskFunction fun)
 {
-   int thr = exclusiveThreadCounter++;
-   ensure(thr < exclusiveThreads, "There is no worker left. Increase thread count.");  // one worker must remain
-   auto& exec = *execs[thr];
-   exclusiveThreadsMap.emplace(exec.id(), std::ref(exec));
-   sendTask(thr, [name, fun] {
-      TaskExecutor::localExec().setNameBeforeStart(name);
-      fun();
-   });
+   int id = exclusiveThreadCounter++;
+   auto& ex = *exclusive_threads[id];
+   ex.setNameBeforeStart(name);
+   ex.sendTask(fun);
 }
 void TaskManager::registerPageProvider(void* bf_ptr, int partitions_count) {
-   this->buffer_manager = static_cast<BufferManager*>(bf_ptr);
-   this->partitions_count = partitions_count;
-   reflowPageProviderPartitions();
+   auto buffer_manager = static_cast<leanstore::storage::BufferManager*>(bf_ptr);
+   for (int t_i = 0; t_i < partitions_count; t_i++) {
+      printf("register pp thread\n");
+      registerExclusiveThread("pp", t_i, [buffer_manager, t_i, this]() {
+         auto& iochannel = execIoChannel();
+         while (true) {
+            buffer_manager->pageProviderCycle(t_i);
+            iochannel.submit();
+            iochannel.poll();
+         }
+      });
+   }
 }
 // -------------------------------------------------------------------------------------
 /*
@@ -329,12 +359,14 @@ void TaskManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
    UserIoCallback cb;
    cb.callback =  [](IoBaseRequest* req) {
            auto this_task = reinterpret_cast<Task*>(req->user.user_data2.val.ptr);
+           auto this_executor = reinterpret_cast<TaskExecutor*>(req->user.user_data3.val.ptr); 
               // std::cout << "completion addr: " << req->addr <<  std::endl << std::flush;
-              assert(TaskExecutor::localExec().id() == req->user.user_data.val.s);  //
-              TaskExecutor::localExec().moveReady(this_task);
+              assert(this_executor->id() == req->user.user_data.val.s);  //
+              this_executor->moveReady(this_task);
               // TODO maybe push Task to top.
            },
    cb.user_data.val.s = TaskExecutor::localExec().id();
+   cb.user_data3.val.ptr = &TaskExecutor::localExec();
    cb.user_data2.val.ptr = &TaskExecutor::localExec().currentTask();
 
    TaskExecutor::localExec().ioChannel.push(type, data, addr, len, cb);

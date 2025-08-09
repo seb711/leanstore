@@ -4,6 +4,7 @@
 #include "TaskExecutor.hpp"
 #include "leanstore/concurrency-recovery/Worker.hpp"
 #include "leanstore/io/IoInterface.hpp"
+#include "ThreadingManager.hpp"
 // -------------------------------------------------------------------------------------
 #include <atomic>
 #include <iostream>
@@ -19,6 +20,7 @@ class TaskManager
    std::vector<std::unique_ptr<TaskExecutor>> execs;
    std::atomic<int> exclusiveThreadCounter = {0};
    std::unordered_map<int, std::reference_wrapper<TaskExecutor>> exclusiveThreadsMap;
+   std::vector<std::unique_ptr<ThreadWithJump>> exclusive_threads;
    std::vector<std::unique_ptr<IoChannel>> remoteChannels;
    std::unique_ptr<MessageHandlerManager> messageManager = nullptr;
    int exclusiveThreads;
