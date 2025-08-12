@@ -56,6 +56,7 @@ void* OsvEnv::allocIoMemory(size_t size, size_t align)
    // printf("try to allocate %lu bytes\n", size); 
    void* buffer = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
+   memset(buffer, 0, size);  // Forces allocation of all pages
    null_check(buffer, "Memory allocation failed");
    madvise(buffer, size, MADV_HUGEPAGE);
    // printf("finished try to allocate %lu bytes\n", size); 
@@ -69,6 +70,7 @@ void* OsvEnv::allocIoMemoryChecked(size_t size, size_t align)
    void* buffer = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
    assert(buffer != MAP_FAILED);
+   memset(buffer, 0, size);  // Forces allocation of all pages
    madvise(buffer, size, MADV_HUGEPAGE);
    null_check(buffer, "Memory allocation failed");
    // printf("finished try to allocate %lu bytes\n", size); 
@@ -142,12 +144,13 @@ void OsvChannel::_push(RaidRequest<OsvIoReq>* req)
       req->base.innerCallback.callback(&req->base);
    });
 
-   submitable++; 
-   RaidRequest<OsvIoReq>* old_top; 
+   RaidRequest<OsvIoReq>* old_top;
    do {
-      old_top = write_request_head.load(); 
+      old_top = write_request_head.load();
       req->impl.next = old_top;
-   } while (!write_request_head.compare_exchange_weak(old_top, req)); 
+   } while (!write_request_head.compare_exchange_weak(
+    old_top, req));
+   submitable++; 
 }
 
 void OsvChannel::_printSpecializedCounters(std::ostream& ss)

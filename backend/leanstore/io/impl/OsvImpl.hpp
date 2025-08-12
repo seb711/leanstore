@@ -48,33 +48,55 @@ class OsvChannel
    ~OsvChannel();
    // -------------------------------------------------------------------------------------
    std::atomic<RaidRequest<OsvIoReq>*> write_request_head = {nullptr};
-   std::atomic<uint64_t> submitable = {0}; 
+   std::atomic<int64_t> submitable = {0};
    std::vector<int> outstanding;
    std::vector<void*> qpairs;
 
    void _push(RaidRequest<OsvIoReq>* req);
    void pushBlocking(IoRequestType type, char* data, s64 addr, u64 len, bool write_back) { throw std::logic_error("not implemented"); }
+
    int _submit()
    {
+      // Atomically take the entire list
+      RaidRequest<OsvIoReq>* list = write_request_head.exchange(nullptr);
+
+      if (!list) {
+         return -1;
+      }
+
       int submitted = 0;
+      RaidRequest<OsvIoReq>* failed_head = nullptr;
 
-      while (write_request_head.load() != nullptr) {
-         RaidRequest<OsvIoReq>* req = write_request_head.load(); 
+      while (list) {
+         RaidRequest<OsvIoReq>* next = list->impl.next;
 
-         int ret = OsvEnvironment::osv_req_type_fun_lookup[(int)req->impl.type](1, qpairs[req->base.device], req->impl.buf, req->impl.lba,
-                                                                                 req->impl.lba_count, NVMeController::completion, req, 0);
+         int ret = OsvEnvironment::osv_req_type_fun_lookup[(int)list->impl.type](1, qpairs[list->base.device], list->impl.buf, list->impl.lba,
+                                                                                 list->impl.lba_count, NVMeController::completion, list, 0);
 
          if (ret == 0) {
-            while (req && !write_request_head.compare_exchange_weak(req, req->impl.next)) {}
-            outstanding[req->base.device]++;
+            outstanding[0]++;
             submitted++;
-            submitable--; 
-            continue;
+            submitable--;
          } else {
-            break; 
+            // Build a list of failed requests
+            list->impl.next = failed_head;
+            failed_head = list;
          }
+         list = next;
+      }
 
-         break;
+      // Re-insert failed requests if any
+      if (failed_head) {
+         RaidRequest<OsvIoReq>* old_head;
+         do {
+            old_head = write_request_head.load();
+            // Find tail of failed list
+            RaidRequest<OsvIoReq>* tail = failed_head;
+            while (tail->impl.next) {
+               tail = tail->impl.next;
+            }
+            tail->impl.next = old_head;
+         } while (!write_request_head.compare_exchange_weak(old_head, failed_head));
       }
 
       return submitted;
