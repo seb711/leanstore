@@ -6,27 +6,23 @@
 
 class PreemptLock {
 private:
-    lockfree::mutex mutex_ = {};
+// MAKE SURE THAT THIS LOCK IS ONLY USED CORE LOCAL LOL
 public:
     PreemptLock() = default;
     
     void lock() {
-        auto t = mutex_.owner.load(); 
-        assert(t == nullptr); 
         leanstore_osv_debug::disable_preempt(); 
-        mutex_.lock();
     }
 
     void unlock() {
-        mutex_.unlock();
         leanstore_osv_debug::enable_preempt(); 
     }
 
     bool try_lock() {
-        bool locked = mutex_.try_lock();
-        if (locked) {
+        if (leanstore_osv_debug::preemptable()) {
             leanstore_osv_debug::disable_preempt(); 
+            return true; 
         }
-        return locked; 
+        return false; 
     }
 };
