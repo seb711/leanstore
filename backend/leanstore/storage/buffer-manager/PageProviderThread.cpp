@@ -11,6 +11,7 @@
 #include "leanstore/storage/buffer-manager/DTRegistry.hpp"
 #include "leanstore/storage/buffer-manager/Partition.hpp"
 #include "leanstore/storage/buffer-manager/Swip.hpp"
+#include "leanstore/concurrency/PreemptLock.hpp"
 #include <osv/jumpmu.hh>
 #include "leanstore/utils/FVector.hpp"
 #include "leanstore/utils/Misc.hpp"
@@ -719,10 +720,12 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
          }
       }
    }
+
    ensure(mean::exec::ioChannel().submitMin() == 0 || added % mean::exec::ioChannel().submitMin() == 0);
 
    if (added == 0 && partition.cooling_queue.size() > 10000) {
-      abort(); 
+      // abort(); 
+      // std::cout << "cooling queue to large" << std::endl; 
    }
 
    return added;
@@ -733,11 +736,11 @@ int BufferManager::pageProviderPhase3evict(CoolingPartition& partition, FreedBfs
    // no lock required as only this thread is accessing the io_queue
    // -------------------------------------------------------------------------------------
    BufferFrame* bf_ptr;
-   int in = partition.io_queue2.read_available();
+   // int in = partition.io_queue2.read_available();
    volatile int cntDone = 0;
    volatile int cntCatch = 0;
    // std::cout << "partition.io_queue2.size(): " << (partition.io_queue2.empty() ? "empty " : "not empty ") << mean::exec::ioChannel().getOpen() << "open ios" << std::endl; 
-   while (!partition.io_queue2.empty() && in-- > 0) { // && in-- > 0
+   while (!partition.io_queue2.empty()) { // && in-- > 0 && in-- > 0
       ensure(partition.io_queue.pop(bf_ptr));
       //std::cout << "e: " << bf_ptr << std::endl;
       //ensure(bf_ptr == partition.io_queue2.front());
