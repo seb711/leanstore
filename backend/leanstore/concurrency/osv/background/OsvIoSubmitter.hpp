@@ -6,6 +6,7 @@
 #include "leanstore/Config.hpp"
 #include <osv/leanstore_debug.hh>
 #include <osv/sched-bg.hh>
+#include "leanstore/concurrency/PreemptLock.hpp"
 
 namespace mean
 {
@@ -34,6 +35,7 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
    }; 
    // will poll and submit
    int process() override {
+         PreemptLock p; 
     while (true) {
         counter = readTSC(); 
        // this is it for now
@@ -43,7 +45,14 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
        leanstore_osv_debug::trace_io_channel_state( io_channel.outstanding[0], io_channel.submitable.load());
 
               // leanstore_osv_debug::trace_background_result(abstraction_io_channel.submit());
-        abstraction_io_channel.submit(); 
+                    p.lock(); 
+
+            int submitted = abstraction_io_channel.submit(); 
+              p.unlock(); 
+
+             leanstore_osv_debug::trace_io_channel_state( io_channel.outstanding[0], submitted);
+
+
        leanstore_osv_debug::yield(); 
     }
     return 0;

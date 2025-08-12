@@ -7,7 +7,7 @@
 #include <osv/nvme.hh>
 #include "leanstore/Config.hpp"
 #include <osv/sched-bg.hh>
-
+#include "leanstore/concurrency/PreemptLock.hpp"
 namespace mean
 {
 
@@ -40,15 +40,19 @@ class OsvIoPoller : public OsvBackgroundThreadBase
    };
    // will poll and submit
    int process() override {
+   PreemptLock p; 
     while (true) {
       counter = readTSC(); 
        // this is it for now
        // maybe we also need two threads for submit and for polling
        // submit depends on the request_stack
        // poll depends on the io_channel
-      leanstore_osv_debug::trace_io_channel_state( io_channel.outstanding[0], io_channel.submitable.load());
       //  leanstore_osv_debug::trace_background_result(io_channel._poll(32));
-       io_channel._poll(32); 
+      p.lock(); 
+       leanstore_osv_debug::trace_background_result(io_channel._poll(32));
+             p.unlock(); 
+
+
        leanstore_osv_debug::yield(); 
     }
     return 0;
