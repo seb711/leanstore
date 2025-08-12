@@ -5,7 +5,7 @@
 #define CYCLE 200000
 #define PROBABLITY 5000
 #define LONGRUNNING 1
-#define MAX_ENTRIES 8380000
+#define MAX_ENTRIES 3140000
 
 class Workload {
    private: 

@@ -85,6 +85,18 @@ void run_ycsb() {
       };
       mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks, 100000);
 #else
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      CPU_SET(1, &cpuset);
+      auto thread = pthread_self();
+      int s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
+      if (s != 0) {
+         ensure(false, "[startProfilingThread] Affinity could not be set.");
+      }
+      s = pthread_getaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
+      if (s != 0) {
+         ensure(false, "[startProfilingThread] Affinity could not be set.");
+      } 
       jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext(); 
       jumpmu::thread_local_jumpmu_ctx->pid = -2; 
       // auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>&) {
@@ -101,6 +113,10 @@ void run_ycsb() {
          // ensure(result == payload);
 
          // mean::task::yield();
+         if (i % 1000000 == 0) {
+         printf("%i\n", i); 
+
+         }
       }
 #endif
       end = chrono::high_resolution_clock::now();

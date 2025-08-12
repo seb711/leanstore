@@ -95,20 +95,57 @@ void run_tpcc()
          //cr::Worker::my().commitTX();
       });
 
+      auto before = mean::getTimePoint();
+
+#ifdef MEAN_USE_TASKING
+
       auto load_fun = [](u64 w_id, std::atomic<bool>&) {
-         //cr::Worker::my().startTX();
+         // cr::Worker::my().startTX();
          loadStock(w_id);
          loadDistrinct(w_id);
          for (Integer d_id = 1; d_id <= 10; d_id++) {
             loadCustomer(w_id, d_id);
             loadOrders(w_id, d_id);
          }
-         //cr::Worker::my().commitTX();
+         // cr::Worker::my().commitTX();
       };
       mean::BlockedRange bb(1, (u64)FLAGS_tpcc_warehouse_count + 1);
       ensure((bool)((bb.end - bb.begin) > 0));
-      auto before = mean::getTimePoint();
       mean::task::parallelFor(bb, load_fun, 1);
+#else
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+#ifdef MEAN_USE_JOBBING
+      CPU_SET(2, &cpuset);
+   #else
+      CPU_SET(3, &cpuset);
+   #endif      
+      auto thread = pthread_self();
+      int s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
+      if (s != 0) {
+         ensure(false, "[startProfilingThread] Affinity could not be set.");
+      }
+      s = pthread_getaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
+      if (s != 0) {
+         ensure(false, "[startProfilingThread] Affinity could not be set.");
+      } 
+#ifndef NEW_JUMPMU
+      jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext{};
+#endif
+      // auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>&) {
+      for (int w_id = 1; w_id < FLAGS_tpcc_warehouse_count + 1; w_id++) {
+         // vector<u64> keys(range.size());
+         // std::iota(keys.begin(), keys.end(), range.begin());
+         // std::random_shuffle(keys.begin(), keys.end());
+         loadStock(w_id);
+         loadDistrinct(w_id);
+         for (Integer d_id = 1; d_id <= 10; d_id++) {
+            loadCustomer(w_id, d_id);
+            loadOrders(w_id, d_id);
+         }
+      }
+
+#endif
       auto timeDiff = mean::timePointDifference(mean::getTimePoint(), before);
       std::cout << "Loading done in: " + std::to_string(timeDiff/1e9f) + "s" << std::endl;
    }
