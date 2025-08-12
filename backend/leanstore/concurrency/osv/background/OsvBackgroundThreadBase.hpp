@@ -15,7 +15,11 @@
 #include <osv/sched-bg.hh>
 #include <osv/jumpmu.hh>
 #include <osv/leanstore_debug.hh>
+#include "leanstore/Config.hpp"
+
 // -------------------------------------------------------------------------------------
+// #define USE_PRIORITY_SCHEDULING
+
 namespace mean
 {
 class OsvBackgroundThreadBase
@@ -47,11 +51,15 @@ class OsvBackgroundThreadBase
          }
       }
 
+#ifdef BACKGROUND_USE_HOUSEKEEPING
       leanstore_osv_debug::register_policy(_bt, [this]() {
          unsigned prio = this->getPriority();
          // if (prio > 0) std::cout << "[policy bt " << background_thread_name(this->_bt) << "] priority = " << prio << std::endl;
          return prio;
       });
+#else
+         leanstore_osv_debug::set_priority(FLAGS_bt_prio); 
+#endif
 
       int ret = process();
       return ret;
