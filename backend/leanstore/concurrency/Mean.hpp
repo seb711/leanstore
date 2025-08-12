@@ -21,7 +21,7 @@ namespace mean
 
 
 #if defined(MEAN_USE_THREADING) || defined(MEAN_USE_DEFAULT_THREADING)
-using mutex = std::mutex;
+using mutex = lockfree::mutex;
 #elif defined(MEAN_USE_JOBBING) && defined(NDEBUG)
 using mutex = lockfree::mutex;
 #elif defined(MEAN_USE_JOBBING)
@@ -30,10 +30,10 @@ using mutex = lockfree::mutex; // DebugLock;
 using mutex = YieldLock;
 #endif
 
-#ifdefMEAN_USE_TASKING
+#ifdef MEAN_USE_TASKING
 using io_mutex = YieldLock;
 #else
-using io_mutex = PreemptLock;
+using io_mutex = lockfree::mutex;
 #endif
 
 using TaskFunction = std::function<void()>;  // std::add_pointer_t<void()>;
