@@ -1,6 +1,7 @@
 .PHONY: module
 BUILD_DIR = build
 MEAN_TYPE ?= MEAN_USE_JOBBING # Default value, can be overridden
+BACKGROUND_THREAD_TYPE ?= BACKGROUND_USE_HOUSEKEEPING # Default value, can be overridden
 IS_LINUX ?= 1 # Default to Linux, can be overridden with IS_LINUX=0
 
 module: install-dependencies build-shared cmake-configure
@@ -34,7 +35,7 @@ cmake-configure:
 	cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Release -DLEANSTORE_INCLUDE_OSV=1 \
 		-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
 		-DCMAKE_C_FLAGS="-fPIC" \
-		-DCMAKE_CXX_FLAGS="-fPIC -D$(MEAN_TYPE) $(PLATFORM_FLAGS)" \
+		-DCMAKE_CXX_FLAGS="-fPIC -D$(MEAN_TYPE) -D$(BACKGROUND_THREAD_TYPE) $(PLATFORM_FLAGS)" \
 		-DLIBFAKEOSV_PATH=$(LIB_SHARED) .. && make -j
 
 # Clean the build directory
