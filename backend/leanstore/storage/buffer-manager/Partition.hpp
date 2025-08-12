@@ -4,13 +4,12 @@
 #include "Units.hpp"
 #include "leanstore/Config.hpp"
 #include "leanstore/concurrency/Mean.hpp"
-#include "leanstore/concurrency/mean::io_mutex.hpp"
 #include "leanstore/storage/buffer-manager/FreeList.hpp"
 #include "leanstore/utils/Misc.hpp"
 #include "leanstore/utils/PreallocationStack.hpp"
 #include "leanstore/utils/RingBuffer.hpp"
 #include "leanstore/utils/RingBufferMPSC.hpp"
-#include <boost/lockfree/spsc_queue.hpp>
+#include <boost/lockfree/queue.hpp>
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 #include <deque>
@@ -122,8 +121,9 @@ struct CoolingPartition {
    // utils::RingBuffer<BufferFrame*> io_queue;
    // boost::lockfree::queue<BufferFrame*> io_queue2;
 
-   boost::lockfree::spsc_queue<BufferFrame*> io_queue; 
-   boost::lockfree::spsc_queue<BufferFrame*> io_queue2; 
+   std::atomic<size_t> io_queue_size; 
+   boost::lockfree::queue<BufferFrame*> io_queue; 
+   boost::lockfree::queue<BufferFrame*> io_queue2; 
    // -------------------------------------------------------------------------------------
    atomic<u64> cooling_bfs_counter = 0;
    const u64 free_bfs_limit;
@@ -186,9 +186,7 @@ struct IoPartition {
    HashTable io_ht;
    IoPartition(u64 first_pid, u64 pid_distance, u64 free_bfs_limit, u64 cooling_bfs_limit);
    // -------------------------------------------------------------------------------------
-   IoPartition(u64 max_outsanding_ios) : io_ht(utils::getBitsNeeded(max_outsanding_ios) + 2) {
-      std::cout << "max_outstanding_ios " << max_outsanding_ios << std::endl; 
-    }
+   IoPartition(u64 max_outsanding_ios) : io_ht(utils::getBitsNeeded(max_outsanding_ios) + 2) {}
    ~IoPartition();
    // -------------------------------------------------------------------------------------
 };
