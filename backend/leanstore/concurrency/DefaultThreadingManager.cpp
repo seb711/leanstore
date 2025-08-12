@@ -113,14 +113,14 @@ void DefaultThreadingManager::init(int workers_count, int exclusiveThreads, IoOp
                    this_thread->next = prev_top;
                 } while (!thread_pool_head.compare_exchange_weak(prev_top, this_thread));
 
-                if (prev_top == nullptr) {
+               // Always notify - guarantees no starvation but more spurious wakeups
                    std::unique_lock<std::mutex> lock(threadPoolMutex);
                    threadPoolCV.notify_one();
                 }
-             }
              running_threads--;
           },
           "w_" + std::to_string(t_i), t_i);
+      usleep(100); 
       thread->setCpuAffinityBeforeStart(w_i + exclusiveThreads);
          thread->setNameBeforeStart("worker_" + std::to_string(t_i) + "_" + std::to_string(w_i));
       worker_threads.push_back(std::move(thread));
@@ -293,7 +293,7 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
 #endif
 
 #ifndef IS_LINUX
-   // leanstore_osv_debug::set_priority(0.1); 
+   leanstore_osv_debug::set_priority(0.01); 
 #else
    pthread_t thread = pthread_self();  // Or another thread's ID
    struct sched_param param;
@@ -396,8 +396,6 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
          // compare_exchange_weak updates old_top on failure
          // old_top = thread_pool_head.load();
       }
-
-      // printf("got pointer %p %p\n", old_top, old_top->next.load());
 
       assert(old_top);
 
