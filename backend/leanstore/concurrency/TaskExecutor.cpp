@@ -156,10 +156,7 @@ void TaskExecutor::cycle()
       constexpr int everyPoll = 64;
       constexpr int everyPP = 32;
       constexpr int delaySubmit = 32;
-      DEBUG_TASK_COUNTERS_BLOCK(
-         const auto ioPollEnd = readTSC(); counters.ioPollDuration += ioPollEnd - lastCycle; pushCyTrace('i', ioPollEnd);
-         counters.taskCount = tasks.size(); counters.taskWaitingCount = waitingTaskCount;
-      )
+
       // run poll Routines
       // TODO for runs with >> 60 threads, this hast to be changed
       if (cycles % (8*1024) == 0 || cyclesNothingRun > sleepIfNothingRunForCycles) {
