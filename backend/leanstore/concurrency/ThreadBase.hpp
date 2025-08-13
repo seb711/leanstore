@@ -34,11 +34,8 @@ class ThreadBase
       while (_wait_for_init) { } // wait until parent thread is done creating this thread
       _this_thread = this;
       setNameThisThread(name);
-      printf("set cpu appfinity %u\n", cpuAffinity); 
       setCpuAffinityThisThread(cpuAffinity);
-      int pid = getpid();
-      int which = PRIO_PROCESS;
-      posix_check(setpriority(which, pid, 39) == 0, "prio could not be set");
+
 
       _ready = true;
       // u32   tid = gettid();
