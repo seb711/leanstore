@@ -17,7 +17,7 @@
 #include <vector>
 
 #define USE_THREAD_POOL
-#define USE_SAME_THREAD // this flag is for measuring the performance if everything runs on the same thread
+// #define USE_SAME_THREAD // this flag is for measuring the performance if everything runs on the same thread
 
 // -------------------------------------------------------------------------------------
 namespace mean

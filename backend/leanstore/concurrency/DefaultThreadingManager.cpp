@@ -281,13 +281,21 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
    jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext();
 
    // TODO: PIN THE THREAD TO CORE 0
-   cpu_set_t cpuset;
-   CPU_ZERO(&cpuset);
-   CPU_SET(1, &cpuset);
-   pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 
 #ifndef IS_LINUX
-   // leanstore_osv_debug::set_priority(0.1); 
+   if (FLAGS_tx_rate == 0) {
+         cpu_set_t cpuset;
+         CPU_ZERO(&cpuset);
+         CPU_SET(3, &cpuset);
+         pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+
+      leanstore_osv_debug::set_priority(0.01); 
+   } else {
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      CPU_SET(1, &cpuset);
+      pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+   }
 #else
    pthread_t thread = pthread_self();  // Or another thread's ID
    struct sched_param param;
