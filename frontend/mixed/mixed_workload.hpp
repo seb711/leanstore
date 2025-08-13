@@ -68,7 +68,7 @@ class Workload {
          } else {
             int rnd = leanstore::utils::RandomGenerator::getRand(0, 100);
 
-            if (rnd < 50) {
+            if (rnd < 60) {
                newIncrEntry(); 
             } else {
                updateRnd(); 
