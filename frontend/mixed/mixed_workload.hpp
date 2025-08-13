@@ -61,7 +61,7 @@ class Workload {
 
       int tx() {
 
-         if (mean::tscDifferenceMs(mean::readTSC(), last_scan) > 500) {
+         if (mean::tscDifferenceMs(mean::readTSC(), last_scan) > 200) {
              last_scan.store(mean::readTSC()); 
              scanSeqTbl(); 
              return 1; 
