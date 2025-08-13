@@ -22,3 +22,5 @@ add_executable(mixed mixed/mixed.cpp)
 target_link_libraries(mixed leanstore Threads::Threads custom_memcmp)
 target_link_options(mixed PRIVATE -Wl,-wrap,memcmp  -Wl,-wrap,memcpy -Wl,-wrap,memmove)
 target_include_directories(mixed PRIVATE ${SHARED_INCLUDE_DIRECTORY})
+
+add_subdirectory("overhead_per_op")
