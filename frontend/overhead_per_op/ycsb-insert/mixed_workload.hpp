@@ -62,8 +62,7 @@ class Workload {
       int tx() {
             newIncrEntry(); 
             return 0; 
-         }
-      }
+      }; 
 
       int insert() {
          if (current_idx.load() % 10000 == 0) {
