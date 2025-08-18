@@ -87,4 +87,4 @@ DEFINE_uint64(tmp, 0, "");
 // -------------------------------------------------------------------------------------
 DEFINE_uint64(worker_per_threads, 10, "");
 DEFINE_uint32(background_batching, 4, "Defined how much entries to batch each time when a background thread runs.");
-DEFINE_double(bt_prio, 4, "Defined prio of background tasks.");
+DEFINE_double(bt_prio, 0.01, "Defined prio of background tasks.");
