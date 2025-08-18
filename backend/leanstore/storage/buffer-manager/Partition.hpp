@@ -99,6 +99,7 @@ struct FreedBfsBatch {
       // -------------------------------------------------------------------------------------
    }
 };
+#ifdef MEAN_USE_TASKING
 struct CoolingPartition {
    enum class PPState {
       Phase1,
@@ -132,7 +133,7 @@ struct CoolingPartition {
    std::atomic<s64> outstanding = 0;
    // -------------------------------------------------------------------------------------
    const u64 pid_distance;
-   mean::io_mutex pids_mutex;  // protect free pids vector
+   std::mutex pids_mutex;  // protect free pids vector
    std::vector<PID> freed_pids;
    u64 next_pid;
    // -------------------------------------------------------------------------------------
@@ -148,7 +149,7 @@ struct CoolingPartition {
    // -------------------------------------------------------------------------------------
    inline PID nextPID()
    {
-      std::unique_lock<mean::io_mutex> g_guard(pids_mutex);
+      std::unique_lock<std::mutex> g_guard(pids_mutex);
       if (freed_pids.size()) {
          const u64 pid = freed_pids.back();
          freed_pids.pop_back();
@@ -162,13 +163,13 @@ struct CoolingPartition {
    }
    void freePage(PID pid)
    {
-      std::unique_lock<mean::io_mutex> g_guard(pids_mutex);
+      std::unique_lock<std::mutex> g_guard(pids_mutex);
       freed_pids.push_back(pid);
    }
    u64 allocatedPages() { return next_pid / pid_distance; }
    u64 freedPages()
    {
-      std::unique_lock<mean::io_mutex> g_guard(pids_mutex);
+      std::unique_lock<std::mutex> g_guard(pids_mutex);
       return freed_pids.size();
    }
    // -------------------------------------------------------------------------------------
@@ -180,6 +181,86 @@ struct CoolingPartition {
    }
    // -------------------------------------------------------------------------------------
 };
+#else
+struct CoolingPartition {
+   enum class PPState {
+      Phase1,
+      Phase3poll,
+      Phase3pollDone,
+   };
+   struct PPStateData {
+      PPState state = PPState::Phase1;
+      decltype(std::chrono::high_resolution_clock::now()) poll_begin, poll_end;
+      decltype(std::chrono::high_resolution_clock::now()) phase_3_begin, phase_3_end;
+      int submitted = 0;
+      int done = 0;
+      int debug_thread = -1;
+      FreedBfsBatch freed_bfs_batch;
+   } state;
+   // -------------------------------------------------------------------------------------
+   // -------------------------------------------------------------------------------------
+   //mean::SpinLock cooling_mutex;
+   utils::RingBuffer<BufferFrame*> cooling_queue;
+   // utils::RingBuffer<BufferFrame*> io_queue;
+   // boost::lockfree::queue<BufferFrame*> io_queue2;
+
+   std::atomic<size_t> io_queue_size; 
+   boost::lockfree::queue<BufferFrame*> io_queue; 
+   boost::lockfree::queue<BufferFrame*> io_queue2; 
+   // -------------------------------------------------------------------------------------
+   atomic<u64> cooling_bfs_counter = 0;
+   const u64 free_bfs_limit;
+   const u64 cooling_bfs_limit;
+   FreeList dram_free_list;
+   std::atomic<s64> outstanding = 0;
+   // -------------------------------------------------------------------------------------
+   const u64 pid_distance;
+
+   boost::lockfree::queue<PID> freed_pids;
+   u64 next_pid;
+   // -------------------------------------------------------------------------------------
+   CoolingPartition(u64 first_pid, u64 pid_distance, u64 free_bfs_limit, u64 cooling_bfs_limit, u64 max_outsanding_ios)
+      : cooling_queue(cooling_bfs_limit * 2), // FIXME
+      io_queue(max_outsanding_ios ), io_queue2(max_outsanding_ios),
+      free_bfs_limit(free_bfs_limit), cooling_bfs_limit(cooling_bfs_limit), pid_distance(pid_distance), freed_pids(1 << 16)
+   {
+      next_pid = first_pid;
+   }
+   // -------------------------------------------------------------------------------------
+   // SSD Pages
+   // -------------------------------------------------------------------------------------
+   inline PID nextPID()
+   {
+      if (!freed_pids.empty()) {
+         u64 pid;
+         freed_pids.pop(pid); 
+         return pid;
+      } else {
+         const u64 pid = next_pid;
+         next_pid += pid_distance;
+         ensure((pid * PAGE_SIZE / 1024 / 1024 / 1024) <= FLAGS_ssd_gib);
+         return pid;
+      }
+   }
+   void freePage(PID pid)
+   {
+      ensure(freed_pids.push(pid));
+   }
+   u64 allocatedPages() { return next_pid / pid_distance; }
+   u64 freedPages()
+   {
+      return 0;
+   }
+   // -------------------------------------------------------------------------------------
+   void pushFreeList()
+   {
+      FreedBfsBatch& b = state.freed_bfs_batch;
+      dram_free_list.batchPush(b.freed_bfs_batch_head, b.freed_bfs_batch_tail, b.freed_bfs_counter);
+      b.reset();
+   }
+   // -------------------------------------------------------------------------------------
+};
+#endif
 struct IoPartition {
    // -------------------------------------------------------------------------------------
    mean::io_mutex io_mutex;
