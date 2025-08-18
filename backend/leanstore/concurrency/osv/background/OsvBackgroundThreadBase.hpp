@@ -53,11 +53,12 @@ class OsvBackgroundThreadBase
 
 #ifdef BACKGROUND_USE_HOUSEKEEPING
       leanstore_osv_debug::register_policy(_bt, [this]() {
-         unsigned prio = this->getPriority();
+         volatile unsigned prio = this->getPriority();
          // if (prio > 0) std::cout << "[policy bt " << background_thread_name(this->_bt) << "] priority = " << prio << std::endl;
          return prio;
       });
 #else
+         std::cout << "set priority of " << name << " to " << FLAGS_bt_prio << std::endl; 
          leanstore_osv_debug::set_priority(FLAGS_bt_prio); 
 #endif
 
