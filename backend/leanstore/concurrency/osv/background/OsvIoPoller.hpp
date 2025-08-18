@@ -17,7 +17,6 @@ class OsvIoPoller : public OsvBackgroundThreadBase
   private:
   TIoChannel& io_channel; 
    RequestStackLockfree<RaidRequest<TImplRequest>>& request_stack;
-   uint8_t counter = 0; 
 
    // will poll and submit
    unsigned getPriority() override {
@@ -33,25 +32,23 @@ class OsvIoPoller : public OsvBackgroundThreadBase
     
     // return outstanding > 0  ? 5 : 0;  // && completion_queue_not_empty(io_channel.qpairs[0])
     // return counter++ > 3; // has_n_completion_entries(io_channel.qpairs[0], FLAGS_background_batching) ? 5 : 0; 
-    bool has_elements = has_n_completion_entries(io_channel.qpairs[0], FLAGS_background_batching); 
-    leanstore_osv_debug::trace_poller_state(has_elements ? 0 : 1); 
-    return has_elements ? 5 : 0; // || tscDifferenceMs(readTSC(), counter) >= 1 || tscDifferenceUs(readTSC(), counter) > 2500
+    // bool has_elements = has_n_completion_entries(io_channel.qpairs[0], FLAGS_background_batching); 
+    // leanstore_osv_debug::trace_poller_state(has_elements ? 0 : 1); 
+      leanstore_osv_debug::trace_io_channel_state(io_channel.outstanding[0], io_channel.submitable.load());
+
+    return completion_queue_not_empty(io_channel.qpairs[0]) || (io_channel.submitable.load() > FLAGS_background_batching) ? 5 : 0; // || tscDifferenceMs(readTSC(), counter) >= 1 || tscDifferenceUs(readTSC(), counter) > 2500
 
    };
    // will poll and submit
    int process() override {
-   PreemptLock p; 
     while (true) {
-      counter = readTSC(); 
        // this is it for now
        // maybe we also need two threads for submit and for polling
        // submit depends on the request_stack
        // poll depends on the io_channel
       //  leanstore_osv_debug::trace_background_result(io_channel._poll(32));
-      p.lock(); 
-       leanstore_osv_debug::trace_background_result(io_channel._poll(32));
-             p.unlock(); 
-
+      io_channel._submit(); 
+       io_channel._poll(32); 
 
        leanstore_osv_debug::yield(); 
     }
