@@ -114,8 +114,8 @@ void DefaultThreadingManager::init(int workers_count, int exclusiveThreads, IoOp
                 } while (!thread_pool_head.compare_exchange_weak(prev_top, this_thread));
 
                // Always notify - guarantees no starvation but more spurious wakeups
-                   std::unique_lock<std::mutex> lock(threadPoolMutex);
-                   threadPoolCV.notify_one();
+                   // std::unique_lock<std::mutex> lock(threadPoolMutex);
+                   // threadPoolCV.notify_one();
                 }
              running_threads--;
           },
@@ -325,7 +325,7 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
 
    u64 start = bb.begin;
    u64 end = bb.end;
-
+   std::atomic<size_t> counter = {0}; 
 #ifndef USE_THREAD_POOL
    pthread_attr_t attr;
 
@@ -384,10 +384,11 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
          }
       }
 #else
-      if (thread_pool_head.load() == nullptr) {
-         std::unique_lock<std::mutex> lock(threadPoolMutex);
-         threadPoolCV.wait(lock, [=] { return thread_pool_head.load() != nullptr; });
+      while (thread_pool_head == nullptr) {
+         leanstore_osv_debug::yield(); 
+         leanstore::WorkerCounters::myCounters().time_counter_1 += 1; 
       }
+
 
       ThreadWithJump* old_top = thread_pool_head.load();
 
@@ -402,9 +403,10 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
       assert(old_top->meta.job_set == false);
       auto startTime = jumpmu::thread_local_jumpmu_ctx->tx_start_time;
 
-      old_top->sendTask([=, &fun, &id, &cancelable] {
+      old_top->sendTask([=, &counter, &cancelable, &fun] {
          jumpmu::thread_local_jumpmu_ctx->tx_start_time = startTime;
          fun(id, cancelable);
+         counter++; 
       });
 #endif
 
@@ -427,6 +429,10 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
             break;
          }
       }
+   }
+
+   while (counter.load() < (bb.end - bb.begin)) {
+      leanstore_osv_debug::yield(); 
    }
    
    delete jumpmu::thread_local_jumpmu_ctx;
