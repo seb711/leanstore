@@ -15,20 +15,21 @@ OsvPageProvider::~OsvPageProvider() {};
 unsigned OsvPageProvider::getPriority() {
       // bf_ptr->cooling_partitions[partition_id].dram_free_list.counter counts the currently free lists
    // policy: run it if <10% are free
-   auto counter = bf_ptr->cooling_partitions[partition_id].dram_free_list.counter.load();
-   // std::cout << "[page provider] counter = " << counter << std::endl;
+   auto counter = bf_ptr->cooling_partitions[partition_id].dram_free_list.counter.load(std::memory_order_relaxed);
    // return bf_ptr->cooling_partitions[partition_id].dram_free_list.counter < 100 ? 1 : 0; 
 
    leanstore_osv_debug::trace_pageprovider_state(counter); 
-   return (counter < 250) ? 1 : 0; 
+   return (counter < 700)  ? 1 : 0; 
 }
 
 int OsvPageProvider::process()
 {
-
+   
    while (true) {
+         // std::cout << "[page provider] counter = " << bf_ptr->cooling_partitions[partition_id].dram_free_list.counter.load(std::memory_order_relaxed) << std::endl;
+
          // std::cout << "empty freelist " << bf_ptr->cooling_partitions[partition_id].dram_free_list.counter << std::endl; 
-         leanstore_osv_debug::trace_background_result(bf_ptr->cooling_partitions[partition_id].dram_free_list.counter); 
+         // leanstore_osv_debug::trace_background_result(bf_ptr->cooling_partitions[partition_id].dram_free_list.counter); 
          // bf_ptr->pageProviderCycle(partition_id);
 
 /*
@@ -47,24 +48,15 @@ int OsvPageProvider::process()
                THIS SOLUTION IS CURRENTLY ONLY POSSIBLE IF WE HAVE ONE COOLING PARTITION
                FIXME: ADD SUPPORT FOR MULTIPLE COOLING PARTITIONS
             */
-            if (bf_ptr->cooling_partitions[partition_id].dram_free_list.counter == 0 && counter++ > 10) {
-               std::cout << "pageprovider situation" << std::endl; 
-               std::vector<std::unique_ptr<std::unique_lock<mean::io_mutex>>> locks;
+            finished = false;
+            bf_ptr->pageProviderCycle(partition_id);
 
-               for (size_t io_partition_idx = 0; io_partition_idx < bf_ptr->io_partitions_count; io_partition_idx++) {
-                  locks.push_back(std::make_unique<std::unique_lock<mean::io_mutex>>(bf_ptr->io_partitions[io_partition_idx].io_mutex));
-               }
-
-               bf_ptr->pageProviderCycle(partition_id);
-
-               counter = 0;
-            } else {
-         bf_ptr->pageProviderCycle(partition_id);
-
-            }
+            finished = true;
          // assert(bf_ptr->cooling_partitions[partition_id].dram_free_list.counter > 1000); 
 
       leanstore_osv_debug::yield(); 
+            leanstore::WorkerCounters::myCounters().time_counter_0 +=  1; 
+
    }
 
    return 0;
