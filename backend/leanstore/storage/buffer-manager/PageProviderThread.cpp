@@ -89,6 +89,7 @@ void BufferManager::pageProviderCycle(int partition_id) {
    if (pages_to_iterate_partition > 0) {
       pages_to_iterate_partition = std::max(pages_to_iterate_partition , (s64)1);
       added = pageProviderPhase2(partition, pages_to_iterate_partition, partition.state.freed_bfs_batch);
+      leanstore::WorkerCounters::myCounters().time_counter_0 += added + 1; 
       COUNTERS_BLOCK() { PPCounters::myCounters().phase_2_added += added; }
    }
    // -------------------------------------------------------------------------------------
@@ -113,6 +114,7 @@ void BufferManager::pageProviderCycle(int partition_id) {
    [[maybe_unused]] Time async_wb_begin, async_wb_end;
    // -------------------------------------------------------------------------------------
    int evicted = pageProviderPhase3evict(partition, partition.state.freed_bfs_batch);
+
    // -------------------------------------------------------------------------------------
    COUNTERS_BLOCK()
    {
@@ -479,7 +481,9 @@ u64 BufferManager::pageProviderPhase1(CoolingPartition& partition, const u64 req
                }
             }
             // -------------------------------------------------------------------------------------
+#ifdef MEAN_USE_TASKING
             assert(parent_handler.parent_guard.state == GUARD_STATE::OPTIMISTIC);
+#endif
             assert(parent_handler.parent_guard.latch != reinterpret_cast<HybridLatch*>(0x99));
             COUNTERS_BLOCK()
             {
@@ -569,7 +573,7 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
    pages_left_to_iterate_partition = std::min(pages_to_iterate_partition, partition.cooling_queue.size());
    unsigned count = 10; 
    // leanstore_osv_debug::trace_page_provider_state(pages_left_to_iterate_partition, partition.outstanding, mean::exec::ioChannel().writeStackFreeSize(), partition.cooling_queue.size()); 
-   leanstore_osv_debug::trace_page_provider_state(pages_left_to_iterate_partition, partition.outstanding, mean::exec::ioChannel().writeStackFreeSize(), partition.cooling_queue.size()); 
+   leanstore_osv_debug::trace_page_provider_state(pages_left_to_iterate_partition, partition.outstanding, partition.dram_free_list.counter, partition.cooling_queue.size()); 
 
    while (pages_left_to_iterate_partition > 0  
          && !mean::exec::ioChannel().writeStackFull() && partition.outstanding < (s64)IO_QUEUE_MAX_SIZE) {
@@ -604,6 +608,7 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
             // Prevent evicting a page that already has an IO Frame with (possibly) threads working on it.
             {
                IoPartition& io_partition = getIoPartition(bf.header.pid);
+#ifdef MEAN_USE_TASKING
                if (io_partition.io_mutex.try_lock()) {
                   if (io_partition.io_ht.lookup(bf.header.pid)) {
                      io_partition.io_mutex.unlock();
@@ -615,6 +620,15 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
                   failed_no_lock++; 
                   jumpmu::jump(jumpmu::UserJumpReason::Reason2);
                }
+#else
+               if (io_partition.io_mutex.owner.load() == nullptr) {
+                  if (io_partition.io_ht.lookup(bf.header.pid)) {
+                     failed_used++; 
+                  }
+               } else {
+                  failed_no_lock++; 
+               }
+#endif
             }
             pages_left_to_iterate_partition--;
             if (bf.isDirty()) {
@@ -739,8 +753,10 @@ int BufferManager::pageProviderPhase3evict(CoolingPartition& partition, FreedBfs
    // int in = partition.io_queue2.read_available();
    volatile int cntDone = 0;
    volatile int cntCatch = 0;
+   int tries = partition.outstanding; 
+   ensure(partition.outstanding < 10000);
    // std::cout << "partition.io_queue2.size(): " << (partition.io_queue2.empty() ? "empty " : "not empty ") << mean::exec::ioChannel().getOpen() << "open ios" << std::endl; 
-   while (!partition.io_queue2.empty()) { // && in-- > 0 && in-- > 0
+   while (!partition.io_queue2.empty() and tries-- > 0) { // && in-- > 0 && in-- > 0
       ensure(partition.io_queue.pop(bf_ptr));
       //std::cout << "e: " << bf_ptr << std::endl;
       //ensure(bf_ptr == partition.io_queue2.front());
@@ -786,10 +802,14 @@ int BufferManager::pageProviderPhase3evict(CoolingPartition& partition, FreedBfs
             partition.io_queue2.push(bf_ptr);
             //bf.header.state = BufferFrame::STATE::IOLOST2;
             ensure(partition.outstanding <= (s64)IO_QUEUE_MAX_SIZE);
+            // leanstore_osv_debug::trace_background_result((int) bf_ptr->header.state); 
+            leanstore::WorkerCounters::myCounters().time_counter_3 +=  1; 
          } else if (bf.header.state == BufferFrame::STATE::IOCOLDDONE) {
             partition.outstanding++; // 4
             partition.io_queue.push(bf_ptr);
             partition.io_queue2.push(bf_ptr);
+                        leanstore::WorkerCounters::myCounters().time_counter_2 +=  1; 
+
          }
          //*/
       }
