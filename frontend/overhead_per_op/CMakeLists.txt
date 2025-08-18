@@ -3,7 +3,7 @@ target_link_libraries(tpcc-neworder leanstore Threads::Threads custom_memcmp)
 target_link_options(tpcc-neworder PRIVATE -Wl,-wrap,memcmp  -Wl,-wrap,memcpy -Wl,-wrap,memmove)
 target_include_directories(tpcc-neworder PRIVATE ${SHARED_INCLUDE_DIRECTORY})
 
-add_library(tpcc-newpayment tpcc-newpayment/tpcc.cpp)
+add_executable(tpcc-newpayment tpcc-newpayment/tpcc.cpp)
 target_link_libraries(tpcc-newpayment leanstore Threads::Threads custom_memcmp)
 target_link_options(tpcc-newpayment PRIVATE -Wl,-wrap,memcmp  -Wl,-wrap,memcpy -Wl,-wrap,memmove)
 target_include_directories(tpcc-newpayment PRIVATE ${SHARED_INCLUDE_DIRECTORY})
