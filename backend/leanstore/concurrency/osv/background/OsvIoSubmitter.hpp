@@ -25,32 +25,27 @@ class OsvIoSubmitter : public OsvBackgroundThreadBase
     // request_stack.pushed stores the io_requests that could be submitted but are not submitted yet
     // policy: run it if more than 1/4 of the queue size is used
     // attention: could starve if at some point no more items are pushed (should not happen in leanstore)
-    volatile auto submitStackSize = abstraction_io_channel.submitable();
-    volatile auto ioOutstanding =  io_channel.outstanding[0]; 
     // return (submitStackSize > FLAGS_background_batching && ioOutstanding < 127) ? 5 : 0; 
    // return (submitStackSize > 0) || (writeRequestStackSize > 0 && ioOutstanding < 63) ? 5 : 0; 
     // return counter++ > 3; // has_n_completion_entries(io_channel.qpairs[0], FLAGS_background_batching) ? 5 : 0; 
-    leanstore_osv_debug::trace_submitter_state(submitStackSize); 
-    return submitStackSize > 0  ? 5 : 0; // || tscDifferenceUs(readTSC(), counter) >= 2500
+                leanstore_osv_debug::trace_io_channel_state(io_channel.outstanding[0], abstraction_io_channel.submitable());
+
+    return abstraction_io_channel.submitable() > FLAGS_background_batching && io_channel.outstanding[0] < 64 ? 5 : 0; // || tscDifferenceUs(readTSC(), counter) >= 2500
    }; 
    // will poll and submit
    int process() override {
-         PreemptLock p; 
     while (true) {
         counter = readTSC(); 
        // this is it for now
        // maybe we also need two threads for submit and for polling
        // submit depends on the request_stack
        // poll depends on the io_channel
-       leanstore_osv_debug::trace_io_channel_state( io_channel.outstanding[0], io_channel.submitable.load());
 
-              // leanstore_osv_debug::trace_background_result(abstraction_io_channel.submit());
-                    p.lock(); 
+            // leanstore_osv_debug::trace_background_result(abstraction_io_channel.submit());
+            leanstore_osv_debug::trace_io_channel_state(io_channel.outstanding[0], abstraction_io_channel.submitable());
 
             int submitted = abstraction_io_channel.submit(); 
-              p.unlock(); 
-
-             leanstore_osv_debug::trace_io_channel_state( io_channel.outstanding[0], submitted);
+                         leanstore_osv_debug::trace_io_channel_state(io_channel.outstanding[0], submitted);
 
 
        leanstore_osv_debug::yield(); 
