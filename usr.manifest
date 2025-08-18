@@ -2,4 +2,8 @@
 /tpcch: ${MODULE_DIR}/build/frontend/tpcch
 /ycsb: ${MODULE_DIR}/build/frontend/ycsb
 /mixed: ${MODULE_DIR}/build/frontend/mixed
-/libycsb_shared.so: ${MODULE_DIR}/build/frontend/libycsb_shared.so
+/tpcc-neworder: ${MODULE_DIR}/build/frontend/overhead_per_op/tpcc-neworder
+/tpcc-newpayment: ${MODULE_DIR}/build/frontend/overhead_per_op/tpcc-newpayment
+/ycsb-insert: ${MODULE_DIR}/build/frontend/overhead_per_op/ycsb-insert
+/ycsb-lookup: ${MODULE_DIR}/build/frontend/overhead_per_op/ycsb-lookup
+/ycsb-update: ${MODULE_DIR}/build/frontend/overhead_per_op/ycsb-update
