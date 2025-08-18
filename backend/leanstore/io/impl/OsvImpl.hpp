@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <vector>
+#include <boost/lockfree/queue.hpp>
 // -------------------------------------------------------------------------------------
 namespace mean
 {
@@ -47,7 +48,8 @@ class OsvChannel
    OsvChannel(IoOptions options, NVMeMultiController& controller, int queue);
    ~OsvChannel();
    // -------------------------------------------------------------------------------------
-   std::atomic<RaidRequest<OsvIoReq>*> write_request_head = {nullptr};
+    boost::lockfree::queue<RaidRequest<OsvIoReq>*,
+                          boost::lockfree::capacity<4096>> write_requests = {};
    std::atomic<int64_t> submitable = {0};
    std::vector<int> outstanding;
    std::vector<void*> qpairs;
@@ -56,51 +58,34 @@ class OsvChannel
    void pushBlocking(IoRequestType type, char* data, s64 addr, u64 len, bool write_back) { throw std::logic_error("not implemented"); }
 
    int _submit()
-   {
-      // Atomically take the entire list
-      RaidRequest<OsvIoReq>* list = write_request_head.exchange(nullptr);
+    {
+        int submitted = 0;
+        RaidRequest<OsvIoReq>* req = nullptr;
+        
+        // Process all available requests
+        while (write_requests.pop(req)) {
+            int ret = OsvEnvironment::osv_req_type_fun_lookup[(int)req->impl.type](
+                1, qpairs[0], req->impl.buf, req->impl.lba,
+                req->impl.lba_count, NVMeController::completion, req, 0);
 
-      if (!list) {
-         return -1;
-      }
+            if (ret == 0) {
+                // Successfully submitted to NVMe
+                outstanding[req->base.device]++;
+                submitted++;
+            } else {
+                // NVMe queue full, push back and stop
+                if (!write_requests.push(req)) {
+                  abort(); 
+                }
+                break;
+            }            
+        }
 
-      int submitted = 0;
-      RaidRequest<OsvIoReq>* failed_head = nullptr;
+       submitable -= submitted; 
 
-      while (list) {
-         RaidRequest<OsvIoReq>* next = list->impl.next;
-
-         int ret = OsvEnvironment::osv_req_type_fun_lookup[(int)list->impl.type](1, qpairs[list->base.device], list->impl.buf, list->impl.lba,
-                                                                                 list->impl.lba_count, NVMeController::completion, list, 0);
-
-         if (ret == 0) {
-            outstanding[0]++;
-            submitted++;
-            submitable--;
-         } else {
-            // Build a list of failed requests
-            list->impl.next = failed_head;
-            failed_head = list;
-         }
-         list = next;
-      }
-
-      // Re-insert failed requests if any
-      if (failed_head) {
-         RaidRequest<OsvIoReq>* old_head;
-         do {
-            old_head = write_request_head.load();
-            // Find tail of failed list
-            RaidRequest<OsvIoReq>* tail = failed_head;
-            while (tail->impl.next) {
-               tail = tail->impl.next;
-            }
-            tail->impl.next = old_head;
-         } while (!write_request_head.compare_exchange_weak(old_head, failed_head));
-      }
-
-      return submitted;
-   }
+        
+        return submitted;
+    }
 
    int _poll(int)
    {
@@ -110,7 +95,7 @@ class OsvChannel
          int ok = OsvEnvironment::qpair_process_completions(qpairs[i], 128);
          outstanding[i] -= ok;
          // ensure(ok >= 0, "ok >= 0");
-         done += ok;
+         done += ok; 
       }
       // printf("completed %i ios\n", done);
       // }

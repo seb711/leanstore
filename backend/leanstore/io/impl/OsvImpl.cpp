@@ -144,14 +144,13 @@ void OsvChannel::_push(RaidRequest<OsvIoReq>* req)
       req->base.innerCallback.callback(&req->base);
    });
 
-   RaidRequest<OsvIoReq>* old_top;
-   do {
-      old_top = write_request_head.load();
-      req->impl.next = old_top;
-   } while (!write_request_head.compare_exchange_weak(
-    old_top, req));
-   submitable++; 
+if (!write_requests.push(req)) {
+abort(); 
+                }   
+                submitable++;
 }
+
+
 
 void OsvChannel::_printSpecializedCounters(std::ostream& ss)
 {
