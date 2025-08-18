@@ -62,13 +62,14 @@ void run_ycsb() {
                                     : FLAGS_target_gib * 1024 * 1024 * 1024 * 1.0 / 2.0 / (sizeof(YCSBKey) + sizeof(YCSBPayload));
    // Insert values
    {
+      FLAGS_background_batching = 1; 
       const u64 n = ycsb_tuple_count;
       cout << "-------------------------------------------------------------------------------------" << endl;
       cout << "Inserting values" << endl;
       begin = chrono::high_resolution_clock::now();
       mean::BlockedRange bb(0, (u64)n);
       ensure((bool)((bb.end - bb.begin) > 1));
-#ifdef MEAN_USE_TASKING
+#if defined(MEAN_USE_TASKING) or defined(MEAN_USE_DEFAULT_THREADING) or defined(MEAN_USE_JOBBING)
       auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>&) {
          // vector<u64> keys(range.size());
          // std::iota(keys.begin(), keys.end(), range.begin());
@@ -88,6 +89,7 @@ void run_ycsb() {
       cpu_set_t cpuset;
       CPU_ZERO(&cpuset);
       CPU_SET(1, &cpuset);
+      leanstore_osv_debug::set_priority(0.0001); 
       auto thread = pthread_self();
       int s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
       if (s != 0) {
@@ -113,7 +115,7 @@ void run_ycsb() {
          // ensure(result == payload);
 
          // mean::task::yield();
-         if (i % 1000000 == 0) {
+         if (i % 100000 == 0) {
          printf("%i\n", i); 
 
          }
@@ -128,6 +130,7 @@ void run_ycsb() {
       cout << "Inserted volume: (pages, MiB) = (" << written_pages << ", " << mib << ")" << endl;
       cout << "-------------------------------------------------------------------------------------" << endl;
    }
+   FLAGS_background_batching = 16;
    db.startProfilingThread();
    // -------------------------------------------------------------------------------------
    auto zipf_random = std::make_unique<utils::ScrambledZipfGenerator>(0, ycsb_tuple_count, FLAGS_zipf_factor);
@@ -169,11 +172,17 @@ void run_ycsb() {
 
             auto before = mean::readTSC();
             YCSBKey key = zipf_random->rand();
+#ifdef NEW_JUMPMU
+            jumpmu::thread_local_jumpmu.pid = i; 
+#else
             jumpmu::thread_local_jumpmu_ctx->pid = i; 
+#endif 
             assert(key < ycsb_tuple_count);
             YCSBPayload result;
             if (FLAGS_ycsb_read_ratio == 100 || utils::RandomGenerator::getRandU64(0, 100) < FLAGS_ycsb_read_ratio) {
-               table.lookup(key, result);
+               if (!table.lookup(key, result)) {
+                  leanstore_osv_debug::trace_background_result(key); 
+               }
             } else {
                YCSBPayload payload;
                utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
@@ -231,7 +240,12 @@ int main(int argc, char** argv)
          FLAGS_worker_threads, //std::min(std::thread::hardware_concurrency(), FLAGS_tpcc_warehouse_count),
          0/*FLAGS_pp_threads*/, ioOptions);
    } else {
+#ifdef MEAN_USE_TASKING
+      ioOptions.channelCount = FLAGS_worker_threads + FLAGS_pp_threads;; // FLAGS_worker_threads + FLAGS_pp_threads;
+#else
       ioOptions.channelCount = 1; // FLAGS_worker_threads + FLAGS_pp_threads;
+#endif
+
       mean::env::init(FLAGS_worker_threads, FLAGS_pp_threads, ioOptions);
    }
    mean::env::start(run_ycsb);
