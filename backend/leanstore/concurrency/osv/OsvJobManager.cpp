@@ -115,17 +115,17 @@ IoChannel& OsvJobManager::execIoChannel()
 // -------------------------------------------------------------------------------------
 // task
 // -------------------------------------------------------------------------------------
-/* void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
+void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
 {
    buffer_manager = static_cast<leanstore::storage::BufferManager*>(bf_ptr);
 
    for (u32 partition_id = 0; partition_id < partitions_count; partition_id++) {
       std::cout << "INIT PAGE PROVIDER " << partition_id << std::endl;
-      backgroundThreads.push_back(std::make_unique<OsvPageProvider>(buffer_manager, partition_id));
+      backgroundThreads.push_back(std::make_unique<OsvPageProvider>(buffer_manager, partition_id, 1));
    }
-} */
+} 
 
-void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
+/* void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
 {
    auto buffer_manager = static_cast<leanstore::storage::BufferManager*>(bf_ptr);
    for (int t_i = 0; t_i < partitions_count; t_i++) {
@@ -145,7 +145,7 @@ void OsvJobManager::registerPageProvider(void* bf_ptr, int partitions_count)
          }
       });
    }
-}
+}*/
 // OsvJobManager
 
 static void job_fn(void* args)
@@ -174,8 +174,11 @@ void OsvJobManager::parallelFor(BlockedRange bb,
       ensure(false, "[setCpuAffinityThisThread] Affinity could not be set.");
    }
 
+   leanstore_osv_debug::set_priority(0.0001); 
+
    ensure(tasks > 0, "tasks > 0");
    int startedJobs = 0;
+   std::atomic<unsigned> donejobs = {0}; 
    std::mutex allDoneMutex;
    std::condition_variable allDone;
    std::atomic<int> threadsDone = {0};
@@ -196,10 +199,7 @@ void OsvJobManager::parallelFor(BlockedRange bb,
    std::function<void(u64)> forwardedFun = [&](u64 value) {
       fun(value, cancelable);
       open_tasks--; 
-      if (open_tasks < 512) {
-         std::unique_lock<std::mutex> t{queue_mtx}; 
-         queue_cv.notify_one(); 
-      }
+      donejobs++; 
    };
 
    for (u64 id = bb.begin; id < bb.end; id++) {
@@ -208,15 +208,35 @@ void OsvJobManager::parallelFor(BlockedRange bb,
       assert(leanstore_osv_debug::task_stack.size() < 2048);
       leanstore_osv_debug::task_stack.push({&forwardedFun, id});
 
-      if (leanstore_osv_debug::task_stack.size() > 256) {  // FIXME: this is currently a constant
+      if (leanstore_osv_debug::task_stack.size() > 1024) {  // FIXME: this is currently a constant
          unsigned qsize = leanstore_osv_debug::task_stack.size(); 
-         if (open_tasks > 1024) {
-            std::unique_lock<std::mutex> t{queue_mtx}; 
-            queue_cv.wait(t, [&] {return open_tasks.load() < 512;}); 
+         while (open_tasks.load() > 1024 || leanstore_osv_debug::get_thread_pool_load() < 4096) {
+            leanstore_osv_debug::yield(); 
          }
          leanstore_osv_debug::flush_to_runqueue();
          open_tasks += qsize - leanstore_osv_debug::task_stack.size(); 
+         leanstore::WorkerCounters::myCounters().time_counter_2 += qsize; 
       }
+
+      if (!rate_active && id % 100000 == 0) {
+         printf("%lu\n", id); 
+      }
+   }
+
+   while (!leanstore_osv_debug::task_stack.empty()) {
+      unsigned qsize = leanstore_osv_debug::task_stack.size(); 
+      while (open_tasks.load(std::memory_order_relaxed) > 1024 || leanstore_osv_debug::get_thread_pool_load() < 2048) {
+         leanstore_osv_debug::yield(); 
+      }
+      leanstore_osv_debug::flush_to_runqueue();
+      open_tasks += qsize - leanstore_osv_debug::task_stack.size(); 
+   }
+
+   printf("done but waiting to finish with %lu %u %lu\n", open_tasks.load(), donejobs.load(), (bb.end - bb.begin)); 
+   
+   while (open_tasks > 0) {
+      printf("done but waiting to finish with %lu %u %lu\n", open_tasks.load(), donejobs.load(), (bb.end - bb.begin)); 
+      sleep(1); 
    }
 }
 std::string OsvJobManager::printCountersHeader()
@@ -250,7 +270,9 @@ void OsvJobManager::adjustWorkerCount(int workerThreads) {}
 void OsvJobManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
 {
    leanstore::WorkerCounters::myCounters().time_counter_0++; 
-
+   if (sched_getcpu() == 3) {
+      leanstore_osv_debug::yield(); 
+   }
    leanstore_osv_debug::Waiter waiter{}; 
 
    UserIoCallback cb;
