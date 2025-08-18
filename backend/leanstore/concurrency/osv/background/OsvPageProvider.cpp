@@ -48,15 +48,11 @@ int OsvPageProvider::process()
                THIS SOLUTION IS CURRENTLY ONLY POSSIBLE IF WE HAVE ONE COOLING PARTITION
                FIXME: ADD SUPPORT FOR MULTIPLE COOLING PARTITIONS
             */
-            finished = false;
             bf_ptr->pageProviderCycle(partition_id);
 
-            finished = true;
          // assert(bf_ptr->cooling_partitions[partition_id].dram_free_list.counter > 1000); 
 
       leanstore_osv_debug::yield(); 
-            leanstore::WorkerCounters::myCounters().time_counter_0 +=  1; 
-
    }
 
    return 0;
