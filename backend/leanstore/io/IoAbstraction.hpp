@@ -47,7 +47,7 @@ class Raid0Channel : public IoChannel
    IoOptions io_options;
 
 #ifndef MEAN_USE_TASKING
-   std::unique_ptr<OsvIoSubmitter<TImplRequest, TIoChannel>> io_submitter_thread; 
+   // std::unique_ptr<OsvIoSubmitter<TImplRequest, TIoChannel>> io_submitter_thread; 
    std::unique_ptr<OsvIoPoller<TImplRequest, TIoChannel>> io_poller_thread; 
 #endif
 
@@ -78,11 +78,11 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
    // -------------------------------------------------------------------------------------
   public:
    Raid0Channel(TIoEnvironment& io_env, TIoChannel& io_channel, IoOptions io_options, u64 channelId, u64 totalChannels) // TODO
-      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(io_options.iodepth), raid(io_env.deviceCount(), CHUNK_SIZE)
+      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(2048), raid(io_env.deviceCount(), CHUNK_SIZE)
    {
       // ATTENTION: HERE WE NOW INIT THE BACKGROUND THREADS
    #ifndef MEAN_USE_TASKING
-      io_submitter_thread = std::make_unique<OsvIoSubmitter<TImplRequest, TIoChannel>>(*this, io_channel, request_stack, 0, 1); 
+      // io_submitter_thread = std::make_unique<OsvIoSubmitter<TImplRequest, TIoChannel>>(*this, io_channel, request_stack, 0, 1); 
       io_poller_thread = std::make_unique<OsvIoPoller<TImplRequest, TIoChannel>>(io_channel, request_stack, 0, 1); 
    #endif
       // END ATTENTION
@@ -132,7 +132,7 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
             rr->base.user.callback(&rr->base);
             auto this_ptr = (Raid0Channel<TIoEnvironment, TIoChannel,TImplRequest>*)req->innerCallback.user_data2.val.ptr;
             auto ch = reinterpret_cast<Raid0Channel<TIoEnvironment, TIoChannel,TImplRequest>*>(this_ptr);
-            rr->base.stats.completion_time = readTSC();
+            // rr->base.stats.completion_time = readTSC();
             if (!rr->base.reuse_request) {
                ch->request_stack.returnToFreeList(rr);
             }
@@ -159,7 +159,7 @@ RequestStack<RaidRequest<TImplRequest>> request_stack;
    void _push(const IoBaseRequest& usr) override { 
       IoBaseRequest* req = getIoRequest();
       if (!req) {
-         // throw std::logic_error("Cannot push more: free: " + std::to_string(request_stack.free) + " pushed: " + std::to_string(request_stack.pushed)  + " max: " + std::to_string(request_stack.max_entries));
+         // throw std::logic_error("Cannot push more: free: " + std::to_string(request_stack.free) + " pushed: " + std::to_string(request_stack.outstanding_count)  + " max: " + std::to_string(request_stack.max_entries));
          abort(); 
       }
       ensure(req);
