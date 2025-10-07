@@ -206,18 +206,13 @@ void OsvJobManager::parallelFor(BlockedRange bb,
    for (u64 id = bb.begin; id < bb.end; id++) {
       auto start = mean::readTSC();
 
-      assert(leanstore_osv_debug::task_stack.size() < 2048);
-      leanstore_osv_debug::task_stack.push({&forwardedFun, id});
-
-      if (leanstore_osv_debug::task_stack.size() > 256) {  // FIXME: this is currently a constant
-         unsigned qsize = leanstore_osv_debug::task_stack.size(); 
-         if (open_tasks > 1024) {
-            std::unique_lock<std::mutex> t{queue_mtx}; 
-            queue_cv.wait(t, [&] {return open_tasks.load() < 512;}); 
-         }
-         leanstore_osv_debug::flush_to_runqueue();
-         open_tasks += qsize - leanstore_osv_debug::task_stack.size(); 
+      if (open_tasks > 1024) {
+         std::unique_lock<std::mutex> t{queue_mtx}; 
+         queue_cv.wait(t, [&] {return open_tasks.load() < 512;});    
       }
+
+      leanstore_osv_debug::osv_task_enqueue2((osv_task_func*)&forwardedFun, id);
+      open_tasks++;  
    }
 }
 std::string OsvJobManager::printCountersHeader()
