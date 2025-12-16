@@ -27,8 +27,9 @@ void YieldLock::lock()
       if(_waiting > 50)
          raise(SIGINT);
          */
-      auto& this_task = mean::task::this_task();
-      this_task.lock = this;
+      // auto& this_task = mean::task::this_task();
+      // this_task.lock = this;
+      mean::task::set_current_task_lock(*this); 
       mean::task::yield(mean::TaskState::ReadyLock);
       // must be locked at this point
       _waiting--;

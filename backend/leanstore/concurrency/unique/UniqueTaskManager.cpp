@@ -1,6 +1,5 @@
 // -------------------------------------------------------------------------------------
-#include "TaskManager.hpp"
-#include "leanstore/concurrency/Mean.hpp"
+#include "UniqueTaskManager.hpp"
 #include "leanstore/concurrency/Task.hpp"
 #include "leanstore/io/IoInterface.hpp"
 // -------------------------------------------------------------------------------------
@@ -15,14 +14,14 @@
 namespace mean
 {
 // -------------------------------------------------------------------------------------
-TaskManager::~TaskManager()
+UniqueTaskManager::~UniqueTaskManager()
 {
    shutdown();
 }
 // -------------------------------------------------------------------------------------
 // env
 // -------------------------------------------------------------------------------------
-void TaskManager::init(int workerThreads, int exclusiveThreads, IoOptions ioOptions, int threadAffinityOffset)
+void UniqueTaskManager::init(int workerThreads, int exclusiveThreads, IoOptions ioOptions, int threadAffinityOffset)
 {
    if (ioOptions.engine == "auto") {
       if (ioOptions.path.find("traddr") != std::string::npos) {
@@ -47,6 +46,8 @@ void TaskManager::init(int workerThreads, int exclusiveThreads, IoOptions ioOpti
              // -------------------------------------------------------------------------------------
              std::string name = std::to_string(t_i);
              leanstore::cr::Worker::tls_ptr = workers[t_i];
+             // HERE WE WANT TO SETUP ALL THE IMPORTANT THREAD SPECIFIC STUFF
+
              // -------------------------------------------------------------------------------------
              while (ThreadBase::this_thread().keepRunning()) {
                 auto& meta = static_cast<ThreadWithJump*>(&ThreadBase::this_thread())->meta;
@@ -73,16 +74,18 @@ void TaskManager::init(int workerThreads, int exclusiveThreads, IoOptions ioOpti
    // workers
    adjustWorkerCount(workerThreads);
 }
-int TaskManager::workerCount() {
+int UniqueTaskManager::workerCount()
+{
    return runningExecs;
 }
 // -------------------------------------------------------------------------------------
-void TaskManager::adjustWorkerCount(int workerThreads) {
+void UniqueTaskManager::adjustWorkerCount(int workerThreads)
+{
    if (runningExecs > workerThreads) {
       // shut them down
       for (int i = workerThreads; i < runningExecs; i++) {
-            execs[i]->stop();
-            execs[i]->join();
+         execs[i]->stop();
+         execs[i]->join();
       }
       execs.resize(workerThreads);
    } else {
@@ -90,10 +93,11 @@ void TaskManager::adjustWorkerCount(int workerThreads) {
       // ioChannels = 1;
       assert(ioChannels > exclusiveThreads);
       for (int i = runningExecs; i < workerThreads; i++) {
+         nics.push_back(new DummyNIC(FLAGS_tx_rate));
          int id = i + exclusiveThreads;
          ensure(id < ioChannels);
          // physical channel
-         execs.push_back(std::make_unique<TaskExecutor>(messageManager->getMessageHandler(id), execIoChannel(), id));
+         execs.push_back(std::make_unique<UniqueTaskExecutor>(messageManager->getMessageHandler(id), execIoChannel(), *nics.back(), id));
          execs.back()->setCpuAffinityBeforeStart(id + threadAffinityOffset);
          workers[id] = new leanstore::cr::Worker(id, workers, workerThreads + exclusiveThreads);
          execs.back()->this_worker = workers[id];
@@ -102,23 +106,29 @@ void TaskManager::adjustWorkerCount(int workerThreads) {
    runningExecs = workerThreads;
    // reflowPageProviderPartitions();
 }
-void TaskManager::reflowPageProviderPartitions() {
+void UniqueTaskManager::reflowPageProviderPartitions()
+{
    if (partitions_count <= 0) {
       return;
    }
-   //ensure(runningExecs == (int)buffer_manager->cooling_partitions_count);
-   std::cout << "reflowPageProviderPartitions() p_cnt: " << partitions_count << " running: " << runningExecs << " pp gettid: " << gettid() << std::endl;
+   // ensure(runningExecs == (int)buffer_manager->cooling_partitions_count);
+   std::cout << "reflowPageProviderPartitions() p_cnt: " << partitions_count << " running: " << runningExecs << " pp gettid: " << gettid()
+             << std::endl;
    for (int t_i = 0; t_i < runningExecs; t_i++) {
       if (!FLAGS_nopp) {
-         exclusiveThreads = buffer_manager->cooling_partitions_count; 
+         exclusiveThreads = buffer_manager->cooling_partitions_count;
       }
-      if (t_i < (int)buffer_manager->cooling_partitions_count){
-         sendTask(t_i, [=] { TaskExecutor::localExec().registerPageProvider(buffer_manager, t_i); });
+      if (t_i < (int)buffer_manager->cooling_partitions_count) {
+         sendTask(t_i, [=]() { 
+            // std::cout << "register page provider" << std::endl; 
+            UniqueTaskExecutor::localExec().registerPageProvider(buffer_manager, t_i); 
+            // std::cout << "register page provider ended" << std::endl; 
+         });
       }
    }
 }
 // -------------------------------------------------------------------------------------
-void TaskManager::start(TaskFunction taskFun)
+void UniqueTaskManager::start(TaskFunction taskFun)
 {
    for (auto& exe : execs) {
       exe->start();
@@ -127,42 +137,46 @@ void TaskManager::start(TaskFunction taskFun)
       while (!exe->ready()) {
       }
    }
-   auto task = new Task(taskFun);
+   auto taskf = new TaskFunction(taskFun);
    messageManager->dbgSendMessage(
        exclusiveThreads, exclusiveThreads,
        [](void*, uintptr_t task) {
-          auto t = reinterpret_cast<Task*>(task);
+          auto t = reinterpret_cast<TaskFunction*>(task);
           // ensure(TaskManager::instance().exclusiveThreads.find(this_task::exec().id()) == TaskManager::instance().exclusiveThreads.end());
-          TaskExecutor::localExec().pushTask(t);
+          UniqueTaskExecutor::localExec().pushTask(*t);
+          delete t;
        },
-       reinterpret_cast<uint64_t>(task));
+       reinterpret_cast<uint64_t>(taskf));
 }
 // -------------------------------------------------------------------------------------
-void TaskManager::shutdown()
+void UniqueTaskManager::shutdown()
 {
    for (auto& exe : execs) {
       exe->stop();
    }
+   for (auto* nic : nics) {
+      delete nic; 
+   }
 }
 // -------------------------------------------------------------------------------------
-void TaskManager::join()
+void UniqueTaskManager::join()
 {
    for (auto& exe : execs) {
       exe->join();
    }
 }
-void TaskManager::sleepAll(float sleep)
+void UniqueTaskManager::sleepAll(float sleep)
 {
    for (auto& exe : execs) {
       exe->sleep = sleep;
    }
 }
 // -------------------------------------------------------------------------------------
-IoChannelCounterAggregator TaskManager::printAggregateExecs(std::ostream& ss, int fromExcecId, int toExecId, bool printDetailed)
+IoChannelCounterAggregator UniqueTaskManager::printAggregateExecs(std::ostream& ss, int fromExcecId, int toExecId, bool printDetailed)
 {
    IoChannelCounterAggregator aggr;
    for (int i = fromExcecId; i < toExecId; i++) {
-      TaskExecutor& exe = *execs[i];
+      UniqueTaskExecutor& exe = *execs[i];
       aggr.aggregate(exe.ioChannel.counters);
       if (printDetailed) {
          ss << exe.id() << ": " << exe.getName() << " ";
@@ -176,7 +190,7 @@ IoChannelCounterAggregator TaskManager::printAggregateExecs(std::ostream& ss, in
    }
    return aggr;
 }
-std::string TaskManager::printCountersHeader()
+std::string UniqueTaskManager::printCountersHeader()
 {
    std::stringstream ss;
    /*
@@ -195,10 +209,10 @@ std::string TaskManager::printCountersHeader()
    execs[0]->ioChannel.counters.printCountersHeader(ss);
    return ss.str();
 }
-std::string TaskManager::printCounters(int te_id)
+std::string UniqueTaskManager::printCounters(int te_id)
 {
    std::stringstream ss;
-   execs[te_id]->counters.printCounters(ss); 
+   execs[te_id]->counters.printCounters(ss);
    execs[te_id]->counters.reset();
    ss << ",";
    execs[te_id]->ioChannel.counters.printCounters(ss);
@@ -208,30 +222,31 @@ std::string TaskManager::printCounters(int te_id)
 // -------------------------------------------------------------------------------------
 // exec
 // -------------------------------------------------------------------------------------
-TaskExecutor* TaskManager::localExec()
+UniqueTaskExecutor* UniqueTaskManager::localExec()
 {
-   return &TaskExecutor::localExec();
+   return &UniqueTaskExecutor::localExec();
 }
-int TaskManager::execId()
+int UniqueTaskManager::execId()
 {
-   return TaskExecutor::localExec().id();
+   return UniqueTaskExecutor::localExec().id();
 }
 // -------------------------------------------------------------------------------------
-IoChannel& TaskManager::execIoChannel()
+IoChannel& UniqueTaskManager::execIoChannel()
 {
    return IoInterface::instance().getIoChannel(0);
 }
 // -------------------------------------------------------------------------------------
 // task
 // -------------------------------------------------------------------------------------
-void TaskManager::registerExclusiveThread(std::string name, int, TaskFunction fun)
+void UniqueTaskManager::registerExclusiveThread(std::string name, int, TaskFunction fun)
 {
    int id = exclusiveThreadCounter++;
    auto& ex = *exclusive_threads[id];
    ex.setNameBeforeStart(name);
    ex.sendTask(fun);
 }
-void TaskManager::registerPageProvider(void* bf_ptr, int partitions_count) {
+void UniqueTaskManager::registerPageProvider(void* bf_ptr, int partitions_count)
+{
    this->buffer_manager = static_cast<BufferManager*>(bf_ptr);
    this->partitions_count = partitions_count;
    reflowPageProviderPartitions();
@@ -241,158 +256,120 @@ void TaskManager::registerPageProvider(void* bf_ptr, int partitions_count) {
  * Simple parallel for implementation, runs the function over all threads with a number of tasks.
  * The default granularity is ((end-start)/threads/tasks/some factor)
  * If a single cycle through the loop is very short, bbgranularity should be set accordingly higher.
+ * must be called from within a task
  */
-void TaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int tasks, s64 bbgranularity, bool rate_active)
+void UniqueTaskManager::parallelFor(BlockedRange bb,
+                                    TaskFunction fun,
+                                    const int tasks,
+                                    s64 bbgranularity,
+                                    bool rate_active)
 {
    ensure(tasks > 0);
    const int threads = workerCount();
-   int originExecId = TaskExecutor::localExec().id();
-   Task* originTask = &TaskExecutor::localExec().currentTask();
-   if (bbgranularity < 1) { bbgranularity = std::max(1ul, (bb.end - bb.begin)/threads/tasks/20); }
-   //std::cout << "threads: " << threads << " tasks: " << tasks << " granularity: " << bbgranularity << std::endl;
-   const unsigned int totalTasks = threads*tasks;
+   int originExecId = UniqueTaskExecutor::localExec().id();
+   UniqueTaskExecutor::UniqueTaskPtr originTask = UniqueTaskExecutor::localExec().getCurrentTaskOwnership();
+   if (bbgranularity < 1) {
+      bbgranularity = std::max(1ul, (bb.end - bb.begin) / threads / tasks / 20);
+   }
+   // std::cout << "threads: " << threads << " tasks: " << tasks << " granularity: " << bbgranularity << std::endl;
+   const unsigned int totalTasks = threads * tasks;
    std::atomic<u64> bbnow = {bb.begin};
    std::atomic<u64> doneTasks = {0};
-   std::atomic<bool> cancleable = {false}; 
+   std::atomic<bool> cancleable = {false};
    int startedTasks = 0;
+
+   // what we want to do here:
+   // 1. setup the necessary fields on the executors on each thread
+   // 2. this means that we first set the DummyNICs on all threads or we at least say to use them
+   // 3. inserts cannot be parallel inserted -> this is not the main workload unf
+
+   // we create here a workload nic (-> basically a workload generator but that is timing aware)
+   // therefore we need a rate and a function 
+
    for (int thr = 0; thr < threads; thr++) {
-      for (int ta = 0; ta < tasks; ta++) {
-         startedTasks++;
-         sendTask(thr + exclusiveThreads, [&cancleable, &threads, &tasks, &rate_active, &bbnow, &bb,  &doneTasks, totalTasks, fun, bbgranularity, originTask, originExecId] {
-            // work stealing
-            u64 start = 0;
-            u64 end = 0;
-            while (start < bb.end) {
-               bool ok = false;
-               while (!ok) {
-                  start = bbnow.load();
-                  if (start < bb.begin || start >= bb.end) { break; } // all done
-                  end = std::min(start + bbgranularity, bb.end);
-                  ok = bbnow.compare_exchange_strong(start, end);
-               }
-               //TaskExecutor::localExec().disableMessagePoller = true;
-               if (ok ) {
-                  assert(start >= bb.begin && start < bb.end);
-                  //std::string s = "load: start: " + std::to_string(start) + " end: " + std::to_string(end) + " bbs: " + std::to_string(bb.begin) +  " bbe: " + std::to_string(bb.end);
-                  //std::cout << s << std::endl;
+      sendTask(thr + exclusiveThreads, [&originTask, &fun]() {
+         // here setup the local executor
+         // sstd::cout << "\n\n\nyeah idk what we will do here\n\n\n" << std::endl; 
 
-                  auto nextStartTime = mean::readTSC();
-                  u64 longLat = 0;
+         // setup the workload function 
+         UniqueTaskExecutor::localExec().set_workload_function(fun); 
 
-                  const float rate = FLAGS_tx_rate / (threads * tasks);
-                  std::random_device rd;
-                  std::mt19937 gen(rd());
-                  std::exponential_distribution<> expDist(rate);
+         // std::cout << "turn on nic " << std::hex << &UniqueTaskExecutor::localExec().nic << std::endl; 
+         UniqueTaskExecutor::localExec().nic.turn_on(); 
 
-                  for (u64 id = start; id < end; id++) {
-                     fun();
-
-                      // this has to be done in order to simulate the latency
-                     while (true) {
-                        mean::task::yield();
-                        auto now = mean::readTSC();
-                        if (rate == 0 or !rate_active)
-                           break;
-                        if (now >= nextStartTime) {
-                           if (mean::tscDifferenceS(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time) > 1) {
-                              longLat++;
-                              nextStartTime = now;
-                              std::cout << "reset start time" << std::endl;
-                              if (longLat % 100000 == 0) {
-                                 // std::cout << "thr: " << mean::exec::getId() << " long latency: " << longLat << std::endl;
-                              }
-                           }
-                           auto d = expDist(gen);
-                           jumpmu::thread_local_jumpmu_ctx->tx_start_time = nextStartTime;
-                           nextStartTime += mean::nsToTSC(d * 1e9);
-                           // std::cout << "next: " << nextStartTime << std::flush << std::endl;
-                           break;
-                        }
-                     }
-                     // END: LATENCY TESTS
-                  }
-               }
-               //TaskExecutor::localExec().disableMessagePoller = false;
-            }
-            doneTasks++;
-            //std::cout << "dones task: " << doneTasks << " toal: " << totalTasks << std::endl;
-            if (doneTasks == totalTasks) { // last one hast to wake up the original thread.
-            // sendMessage to origin Exec, in it move origin Task from waiting to ready and let it continue
-               std::cout << "dones task: " << doneTasks << " toal: " << totalTasks << std::endl;
-               TaskExecutor::localExec().sendMessage(
-                     originExecId,
-                     [](void*, uintptr_t taskPtr) {
-                     Task* task = reinterpret_cast<Task*>(taskPtr);
-                     TaskExecutor::localExec().moveReady(task);
-                     },
-                     reinterpret_cast<uintptr_t>(originTask));
-            }
-         });
-         //std::cout << "startedTasks: " << startedTasks << std::endl;
-      }
+         // UniqueTaskExecutor::localExec().moveReady(std::move(originTask));
+      });
+      // std::cout << "startedTasks: " << startedTasks << std::endl;
    }
    // yield, and push to waitingTasks
-   TaskExecutor::localExec().yieldCurrentTask(TaskState::Waiting);
-   std::cout << "parallel for done" << std::endl;
+   UniqueTaskExecutor::localExec().yieldRunningTask(originTask.get(), TaskState::Waiting);  
+   // UniqueTaskExecutor::localExec().yieldCurrentTask(TaskState::Waiting);
 }
-void TaskManager::scheduleTaskSync(TaskFunction fun)
+void UniqueTaskManager::scheduleTaskSync(TaskFunction fun)
 {
    fun();
 }
 // -------------------------------------------------------------------------------------
-void TaskManager::yield(TaskState ts)
+void UniqueTaskManager::yield(TaskState ts)
 {
-   TaskExecutor::yieldCurrentTask(ts);
+   UniqueTaskExecutor::yieldCurrentTask(ts);
 }
 // -------------------------------------------------------------------------------------
-void TaskManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
+void UniqueTaskManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
 {
    UserIoCallback cb;
-   cb.callback =  [](IoBaseRequest* req) {
-           auto this_task = reinterpret_cast<Task*>(req->user.user_data2.val.ptr);
-           auto this_executor = reinterpret_cast<TaskExecutor*>(req->user.user_data3.val.ptr); 
-              // std::cout << "completion addr: " << req->addr <<  std::endl << std::flush;
-              assert(this_executor->id() == req->user.user_data.val.s);  //
-              this_executor->moveReady(this_task);
-              // TODO maybe push Task to top.
-           },
-   cb.user_data.val.s = TaskExecutor::localExec().id();
-   cb.user_data3.val.ptr = &TaskExecutor::localExec();
-   cb.user_data2.val.ptr = &TaskExecutor::localExec().currentTask();
+   cb.callback =
+       [](IoBaseRequest* req) {
+          auto this_task = reinterpret_cast<UniqueTask*>(req->user.user_data2.val.ptr);
+          auto this_executor = reinterpret_cast<UniqueTaskExecutor*>(req->user.user_data3.val.ptr);
+          // std::cout << "completion addr: " << req->addr <<  std::endl << std::flush;
+          assert(this_executor->id() == req->user.user_data.val.s);  //
 
-   TaskExecutor::localExec().ioChannel.push(type, data, addr, len, cb);
-   //TaskExecutor::localExec().ioChannel.submit();
-   TaskExecutor::yieldCurrentTask(TaskState::WaitIo);
+          UniqueTaskExecutor::UniqueTaskPtr restored(this_task);
+
+          this_executor->moveReady(std::move(restored));
+          // TODO maybe push Task to top.
+       },
+   cb.user_data.val.s = UniqueTaskExecutor::localExec().id();
+   cb.user_data3.val.ptr = &UniqueTaskExecutor::localExec();
+   cb.user_data2.val.ptr = UniqueTaskExecutor::localExec().getCurrentTaskOwnership().release();
+
+   UniqueTaskExecutor::localExec().ioChannel.push(type, data, addr, len, cb);
+   // UniqueTaskExecutor::localExec().ioChannel.submit();
+   UniqueTaskExecutor::yieldRunningTask((UniqueTask*) cb.user_data2.val.ptr, TaskState::WaitIo);
 }
 // -------------------------------------------------------------------------------------
-Task& TaskManager::this_task() {
-   return TaskExecutor::localExec().currentTask();
+UniqueTask& UniqueTaskManager::this_task()
+{
+   return UniqueTaskExecutor::localExec().currentTask();
 }
-void TaskManager::set_current_task_lock(YieldLock& lock) {
-   TaskExecutor::localExec().currentTask().lock = &lock; 
+void UniqueTaskManager::set_current_task_lock(YieldLock& lock) {
+   UniqueTaskExecutor::localExec().currentTask().lock = &lock; 
 }
 // -------------------------------------------------------------------------------------
 // other
 // -------------------------------------------------------------------------------------
-TaskExecutor& TaskManager::getExec(int id)
+UniqueTaskExecutor& UniqueTaskManager::getExec(int id)
 {
    return *execs[id];
 }
-void TaskManager::sendTask(int to, TaskFunction taskFun)
+void UniqueTaskManager::sendTask(int to, TaskFunction taskFun)
 {
-   auto task = new Task(taskFun);
-   TaskExecutor::localExec().sendMessage(
+   auto taskFun1 = new TaskFunction(taskFun);
+   UniqueTaskExecutor::localExec().sendMessage(
        to,
-       [](void*, uintptr_t task) {
-          auto t = reinterpret_cast<Task*>(task);
+       [](void*, uintptr_t taskFun) {
+          auto t = reinterpret_cast<TaskFunction*>(taskFun);
           // ensure(TaskManager::instance().exclusiveThreads.find(this_task::exec().id()) == TaskManager::instance().exclusiveThreads.end());
-          TaskExecutor::localExec().pushTask(t);
+          // createTask(taskFun1);
+          UniqueTaskExecutor::localExec().pushTask(*t);
+          delete t; 
        },
-       reinterpret_cast<uint64_t>(task));
+       reinterpret_cast<uint64_t>(taskFun1));
 }
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
-int TaskManager::size() const
+int UniqueTaskManager::size() const
 {
    return execs.size();
 }

@@ -2,6 +2,7 @@
 #include "Mean.hpp"
 #include <libaio.h>
 // -------------------------------------------------------------------------------------
+#include "unique/UniqueTaskManager.hpp"
 #include "TaskManager.hpp"
 #include "ThreadingManager.hpp"
 #include "DefaultThreadingManager.hpp"
@@ -23,6 +24,9 @@ using ExecEnv = DefaultThreadingManager;
 #elifdef MEAN_USE_THREADING
 #pragma message ("Compiling with MEAN_USE_THREADING enabled")
 using ExecEnv = ThreadingManager;
+#elif defined(MEAN_USE_UNIQUE_TASKING)
+#pragma message ("Compiling with MEAN_USE_TASKING enabled")
+using ExecEnv = UniqueTaskManager;
 #elif defined(MEAN_USE_TASKING)
 #pragma message ("Compiling with MEAN_USE_TASKING enabled")
 using ExecEnv = TaskManager;
@@ -105,7 +109,7 @@ void registerExclusiveThread(std::string name, int id, TaskFunction fun)
 {
    env::_instance.registerExclusiveThread(name, id, fun);
 }
-void parallelFor(BlockedRange bb, std::function<void(u64, std::atomic<bool>&)> fun, int tasks, s64 granularity, bool rate_active)
+void parallelFor(BlockedRange bb, TaskFunction fun, int tasks, s64 granularity, bool rate_active)
 {
    env::_instance.parallelFor(bb, fun, tasks, granularity, rate_active);
 }
@@ -125,8 +129,8 @@ void write(char* data, s64 addr, u64 len)
 {
    env::_instance.blockingIo(IoRequestType::Write, data, addr, len);
 }
-Task& this_task() {
-   return env::_instance.this_task();
+void set_current_task_lock(YieldLock& lock) {
+   return env::_instance.set_current_task_lock(lock);
 }
 }  // namespace task
 }  // namespace mean

@@ -20,10 +20,10 @@ RaidEnvironment& IoInterface::initInstance(IoOptions ioOptions)
    } else if (ioOptions.engine == "spdk") {
       _instance = std::unique_ptr<RaidEnvironment>(new RaidEnv<SpdkEnv, SpdkChannel, SpdkIoReq>(ioOptions));
 #endif
-#ifdef LEANSTORE_INCLUDE_OSV
+// #ifdef LEANSTORE_INCLUDE_OSV
    } else if (ioOptions.engine == "osv") {
       _instance = std::unique_ptr<RaidEnvironment>(new RaidEnv<OsvEnv, OsvChannel, OsvIoReq>(ioOptions));
-#endif
+// #endif
  #ifdef LEANSTORE_INCLUDE_XNVME
    } else if (ioOptions.engine.find("xnvme") != string::npos) {
       _instance = std::unique_ptr<RaidEnvironment>(new RaidEnv<XnvmeEnv, XnvmeChannel, XnvmeRequest>(ioOptions));

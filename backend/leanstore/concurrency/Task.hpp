@@ -19,14 +19,14 @@ namespace mean
 class Task;
 class TaskExecutor;
 enum class TaskState {
-   New,
-   Ready, // general yield, basically push back in queue
-   ReadyMem, // ready, but waiting for mem
-   ReadyLock, // ready, but waiting for lock
-   ReadyJumpLock,
-   Waiting, // general waiting, requires manual push ready
-   WaitIo,
-   Done,
+   New = 0,
+   Ready = 1, // general yield, basically push back in queue
+   ReadyMem = 2, // ready, but waiting for mem
+   ReadyLock = 3, // ready, but waiting for lock
+   ReadyJumpLock = 4,
+   Waiting =5 , // general waiting, requires manual push ready
+   WaitIo =6 ,
+   Done =7,
 };
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------

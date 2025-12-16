@@ -82,7 +82,8 @@ void run_ycsb()
       begin = chrono::high_resolution_clock::now();
       mean::BlockedRange bb(0, (u64)n);
       ensure((bool)((bb.end - bb.begin) > 1));
-#ifdef MEAN_USE_TASKING
+// #ifdef MEAN_USE_TASKING
+#if 0
       auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>& cancleable) {
          wl.insert();
          mean::task::yield();
@@ -90,7 +91,7 @@ void run_ycsb()
       mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks, 100000, false);
 #else
 #ifndef NEW_JUMPMU
-      jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext(); 
+      // jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext(); 
 #endif
       for (uint64_t i = 0; i < bb.end; i++) {
          wl.insert();
@@ -114,10 +115,10 @@ void run_ycsb()
    cout << "-------------------------------------------------------------------------------------" << endl;
    cout << "~Transactions" << endl;
    atomic<bool> keep_running = {true};
-   atomic<u64> running_threads_counter = 0;
+   atomic<u64> running_threads_counter = {0};
    {
       auto start = mean::getSeconds();
-      auto ycsb_tx = [&](u64 i, std::atomic<bool>& cancleable) {
+      auto ycsb_tx = [&]() {
          running_threads_counter++;
 
          auto before = mean::readTSC();

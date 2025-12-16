@@ -58,7 +58,7 @@ class DefaultThreadingManager
    std::atomic<int> running_threads;
    std::vector<std::unique_ptr<ThreadWithJump>> exclusive_threads;
    int max_exclusive_threads;
-   std::atomic<int> exclusiveThreadCounter = 0;
+   std::atomic<int> exclusiveThreadCounter = {0};
    static constexpr int MAX_WORKER_THREADS = 2048;
 
   public:
@@ -87,7 +87,7 @@ class DefaultThreadingManager
    // -------------------------------------------------------------------------------------
    void registerExclusiveThread(std::string name, int t_i, TaskFunction fun);
    void parallelFor(BlockedRange range,
-                    std::function<void(u64, std::atomic<bool>& cancelable)> fun,
+                    TaskFunction fun,
                     int tasks,
                     s64 bbgranularity = -1,
                     bool rate_active = false);

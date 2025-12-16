@@ -26,6 +26,7 @@
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <tuple>
 // -------------------------------------------------------------------------------------
 namespace mean
 {
@@ -156,16 +157,19 @@ void TaskExecutor::cycle()
       constexpr int everyPoll = 64;
       constexpr int everyPP = 32;
       constexpr int delaySubmit = 32;
-
+      //  DEBUG_TASK_COUNTERS_BLOCK(
+      //    const auto ioPollEnd = readTSC(); counters.ioPollDuration += ioPollEnd - lastCycle; pushCyTrace('i', ioPollEnd);
+      //   counters.taskCount = tasks.size(); counters.taskWaitingCount = waitingTaskCount;
+      // )
       // run poll Routines
       // TODO for runs with >> 60 threads, this hast to be changed
       if (cycles % (8*1024) == 0 || cyclesNothingRun > sleepIfNothingRunForCycles) {
          messageHandler.poll(this);
          counters.msgPollCalled++;
       }
-      /* DEBUG_TASK_COUNTERS_BLOCK(
-         const auto pollerStart = readTSC(); counters.msgPollDuration += (pollerStart - ioPollEnd) > 0 ? pollerStart - ioPollEnd : 0 ; pushCyTrace('m', pollerStart);
-      ) */
+      // DEBUG_TASK_COUNTERS_BLOCK(
+      //    const auto pollerStart = readTSC(); counters.msgPollDuration += (pollerStart - ioPollEnd) > 0 ? pollerStart - ioPollEnd : 0 ; pushCyTrace('m', pollerStart);
+      // )
       /*
          if (pollers.size() > 0) {
       // std::cout << "run pollers..." << std::endl;
@@ -177,17 +181,16 @@ void TaskExecutor::cycle()
       }
       }
       */
-     /*
       if (cycles % everyPP  == 0) {
          pageProviderCycle();
       }
-      DEBUG_TASK_COUNTERS_BLOCK(
+      /* DEBUG_TASK_COUNTERS_BLOCK(
          const auto ioSubStart = readTSC();
          const auto pollerDuration = ioSubStart - pollerStart;
          counters.pollerDuration += pollerDuration;
          pushCyTrace('p', ioSubStart);
          if (pollerDuration > leanstore::ThreadCounters::myCounters().exec_cycl_max_task_us) { leanstore::ThreadCounters::myCounters().exec_cycl_max_subm_us = pollerDuration; }
-      )
+      ) */
       if (delaySubmit == 0) {
          int submitted = ioChannel.submit();
          DEBUG_TASK_COUNTERS_BLOCK(
@@ -215,13 +218,13 @@ void TaskExecutor::cycle()
             auto now = getSeconds();
             if (now - counterUpdateTime > 0.99999) {
                counterUpdateTime = now;
-               { ioChannel.counters.updateLeanStoreCounters(); }
-               { ioChannel.counters.reset(); }
+               /*COUNTERS_BLOCK()*/ { ioChannel.counters.updateLeanStoreCounters(); }
+               /*COUNTERS_BLOCK()*/ { ioChannel.counters.reset(); }
             }
          }
       }
 
-      DEBUG_TASK_COUNTERS_BLOCK(
+      /* DEBUG_TASK_COUNTERS_BLOCK(
          const auto taskStart = readTSC();
          const auto subDration = (taskStart - ioSubStart) > 0 ? taskStart - ioSubStart: 0;
          if (subDration > leanstore::ThreadCounters::myCounters().exec_cycl_max_task_us) { leanstore::ThreadCounters::myCounters().exec_cycl_max_subm_us = subDration; }
@@ -234,7 +237,8 @@ void TaskExecutor::cycle()
       int tasksRun = 0;
       //*
       Task* task;
-      while (tasksRun < maxTasksRun && popTask(task)) { // pop after maxTaskRun check
+      // WE HAVE HERE A INDIVIUAL SCHEDULING DECISION -> IO TASKS GET WORKED THROUGH FIRST
+      while (tasksRun < maxTasksRun && popTask(task)) { // pop after maxTaskRun check 
          //std::cout << this->getName() << " runTask: " << task << " task.size: " << tasks.size() << std::endl;
          counters.tasksRun++;
          //DEBUG_TASK_COUNTERS_BLOCK(auto start = readTSC();)
@@ -265,6 +269,9 @@ void TaskExecutor::cycle()
                counters.tasksWaiting++;
                waitingTaskCount++;
                waitIoTaskCount++;
+#ifndef NDEBUG
+               waiting_tasks[task] = std::tuple(TaskState::WaitIo, getTimePoint(), false);
+#endif
                break;
             case TaskState::ReadyMem:
                COUNTERS_BLOCK() { leanstore::ThreadCounters::myCounters().exec_tasks_st_ready_mem++; }
@@ -291,6 +298,17 @@ void TaskExecutor::cycle()
          }
          COUNTERS_BLOCK() { leanstore::ThreadCounters::myCounters().exec_tasks_run++; }
       }
+#ifndef NDEBUG
+      auto now = getTimePoint();
+      for (auto& tt: waiting_tasks) {
+         auto diff = timePointDifferenceMs(now, std::get<1>(tt.second));
+         if (diff > 1000 && !std::get<2>(tt.second)) {
+            std::get<2>(tt.second) = true;
+            std::cout << "io is stuck " << tt.first << " diff: " << std::dec << diff << std::endl;
+            //raise(SIGINT);
+         }
+      }
+#endif
       if (tasksRun == 0) {
          COUNTERS_BLOCK() { leanstore::ThreadCounters::myCounters().exec_no_tasks_run++; }
          cyclesNothingRun++;
@@ -308,7 +326,6 @@ void TaskExecutor::cycle()
       } else {
          cyclesNothingRun = 0;
       }
-      
       /* DEBUG_TASK_COUNTERS_BLOCK(
          const auto taskEnd = readTSC();
          const auto taskDuration = taskEnd - taskStart;
@@ -316,6 +333,11 @@ void TaskExecutor::cycle()
          const auto totalDuration = taskEnd - lastCycle;
          if (taskDuration > leanstore::ThreadCounters::myCounters().exec_cycl_max_task_us) { leanstore::ThreadCounters::myCounters().exec_cycl_max_task_us = taskDuration; }
          if (totalDuration > leanstore::ThreadCounters::myCounters().exec_cycl_max_dur) { leanstore::ThreadCounters::myCounters().exec_cycl_max_dur = totalDuration; }
+         
+            if (totalDuration / 2 / 1000 > 10000) {
+            std::cout << "long cycle.. thr: " << mean::exec::getId() << " duration: " << totalDuration / 2 / 1000<<  std::endl;
+            }
+            
          lastCycle = taskEnd; pushCyTrace('t', taskEnd);
          ) */
          // std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -370,6 +392,9 @@ void TaskExecutor::pushTask(TaskFunction fun)
 void TaskExecutor::moveReady(Task* task)
 {
    task->state = TaskState::Ready;
+#ifndef NDEBUG
+   waiting_tasks.erase(task);
+#endif
    waitingTaskCount--;
    waitIoTaskCount--;
    tasks_io_done.push_back(task);

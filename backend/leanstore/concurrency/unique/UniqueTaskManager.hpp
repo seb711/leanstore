@@ -1,10 +1,10 @@
 #pragma once
 // -------------------------------------------------------------------------------------
-#include "BlockedRange.hpp"
-#include "TaskExecutor.hpp"
+#include "leanstore/concurrency/BlockedRange.hpp"
+#include "UniqueTaskExecutor.hpp"
 #include "leanstore/concurrency-recovery/Worker.hpp"
 #include "leanstore/io/IoInterface.hpp"
-#include "ThreadingManager.hpp"
+#include "leanstore/concurrency/ThreadingManager.hpp"
 // -------------------------------------------------------------------------------------
 #include <atomic>
 #include <iostream>
@@ -14,15 +14,18 @@
 namespace mean
 {
 // -------------------------------------------------------------------------------------
-class TaskManager
+class UniqueTaskManager
 {
    std::atomic<int> runningExecs = {0};
-   std::vector<std::unique_ptr<TaskExecutor>> execs;
+   std::vector<std::unique_ptr<UniqueTaskExecutor>> execs;
    std::atomic<int> exclusiveThreadCounter = {0};
-   std::unordered_map<int, std::reference_wrapper<TaskExecutor>> exclusiveThreadsMap;
+   std::unordered_map<int, std::reference_wrapper<UniqueTaskExecutor>> exclusiveThreadsMap;
    std::vector<std::unique_ptr<ThreadWithJump>> exclusive_threads;
    std::vector<std::unique_ptr<IoChannel>> remoteChannels;
    std::unique_ptr<MessageHandlerManager> messageManager = nullptr;
+   std::vector<DummyNIC*> nics; 
+
+
    int exclusiveThreads;
    int threadAffinityOffset;
    static constexpr u64 MAX_WORKER_THREADS = 256;
@@ -31,7 +34,7 @@ class TaskManager
   public:
    leanstore::cr::Worker* workers[MAX_WORKER_THREADS]; // TODO
    // -------------------------------------------------------------------------------------
-   ~TaskManager();
+   ~UniqueTaskManager();
    // -------------------------------------------------------------------------------------
    // env
    // -------------------------------------------------------------------------------------
@@ -49,7 +52,7 @@ class TaskManager
    // -------------------------------------------------------------------------------------
    // exec
    // -------------------------------------------------------------------------------------
-   TaskExecutor* localExec();
+   UniqueTaskExecutor* localExec();
    int execId();
    IoChannel& execIoChannel();
    // -------------------------------------------------------------------------------------
@@ -60,11 +63,12 @@ class TaskManager
    void scheduleTaskSync(TaskFunction fun);
    void yield(TaskState ts);
    void blockingIo(IoRequestType type, char* data, s64 addr, u64 len);
-   Task& this_task();
+   UniqueTask& this_task();
    void set_current_task_lock(YieldLock& lock);
+
    // -------------------------------------------------------------------------------------
    // -------------------------------------------------------------------------------------
-   TaskExecutor& getExec(int id);
+   UniqueTaskExecutor& getExec(int id);
    int size() const;
   private:
    void sendTask(int to, TaskFunction taskFun);

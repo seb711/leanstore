@@ -12,6 +12,7 @@
 #include <condition_variable>
 #include <functional>
 #include <mutex>
+#include <osv/jumpmu.hh>
 #include <osv/leanstore_debug.hh>
 #include <sstream>
 #include <stdexcept>
@@ -273,7 +274,7 @@ void* threadFunction(void* arg)
 #endif
 
 void DefaultThreadingManager::parallelFor(BlockedRange bb,
-                                          std::function<void(u64, std::atomic<bool>& cancelable)> fun,
+                                          TaskFunction fun,
                                           const int tasks,
                                           s64 bbgranularity,
                                           bool rate_active)
@@ -406,9 +407,9 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
       assert(old_top->meta.job_set == false);
       auto startTime = jumpmu::thread_local_jumpmu_ctx->tx_start_time;
 
-      old_top->sendTask([=, &fun, &id, &cancelable] {
+      old_top->sendTask([=, &fun, &id, &cancelable]() {
          jumpmu::thread_local_jumpmu_ctx->tx_start_time = startTime;
-         fun(id, cancelable);
+         fun();
       });
 #endif
 

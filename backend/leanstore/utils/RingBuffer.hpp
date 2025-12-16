@@ -44,7 +44,8 @@ public:
     
     RingBuffer(RingBuffer const&) = delete;
     
-    TValue& push_back(const TValue& value) {
+    // Original function for lvalues (copies)
+    void push_back(const TValue& value) {
         TValue* current_write = write_ptr.load(std::memory_order_relaxed);
         TValue* next_write = current_write + 1;
         
@@ -68,7 +69,35 @@ public:
         contains.fetch_add(1, std::memory_order_relaxed);
         RB_DEBUG_COUNTER(inserted.fetch_add(1, std::memory_order_relaxed););
         
-        return *current_write;
+        return;
+    }
+    
+    // New overload for rvalues (moves) - for unique_ptr and other move-only types
+    void push_back(TValue&& value) {
+        TValue* current_write = write_ptr.load(std::memory_order_relaxed);
+        TValue* next_write = current_write + 1;
+        
+        if (next_write > vec_last) { // overflow
+            next_write = vec_first;
+        }
+        
+        // Check if buffer is full
+        TValue* current_read = read_ptr.load(std::memory_order_acquire);
+        if (next_write == current_read) { // full
+            throw std::logic_error("full");
+        }
+        
+        // Write the value (move)
+        *current_write = std::move(value);
+        
+        // Update write pointer with release semantics to ensure the write is visible
+        // before the pointer update
+        write_ptr.store(next_write, std::memory_order_release);
+        
+        contains.fetch_add(1, std::memory_order_relaxed);
+        RB_DEBUG_COUNTER(inserted.fetch_add(1, std::memory_order_relaxed););
+        
+        return;
     }
     
     TValue& front() {
@@ -90,7 +119,7 @@ public:
         }
         
         // Read the value
-        ret = *current_read;
+        ret = std::move(*current_read);
         
         TValue* next_read = current_read + 1;
         if (next_read > vec_last) { // overflow
@@ -117,7 +146,7 @@ public:
         
         // Calculate how many items we can pop
         while (next_read != current_write && popped < POP_MAX && popped < pop_max) {
-            pop_into[popped] = *next_read;
+            pop_into[popped] = std::move(*next_read);
             RB_DEBUG_COUNTER(*next_read = TValue{};) // Clear for debugging
             popped++;
             

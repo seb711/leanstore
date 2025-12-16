@@ -3,14 +3,7 @@ BUILD_DIR = build
 MEAN_TYPE ?= MEAN_USE_JOBBING # Default value, can be overridden
 IS_LINUX ?= 1 # Default to Linux, can be overridden with IS_LINUX=0
 
-module: install-dependencies build-shared cmake-configure
-
-LIBFAKEOSVDIR=$(OSV_BASE)/libfakeosv
-LIB_SHARED = $(LIBFAKEOSVDIR)/libfakeosv.so
-
-.PHONY: build-shared
-build-shared:
-	$(MAKE) -C $(LIBFAKEOSVDIR)
+module: install-dependencies cmake-configure
 
 # Install required dependencies using apt-get
 .PHONY: install-dependencies
@@ -31,11 +24,11 @@ endif
 .PHONY: cmake-configure
 cmake-configure:
 	mkdir -p $(BUILD_DIR)
-	cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Release -DLEANSTORE_INCLUDE_OSV=1 \
+	cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Release -DLEANSTORE_INCLUDE_OSV=0 \
 		-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
 		-DCMAKE_C_FLAGS="-fPIC" \
 		-DCMAKE_CXX_FLAGS="-fPIC -D$(MEAN_TYPE) $(PLATFORM_FLAGS)" \
-		-DLIBFAKEOSV_PATH=$(LIB_SHARED) .. && make -j
+		 .. && make -j
 
 # Clean the build directory
 .PHONY: clean

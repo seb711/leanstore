@@ -227,7 +227,7 @@ void ThreadingManager::registerPageProvider(void* bf_ptr, int partitions_count)
 }
 // -------------------------------------------------------------------------------------
 void ThreadingManager::parallelFor(BlockedRange bb,
-                                   std::function<void(u64, std::atomic<bool>& cancelable)> fun,
+                                   TaskFunction fun,
                                    const int tasks,
                                    s64 bbgranularity,
                                    bool rate_active)
@@ -272,7 +272,7 @@ void ThreadingManager::parallelFor(BlockedRange bb,
              std::exponential_distribution<> expDist(rate);
 
              for (u64 id = start; id < end; id++) {
-                fun(id, cancelable);
+                fun();
 
                 // this has to be done in order to simulate the latency
                 while (true) {

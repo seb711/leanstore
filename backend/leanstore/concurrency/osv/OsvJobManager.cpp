@@ -1,3 +1,4 @@
+#ifdef LEANSTORE_INCLUDE_OSV
 // -------------------------------------------------------------------------------------
 #include "OsvJobManager.hpp"
 #include "leanstore/concurrency/ConnectedIoChannel.hpp"
@@ -298,3 +299,4 @@ int OsvJobManager::workerCount()
 }
 // -------------------------------------------------------------------------------------
 }  // namespace mean
+#endif

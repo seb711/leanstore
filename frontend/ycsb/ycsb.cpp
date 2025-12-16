@@ -68,8 +68,9 @@ void run_ycsb() {
       begin = chrono::high_resolution_clock::now();
       mean::BlockedRange bb(0, (u64)n);
       ensure((bool)((bb.end - bb.begin) > 1));
-#ifdef MEAN_USE_TASKING
-      auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>&) {
+// #ifdef MEAN_USE_TASKING
+#if 0
+auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>&) {
          // vector<u64> keys(range.size());
          // std::iota(keys.begin(), keys.end(), range.begin());
          // std::random_shuffle(keys.begin(), keys.end());
@@ -81,6 +82,10 @@ void run_ycsb() {
          table.lookup(t_i, result);
          ensure(result == payload);
 
+         if (t_i % 10000 == 0) {
+            std::cout << t_i << std::endl; 
+         }
+
          mean::task::yield();
       };
       mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks, 100000);
@@ -88,7 +93,7 @@ void run_ycsb() {
 #ifdef NEW_JUMPMU
             jumpmu::thread_local_jumpmu.pid = -2; 
 #else
-      jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext(); 
+      // jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext(); 
       jumpmu::thread_local_jumpmu_ctx->pid = -2; 
 #endif 
 
@@ -123,46 +128,20 @@ void run_ycsb() {
    cout << setprecision(4);
    // -------------------------------------------------------------------------------------
    // Scan
-   if (FLAGS_ycsb_scan) {
-      const u64 n = ycsb_tuple_count;
-      cout << "-------------------------------------------------------------------------------------" << endl;
-      cout << "Scan" << endl;
-      {
-         begin = chrono::high_resolution_clock::now();
-         mean::BlockedRange bb(0, (u64)n);
-         ensure((bool)((bb.end - bb.begin) > 1));
-         auto ycsb_fun = [&](u64 i, std::atomic<bool>&) {
-               YCSBPayload result;
-               table.lookup(i, result);
-               mean::task::yield();
-         };
-         mean::task::parallelFor(bb, ycsb_fun, FLAGS_worker_tasks, 100000);
-         end = chrono::high_resolution_clock::now();
-      }
-      // -------------------------------------------------------------------------------------
-      cout << "time elapsed = " << (chrono::duration_cast<chrono::microseconds>(end - begin).count() / 1000000.0) << endl;
-      // -------------------------------------------------------------------------------------
-      cout << calculateMTPS(begin, end, n) << " M tps" << endl;
-      cout << "-------------------------------------------------------------------------------------" << endl;
-   }
    // -------------------------------------------------------------------------------------
    cout << "-------------------------------------------------------------------------------------" << endl;
    cout << "~Transactions" << endl;
    atomic<bool> keep_running = {true};
-   atomic<u64> running_threads_counter = 0;
+   atomic<u64> running_threads_counter = {0};
    {
       auto start = mean::getSeconds();
-      auto ycsb_tx = [&](u64 i, std::atomic<bool>& cancelled){
+      auto ycsb_tx = [&](){
 
          running_threads_counter++;
 
             auto before = mean::readTSC();
             YCSBKey key = zipf_random->rand();
-#ifdef NEW_JUMPMU
-            jumpmu::thread_local_jumpmu.pid = i; 
-#else
-            jumpmu::thread_local_jumpmu_ctx->pid = i; 
-#endif 
+ 
             assert(key < ycsb_tuple_count);
             YCSBPayload result;
             if (FLAGS_ycsb_read_ratio == 100 || utils::RandomGenerator::getRandU64(0, 100) < FLAGS_ycsb_read_ratio) {
@@ -197,6 +176,7 @@ void run_ycsb() {
       mean::task::parallelFor(bb, ycsb_tx, FLAGS_worker_tasks, 100000, true);
       auto diffTSC = mean::tscDifferenceNs(mean::readTSC(), startTsc) / 1e9;
       auto diffTP = mean::timePointDifference(mean::getTimePoint(), startTP) / 1e9;
+      while (true) {}
       std::cout << "done: time: " << diffTP << " tsc: " << diffTSC << std::endl;
    }
    mean::env::shutdown();
