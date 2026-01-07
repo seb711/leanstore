@@ -62,33 +62,32 @@ void run_ycsb() {
                                     : FLAGS_target_gib * 1024 * 1024 * 1024 * 1.0 / 2.0 / (sizeof(YCSBKey) + sizeof(YCSBPayload));
    // Insert values
    {
+      db.startProfilingThread();
       const u64 n = ycsb_tuple_count;
       cout << "-------------------------------------------------------------------------------------" << endl;
       cout << "Inserting values" << endl;
       begin = chrono::high_resolution_clock::now();
-      mean::BlockedRange bb(0, (u64)n);
-      ensure((bool)((bb.end - bb.begin) > 1));
-// #ifdef MEAN_USE_TASKING
-#if 0
-auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>&) {
+      mean::BlockedRange bb(0, (u64)1);
+      ensure((bool)((bb.end - bb.begin) >= 1));
+#if defined(MEAN_USE_TASKING) || defined(MEAN_USE_UNIQUE_TASKING)
+// #if 0
+auto ycsb_insert_fun = [&]() {
          // vector<u64> keys(range.size());
          // std::iota(keys.begin(), keys.end(), range.begin());
          // std::random_shuffle(keys.begin(), keys.end());
-         YCSBPayload payload;
-         utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
-         auto& key = t_i;
-         table.insert(key, payload);
-         YCSBPayload result; /// FIXME remove this check
-         table.lookup(t_i, result);
-         ensure(result == payload);
-
-         if (t_i % 10000 == 0) {
-            std::cout << t_i << std::endl; 
+         for (uint32_t t = 0; t < n; t++) {
+            YCSBPayload payload;
+            utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
+            auto& key = t;
+            table.insert(key, payload);
+            YCSBPayload result; /// FIXME remove this check
+            table.lookup(t, result);
+            ensure(result == payload);
+   
+            // mean::task::yield();
          }
-
-         mean::task::yield();
       };
-      mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks, 100000);
+      mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks);
 #else
 #ifdef NEW_JUMPMU
             jumpmu::thread_local_jumpmu.pid = -2; 
@@ -122,7 +121,6 @@ auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>&) {
       cout << "Inserted volume: (pages, MiB) = (" << written_pages << ", " << mib << ")" << endl;
       cout << "-------------------------------------------------------------------------------------" << endl;
    }
-   db.startProfilingThread();
    // -------------------------------------------------------------------------------------
    auto zipf_random = std::make_unique<utils::ScrambledZipfGenerator>(0, ycsb_tuple_count, FLAGS_zipf_factor);
    cout << setprecision(4);

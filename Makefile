@@ -27,7 +27,7 @@ cmake-configure:
 	cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Release -DLEANSTORE_INCLUDE_OSV=0 \
 		-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
 		-DCMAKE_C_FLAGS="-fPIC" \
-		-DCMAKE_CXX_FLAGS="-fPIC -D$(MEAN_TYPE) $(PLATFORM_FLAGS)" \
+		-DCMAKE_CXX_FLAGS="-fPIC -DNOMUTEX -D$(MEAN_TYPE) $(PLATFORM_FLAGS)" \
 		 .. && make -j
 
 # Clean the build directory

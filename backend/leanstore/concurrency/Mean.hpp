@@ -4,7 +4,6 @@
 #include "Task.hpp"
 #include "YieldLock.hpp"
 #include "leanstore/io/IoInterface.hpp"
-#include <osv/mutex.h>
 // -------------------------------------------------------------------------------------
 #include <functional>
 #include <string>
@@ -17,13 +16,13 @@ namespace mean
 #endif
 
 #if defined(MEAN_USE_THREADING) || defined(MEAN_USE_DEFAULT_THREADING)
-using mutex = std::mutex;
+using mmutex = std::mutex;
 #elif defined(MEAN_USE_JOBBING) && defined(NDEBUG)
-using mutex = lockfree::mutex;
+using mmutex = lockfree::mutex;
 #elif defined(MEAN_USE_JOBBING)
-using mutex = lockfree::mutex; // DebugLock;
+using mmutex = lockfree::mutex; // DebugLock;
 #else
-using mutex = YieldLock;
+using mmutex = YieldLock;
 #endif
 
 using TaskFunction = std::function<void()>;  // std::add_pointer_t<void()>;

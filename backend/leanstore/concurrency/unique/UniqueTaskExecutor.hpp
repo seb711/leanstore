@@ -3,12 +3,12 @@
 #include "./utils/ContextPool.hpp"
 #include "./utils/DummyNic.hpp"
 #include "Exceptions.hpp"
-#include "leanstore/concurrency/MessageHandler.hpp"
-#include "leanstore/concurrency/ThreadBase.hpp"
 #include "UniqueTask.hpp"
 #include "Units.hpp"
 #include "leanstore/Config.hpp"
 #include "leanstore/concurrency-recovery/Worker.hpp"
+#include "leanstore/concurrency/MessageHandler.hpp"
+#include "leanstore/concurrency/ThreadBase.hpp"
 #include "leanstore/io/IoAbstraction.hpp"
 #include "leanstore/profiling/counters/TaskExecutorCounters.hpp"
 #include "leanstore/storage/btree/core/BTreeInterface.hpp"
@@ -24,25 +24,37 @@
 #include <memory>
 #include <queue>
 #include <unordered_map>
-#include <functional>
+
+#define USE_INTERRUPTS
+// #define USE_PERIODIC_TIMER
+// #define USE_WATCHDOG
+#define INTERRUPT_ADD_SYNC
+#define INTERRUPT_TIME 40000
+
 // -------------------------------------------------------------------------------------
 namespace mean
 {
 // -------------------------------------------------------------------------------------
 
 // RAII wrapper for UniqueTask to auto-release memory
-class UniqueTaskDeleter {
-   friend UniqueTask; 
-   public:
+class UniqueTaskDeleter
+{
+   friend UniqueTask;
+
+  public:
    void operator()(UniqueTask* task) const;
 };
 
 class UniqueTaskExecutor : public ThreadBase
 {
-   public: 
+  public:
    using UniqueTaskPtr = std::unique_ptr<UniqueTask, UniqueTaskDeleter>;
    TaskContextPool* g_task_context_pool;
-   private: 
+   void* _sinkInterruptStack;
+   UniqueTaskPtr _currentTask = nullptr;
+   boost::context::detail::fcontext_t _currentSink = nullptr;
+
+  private:
    // EVERY TASK EXECUTER MANAGES OWN THREAD POOL
    // THIS REDUCES CONCURRENCY ISSUES
    // Global pool management
@@ -54,17 +66,15 @@ class UniqueTaskExecutor : public ThreadBase
 
    // Factory function to create a task with pre-allocated memory
    UniqueTaskPtr createTask(TaskFunction fun, void (*entry_fn)(boost::context::detail::transfer_t));
-   
+
    static const int MAX_TASKS = 1 << 14;
    leanstore::utils::RingBuffer<UniqueTaskPtr> tasks{MAX_TASKS};
    leanstore::utils::RingBuffer<UniqueTaskPtr> tasks_io_done{MAX_TASKS};
 #ifndef NDEBUG
    std::unordered_map<UniqueTask*, std::tuple<TaskState, TimePoint, bool>> waiting_tasks;
 #endif
-   TaskFunction workloadFunction; 
+   TaskFunction workloadFunction;
 
-   UniqueTaskPtr _currentTask = nullptr;
-   boost::context::detail::fcontext_t _currentSink = nullptr; 
    // -------------------------------------------------------------------------------------
    //
    MessageHandler& messageHandler;
@@ -89,7 +99,7 @@ class UniqueTaskExecutor : public ThreadBase
   public:
    std::atomic<float> sleep;
    IoChannel& ioChannel;
-   DummyNIC& nic; 
+   DummyNIC& nic;
    TaskExecutorCounters counters;
    // -------------------------------------------------------------------------------------
    leanstore::cr::Worker* this_worker;
@@ -102,9 +112,9 @@ class UniqueTaskExecutor : public ThreadBase
    UniqueTaskExecutor& operator=(const UniqueTaskExecutor&) = delete;
    UniqueTaskExecutor& operator=(UniqueTaskExecutor&&) = delete;
    // -------------------------------------------------------------------------------------
-   static void trampoline(boost::context::detail::transfer_t t); 
-   static boost::context::detail::transfer_t store_sink_on_yield(boost::context::detail::transfer_t t); 
-   static boost::context::detail::transfer_t store_task_on_yield(boost::context::detail::transfer_t t); 
+   static void trampoline(boost::context::detail::transfer_t t);
+   static boost::context::detail::transfer_t store_sink_on_yield(boost::context::detail::transfer_t t);
+   static boost::context::detail::transfer_t store_task_on_yield(boost::context::detail::transfer_t t);
    // -------------------------------------------------------------------------------------
    bool popTask(UniqueTaskPtr& task);
    // -------------------------------------------------------------------------------------
@@ -116,26 +126,29 @@ class UniqueTaskExecutor : public ThreadBase
    int taskCount();
    void sendMessage(int toId, MessageFunction fun, uintptr_t userData);
    // -------------------------------------------------------------------------------------
-   void updateCurrentSink(boost::context::detail::fcontext_t t) {
+   void updateCurrentSink(boost::context::detail::fcontext_t t)
+   {
       // std::cout << "current sink set: " << std::hex << t << std::endl << std::hex;
-      _currentSink = t; 
+      _currentSink = t;
    }
-   boost::context::detail::fcontext_t getCurrentSink() {
-      // std::cout << "current sink get: " << std::hex << _currentSink << std::endl << std::flush; 
+   boost::context::detail::fcontext_t getCurrentSink()
+   {
+      // std::cout << "current sink get: " << std::hex << _currentSink << std::endl << std::flush;
+      // assert(false); 
       ensure(_currentSink != nullptr);
-      auto tmp = _currentSink; 
-      _currentSink = nullptr;  
-      return tmp; 
+      assert(_currentSink != nullptr); 
+
+      auto tmp = _currentSink;
+      _currentSink = nullptr;
+      return tmp;
    }
-   void set_workload_function(TaskFunction fun) {
-      workloadFunction = fun; 
-   } 
+   void set_workload_function(TaskFunction fun) { workloadFunction = fun; }
    // -------------------------------------------------------------------------------------
    static UniqueTaskExecutor& localExec();
    static UniqueTask& currentTask();
-   static UniqueTaskPtr getCurrentTaskOwnership(); 
+   static UniqueTaskPtr getCurrentTaskOwnership();
    static void yieldCurrentTask(TaskState ts);
-   static void yieldRunningTask(UniqueTask* task, TaskState ts); 
+   static void yieldRunningTask(UniqueTask* task, TaskState ts);
 };
 // -------------------------------------------------------------------------------------
 }  // namespace mean

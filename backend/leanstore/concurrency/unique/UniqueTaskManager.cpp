@@ -2,6 +2,13 @@
 #include "UniqueTaskManager.hpp"
 #include "leanstore/concurrency/Task.hpp"
 #include "leanstore/io/IoInterface.hpp"
+#include "leanstore/profiling/counters/WorkerCounters.hpp"
+#include <osv/leanstore_debug.hh>
+// -------------------------------------------------------------------------------------
+#include <drivers/clockevent.hh>
+#include <osv/clock.hh>
+#include "arch.hh"
+#include "exceptions.hh"
 // -------------------------------------------------------------------------------------
 #include <algorithm>
 #include <chrono>
@@ -23,6 +30,7 @@ UniqueTaskManager::~UniqueTaskManager()
 // -------------------------------------------------------------------------------------
 void UniqueTaskManager::init(int workerThreads, int exclusiveThreads, IoOptions ioOptions, int threadAffinityOffset)
 {
+   std::cout << "USE UNIQUE TASKING" << std::endl;
    if (ioOptions.engine == "auto") {
       if (ioOptions.path.find("traddr") != std::string::npos) {
          ioOptions.engine = "spdk";
@@ -119,10 +127,10 @@ void UniqueTaskManager::reflowPageProviderPartitions()
          exclusiveThreads = buffer_manager->cooling_partitions_count;
       }
       if (t_i < (int)buffer_manager->cooling_partitions_count) {
-         sendTask(t_i, [=]() { 
-            // std::cout << "register page provider" << std::endl; 
-            UniqueTaskExecutor::localExec().registerPageProvider(buffer_manager, t_i); 
-            // std::cout << "register page provider ended" << std::endl; 
+         sendTask(t_i, [=]() {
+            // std::cout << "register page provider" << std::endl;
+            UniqueTaskExecutor::localExec().registerPageProvider(buffer_manager, t_i);
+            // std::cout << "register page provider ended" << std::endl;
          });
       }
    }
@@ -155,7 +163,7 @@ void UniqueTaskManager::shutdown()
       exe->stop();
    }
    for (auto* nic : nics) {
-      delete nic; 
+      delete nic;
    }
 }
 // -------------------------------------------------------------------------------------
@@ -258,12 +266,107 @@ void UniqueTaskManager::registerPageProvider(void* bf_ptr, int partitions_count)
  * If a single cycle through the loop is very short, bbgranularity should be set accordingly higher.
  * must be called from within a task
  */
-void UniqueTaskManager::parallelFor(BlockedRange bb,
-                                    TaskFunction fun,
-                                    const int tasks,
-                                    s64 bbgranularity,
-                                    bool rate_active)
+void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int tasks, s64 bbgranularity, bool rate_active)
 {
+   // we also need to setup the interupt here -> because before that we do not know the origin task
+   // and we need the origin tasks because we assume that this task is always runnable
+
+   // so first we should setup an interrupt that when fired just swaps context with the origin task and
+   // and yields from there...
+
+   // when using the boost execution lib i guess we can just use the yield call acutally because this should just work
+
+   // so we basically only have to install and rewire the interrupt handler and then we are good to go
+   // -> but we should in the end rewire the interrupt handler so nothing breaks
+   // Disable interrupts while setting up
+
+   arch::irq_disable();
+
+   auto timer_handler = []() {
+      // leanstore::WorkerCounters::myCounters().time_counter_1++; 
+      // return; 
+      assert(!arch::irq_enabled()); 
+// return;
+#if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
+     // clock_event->disable();
+#endif
+
+      if (UniqueTaskExecutor::localExec()._currentTask != nullptr && UniqueTaskExecutor::localExec()._currentSink != nullptr) {
+         // for now we here do nothing more than just interrupting and yield to the next one
+         // this is enough for now but in the future we need here a more thorough logic
+
+         leanstore::WorkerCounters::myCounters().time_counter_1++; 
+
+         // printf("interrupt here %p %p", UniqueTaskExecutor::localExec()._currentSink, (void*)UniqueTaskExecutor::localExec()._currentTask.get()); 
+         leanstore_osv_debug::trace_try_lock(UniqueTaskExecutor::localExec()._currentSink, (void*)UniqueTaskExecutor::localExec()._currentTask.get()); 
+
+         leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
+         assert(UniqueTaskExecutor::localExec()._currentSink != nullptr); 
+         assert(UniqueTaskExecutor::localExec()._currentTask.get() != nullptr); 
+
+         boost::context::detail::ontop_fcontext(UniqueTaskExecutor::localExec().getCurrentSink(), (void*)UniqueTaskExecutor::localExec()._currentTask.get(), UniqueTaskExecutor::store_task_on_yield);
+#if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
+         // clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
+#endif
+         // enable_interrupts();
+         // arch::irq_enable();
+         return;
+      } else {
+         // enable_interrupts();
+         // arch::irq_enable();
+         // in the case that we are not running a job right now we can just return and skip the logic
+         return;
+      }
+   };
+
+   // Register the timer handler
+   auto vector = idt.register_handler(timer_handler);
+
+#ifndef USE_WATCHDOG
+   clock_event->reset_vector(vector);
+#ifdef USE_PERIODIC_TIMER
+   clock_event->set_periodic();
+   clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
+#endif
+#else
+   clock_event->set_periodic();
+   clock_event->disable();
+   // then we are basically good to go
+
+   // what we need to do in the other logics
+   // set the working flag correct
+
+   // IF LAPIC TIMER SET
+   // just removes the current LAPIC timer handler from the core
+   // bend the lapic timer to the vector we have just created
+   // set timer to 0
+   // IF WATCHDOG THREAD
+   // register worker thread
+   // END
+   // how would you implement a watchdog thread?
+   // 0. store the starting times for the thread to know if we should preempt
+   // 1. start watchdog thread that continously checks on the current core the timer
+   // 2. if too high sends the interrupt
+   auto* cpu = sched::current_cpu;
+   (new sched::thread(
+        [cpu, testint] {
+           while (true) {
+              uint64_t ts = last_timestamp.load();
+              if (ts > 0 and (rdtsc() - ts) > (INTERRUPT_TIME * 5)) {
+                 // printf("interrupt\n");
+                 last_timestamp = 0;
+                 processor::apic->ipi(cpu->arch.apic_id, testint);
+                 // usleep(INTERRUPT_TIME / 500);
+                 // usleep(1);
+                 asm volatile("pause" : : : "memory");
+              }
+           }
+        },
+        sched::thread::attr().pin(sched::cpus[2]).name("watchdog")))
+       ->start();
+#endif
+   arch::irq_enable();
+
    ensure(tasks > 0);
    const int threads = workerCount();
    int originExecId = UniqueTaskExecutor::localExec().id();
@@ -284,26 +387,35 @@ void UniqueTaskManager::parallelFor(BlockedRange bb,
    // 3. inserts cannot be parallel inserted -> this is not the main workload unf
 
    // we create here a workload nic (-> basically a workload generator but that is timing aware)
-   // therefore we need a rate and a function 
+   // therefore we need a rate and a function
 
    for (int thr = 0; thr < threads; thr++) {
-      sendTask(thr + exclusiveThreads, [&originTask, &fun]() {
+      sendTask(thr + exclusiveThreads, [&originTask, &fun, &bb]() {
          // here setup the local executor
-         // sstd::cout << "\n\n\nyeah idk what we will do here\n\n\n" << std::endl; 
+         // sstd::cout << "\n\n\nyeah idk what we will do here\n\n\n" << std::endl;
 
-         // setup the workload function 
-         UniqueTaskExecutor::localExec().set_workload_function(fun); 
+         // setup the workload function
+         
+         // std::cout << "turn on nic " << std::hex << &UniqueTaskExecutor::localExec().nic << std::endl;
+         if ((bb.end - bb.begin) > 1) {
+            UniqueTaskExecutor::localExec().set_workload_function(fun);
+            UniqueTaskExecutor::localExec().nic.turn_on();
+         } else {
+            fun(); 
+            clock_event->disable(); 
+            UniqueTaskExecutor::localExec().moveReady(std::move(originTask));
+         }
 
-         // std::cout << "turn on nic " << std::hex << &UniqueTaskExecutor::localExec().nic << std::endl; 
-         UniqueTaskExecutor::localExec().nic.turn_on(); 
-
-         // UniqueTaskExecutor::localExec().moveReady(std::move(originTask));
       });
       // std::cout << "startedTasks: " << startedTasks << std::endl;
    }
    // yield, and push to waitingTasks
-   UniqueTaskExecutor::localExec().yieldRunningTask(originTask.get(), TaskState::Waiting);  
+
+   clock_event->disable(); 
+
+   UniqueTaskExecutor::localExec().yieldRunningTask(originTask.get(), TaskState::Waiting);
    // UniqueTaskExecutor::localExec().yieldCurrentTask(TaskState::Waiting);
+   std::cout << "finished" << std::endl; 
 }
 void UniqueTaskManager::scheduleTaskSync(TaskFunction fun)
 {
@@ -318,33 +430,33 @@ void UniqueTaskManager::yield(TaskState ts)
 void UniqueTaskManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
 {
    UserIoCallback cb;
-   cb.callback =
-       [](IoBaseRequest* req) {
-          auto this_task = reinterpret_cast<UniqueTask*>(req->user.user_data2.val.ptr);
-          auto this_executor = reinterpret_cast<UniqueTaskExecutor*>(req->user.user_data3.val.ptr);
-          // std::cout << "completion addr: " << req->addr <<  std::endl << std::flush;
-          assert(this_executor->id() == req->user.user_data.val.s);  //
+   cb.callback = [](IoBaseRequest* req) {
+      auto this_task = reinterpret_cast<UniqueTask*>(req->user.user_data2.val.ptr);
+      auto this_executor = reinterpret_cast<UniqueTaskExecutor*>(req->user.user_data3.val.ptr);
+      // std::cout << "completion addr: " << req->addr <<  std::endl << std::flush;
+      assert(this_executor->id() == req->user.user_data.val.s);  //
 
-          UniqueTaskExecutor::UniqueTaskPtr restored(this_task);
+      UniqueTaskExecutor::UniqueTaskPtr restored(this_task);
 
-          this_executor->moveReady(std::move(restored));
-          // TODO maybe push Task to top.
-       },
+      this_executor->moveReady(std::move(restored));
+      // TODO maybe push Task to top.
+   };
    cb.user_data.val.s = UniqueTaskExecutor::localExec().id();
    cb.user_data3.val.ptr = &UniqueTaskExecutor::localExec();
    cb.user_data2.val.ptr = UniqueTaskExecutor::localExec().getCurrentTaskOwnership().release();
 
    UniqueTaskExecutor::localExec().ioChannel.push(type, data, addr, len, cb);
    // UniqueTaskExecutor::localExec().ioChannel.submit();
-   UniqueTaskExecutor::yieldRunningTask((UniqueTask*) cb.user_data2.val.ptr, TaskState::WaitIo);
+   UniqueTaskExecutor::yieldRunningTask((UniqueTask*)cb.user_data2.val.ptr, TaskState::WaitIo);
 }
 // -------------------------------------------------------------------------------------
 UniqueTask& UniqueTaskManager::this_task()
 {
    return UniqueTaskExecutor::localExec().currentTask();
 }
-void UniqueTaskManager::set_current_task_lock(YieldLock& lock) {
-   UniqueTaskExecutor::localExec().currentTask().lock = &lock; 
+void UniqueTaskManager::set_current_task_lock(YieldLock& lock)
+{
+   UniqueTaskExecutor::localExec().currentTask().lock = &lock;
 }
 // -------------------------------------------------------------------------------------
 // other
@@ -363,7 +475,7 @@ void UniqueTaskManager::sendTask(int to, TaskFunction taskFun)
           // ensure(TaskManager::instance().exclusiveThreads.find(this_task::exec().id()) == TaskManager::instance().exclusiveThreads.end());
           // createTask(taskFun1);
           UniqueTaskExecutor::localExec().pushTask(*t);
-          delete t; 
+          delete t;
        },
        reinterpret_cast<uint64_t>(taskFun1));
 }

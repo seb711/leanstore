@@ -30,7 +30,7 @@ void FreeList::push(BufferFrame& bf)
    counter++;
 }
 // -------------------------------------------------------------------------------------
-struct BufferFrame& FreeList::tryPop(JMUW<std::unique_lock<mean::mutex>>& lock)
+struct BufferFrame& FreeList::tryPop(JMUW<std::unique_lock<mean::mmutex>>& lock)
 {
    BufferFrame* c_header = head;
    BufferFrame* free_bf = nullptr;

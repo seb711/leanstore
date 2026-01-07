@@ -19,14 +19,19 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <drivers/clockevent.hh>
 #include <functional>
 #include <iostream>
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <osv/clock.hh>
+#include <osv/leanstore_debug.hh>
 #include <queue>
 #include <thread>
 #include <tuple>
+#include "arch.hh"
+#include "exceptions.hh"
 // -------------------------------------------------------------------------------------
 namespace mean
 {
@@ -36,12 +41,14 @@ namespace mean
 #else
 #define DEBUG_TASK_COUNTERS_BLOCK(X)
 #endif
+
 static uint64_t opentasks = 0;
 // std::atomic<bool> TaskExecutor::pause = true;
 // std::atomic<int> TaskExecutor::pause_seen = 0;
 //  HERE WE NEED TO DEFINE ALL THE FUNCTION OF FIBERS
 //  trampoline
 thread_local TaskContextPool* tl_task_context_pool;
+thread_local bool run_task = false;
 // onjump
 boost::context::detail::transfer_t UniqueTaskExecutor::store_sink_on_yield(boost::context::detail::transfer_t t)
 {
@@ -61,7 +68,7 @@ boost::context::detail::transfer_t UniqueTaskExecutor::store_task_on_yield(boost
 // RAII wrapper implementation
 void UniqueTaskDeleter::operator()(UniqueTask* task) const
 {
-   opentasks--; 
+   opentasks--;
    if (task) {
       UniqueTaskExecutor::localExec().g_task_context_pool->deallocate(task->context);
    }
@@ -70,6 +77,7 @@ void UniqueTaskDeleter::operator()(UniqueTask* task) const
 
 void UniqueTaskExecutor::trampoline(boost::context::detail::transfer_t t)
 {
+   arch::irq_enable();
    // assert(!arch::irq_enabled());
    auto& self = UniqueTaskExecutor::localExec();
    uint64_t arg = reinterpret_cast<uint64_t>(t.data);
@@ -87,13 +95,14 @@ void UniqueTaskExecutor::trampoline(boost::context::detail::transfer_t t)
    // Finished - jump back to sink and never return
    {
 #if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
-      clock_event->disable();
+      // clock_event->disable();
 #endif
       // sched::current_cpu->arch.set_ist_entry(2, sink_istack, 8192);
       // self._currentTask = nullptr; // i guess this is not needed here but we do it nonetheless
       // std::cout << "TASK HAS ENDED " << std::hex << self._currentTask.get() << std::endl;
       self._currentTask->state = TaskState::Done;
       jumpmu::thread_local_jumpmu_ctx = &self.defaultExecutorContext;  // same here
+      leanstore_osv_debug::set_interrupt_stack((char*)localExec()._sinkInterruptStack);
       boost::context::detail::jump_fcontext(self.getCurrentSink(), nullptr);
    }
 }
@@ -132,7 +141,7 @@ UniqueTaskExecutor::UniqueTaskPtr UniqueTaskExecutor::createTask(TaskFunction fu
    g_task_context_pool->allocate(task->context);
    initializeTaskContext(task->context, task->context.stack, TaskContextPool::getStackSize(), entry_fn);
 
-   opentasks++; 
+   opentasks++;
 
    return UniqueTaskPtr(task);
 }
@@ -147,6 +156,11 @@ UniqueTaskExecutor::UniqueTaskExecutor(MessageHandler& msg, IoChannel& ioChannel
 
    initTaskContextPool(5000);
    tl_task_context_pool = g_task_context_pool;
+
+   // we need to save the interrupt stack here
+   _sinkInterruptStack = leanstore_osv_debug::get_interrupt_stack();
+
+   // setup the interrupt here
 }
 UniqueTaskExecutor::~UniqueTaskExecutor()
 {
@@ -159,8 +173,13 @@ TaskState UniqueTaskExecutor::runCurrentTask()
    // std::dec <<  std::endl << std::flush; _currentTask = task;
    auto task = _currentTask.get();
    jumpmu::thread_local_jumpmu_ctx = _currentTask->context.jumpmuctx;
+
+   // printf("run current task\n");
    // -------------------------------------------------------------------------------------
    // -------------------------------------------------------------------------------------
+   arch::irq_disable();
+   leanstore_osv_debug::set_interrupt_stack((char*)task->context.interrupt_stack);
+
    if (!_currentTask->context.init) {
       // normal start
       // std::cout << "xx runUserThread init done  " << std::endl;
@@ -172,6 +191,8 @@ TaskState UniqueTaskExecutor::runCurrentTask()
       // switch to
       boost::context::detail::ontop_fcontext(_currentTask->context.this_task_context, this, this->store_sink_on_yield);
    }
+   // clock_event->disable();
+   arch::irq_enable();
 
    // in case of an IO the currentTask is now invalid
    // else it is still valid
@@ -182,7 +203,12 @@ TaskState UniqueTaskExecutor::runCurrentTask()
 // -------------------------------------------------------------------------------------
 void UniqueTaskExecutor::yieldCurrentTask(TaskState ts)
 {
+   if (localExec()._currentTask.get() == nullptr) {
+      return;
+   }
    // std::cout << "yield with state " << (uint64_t) ts << std::endl << std::flush;
+   arch::irq_disable();
+   clock_event->disable();
    UniqueTask& task = currentTask();
    task.state = ts;
    // cycle(); TODO directly run scheduler and jump to next context
@@ -190,16 +216,39 @@ void UniqueTaskExecutor::yieldCurrentTask(TaskState ts)
    // *task.context.sink_process_context = task.context.sink_process_context->resume();
    auto& localTaskExecutor = UniqueTaskExecutor::localExec();
    auto sink_fcontext = localTaskExecutor.getCurrentSink();
+   leanstore_osv_debug::trace_try_lock(UniqueTaskExecutor::localExec()._currentSink, (void*)&task);
+
+   leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
    boost::context::detail::ontop_fcontext(sink_fcontext, (void*)&task, localTaskExecutor.store_task_on_yield);
    // Careful: function will continue here only when the task is being resumed
    // std::cout << "continue" << std::endl << std::flush;
+#if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
+   // clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
+#endif
+   arch::irq_enable();
+   return;
 }
 void UniqueTaskExecutor::yieldRunningTask(UniqueTask* task, TaskState ts)
 {
+   arch::irq_disable();
+   clock_event->disable();
+
    task->state = ts;
+
+   // cycle(); TODO directly run scheduler and jump to next context
+   // this would return to process task.
+   // *task.context.sink_process_context = task.context.sink_process_context->resume();
    auto& localTaskExecutor = UniqueTaskExecutor::localExec();
    auto sink_fcontext = localTaskExecutor.getCurrentSink();
+   leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
+   leanstore_osv_debug::trace_try_lock2(sink_fcontext, (void*)task);
+
    boost::context::detail::ontop_fcontext(sink_fcontext, (void*)task, localTaskExecutor.store_task_on_yield);
+#if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
+   // clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
+#endif
+   arch::irq_enable();
+   return;
 }
 // -------------------------------------------------------------------------------------
 int UniqueTaskExecutor::process()
@@ -227,6 +276,7 @@ void UniqueTaskExecutor::cycle()
    u64 delaySubmitUntilCycle = 0;
    auto counterUpdateTime = getSeconds();
    random_generator.seed(mean::exec::getId());
+
    while (_keep_running) {
       if (sleep != 0) {
          float s = sleep.exchange(0);
@@ -295,7 +345,7 @@ void UniqueTaskExecutor::cycle()
 
             for (int i = 0; i < requests; i++) {
                UniqueTaskPtr task = createTask(workloadFunction, trampoline);  // new UniqueTask(fun);
-               task->context.jumpmuctx->tx_start_time = nic.get(i)->timestamp; 
+               task->context.jumpmuctx->tx_start_time = nic.get(i)->timestamp;
                tasks.push_back(std::move(task));
             }
 

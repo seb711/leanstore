@@ -26,20 +26,20 @@ endif()
 # Create OSV interface library
 add_library(osv INTERFACE)
 
-# Add CLEAN include paths (NO -I or -isystem flags!)
-target_include_directories(osv INTERFACE
+# CRITICAL: Add OSV includes as SYSTEM includes
+# This gives them LOWER priority than standard library headers
+# which resolves the mutex ambiguity
+target_include_directories(osv SYSTEM INTERFACE
     ${OSV_BASE}/arch/${ARCH}
     ${OSV_BASE}
     ${OSV_BASE}/include
     ${OSV_BASE}/arch/common
+    ${OSV_BASE}/build/release.x64/gen/include
 )
 
-# Add system includes separately (for C++ standard library)
-target_include_directories(osv SYSTEM INTERFACE
-    /nix/store/68ndh04pl2hhhizsarvzwa9cnlp7zj3d-gcc-14.3.0/include/c++/14.3.0
-    /nix/store/68ndh04pl2hhhizsarvzwa9cnlp7zj3d-gcc-14.3.0/include/c++/14.3.0/x86_64-unknown-linux-gnu
-    /nix/store/68ndh04pl2hhhizsarvzwa9cnlp7zj3d-gcc-14.3.0/include/c++/14.3.0/backward
-)
+# You don't need to manually add the C++ standard library paths
+# CMake handles this automatically, and marking OSV as SYSTEM
+# ensures standard library is searched first
 
 # Find Boost
 find_package(Boost COMPONENTS system filesystem)
@@ -55,8 +55,13 @@ if(ARCH STREQUAL "aarch64")
     target_compile_definitions(osv INTERFACE AARCH64_PORT_STUB)
 endif()
 
+# Add compile options for OSV compatibility
+target_compile_options(osv INTERFACE -fPIC)
+
 message(STATUS "=== OSV configuration complete ===")
 
 # Debug output
 get_target_property(OSV_INCLUDES osv INTERFACE_INCLUDE_DIRECTORIES)
+get_target_property(OSV_SYSTEM_INCLUDES osv INTERFACE_SYSTEM_INCLUDE_DIRECTORIES)
 message(STATUS "Final OSV includes: ${OSV_INCLUDES}")
+message(STATUS "Final OSV system includes: ${OSV_SYSTEM_INCLUDES}")

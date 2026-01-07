@@ -303,7 +303,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
    swip_guard.unlock();  // otherwise we would get a deadlock, P->G, G->P
    const PID pid = swip_value.asPageID();
    IoPartition& partition = getIoPartition(pid);
-   JMUW<std::unique_lock<mean::mutex>> g_guard(partition.io_mutex);
+   JMUW<std::unique_lock<mean::mmutex>> g_guard(partition.io_mutex);
    swip_guard.recheck();
    assert(!swip_value.isHOT());
    // -------------------------------------------------------------------------------------
@@ -360,7 +360,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
             //raise(SIGINT);
          }
          swip_guard.recheck();
-         JMUW<std::unique_lock<mean::mutex>> g_guard(partition.io_mutex);
+         JMUW<std::unique_lock<mean::mmutex>> g_guard(partition.io_mutex);
          ExclusiveUpgradeIfNeeded swip_x_guard(swip_guard);
          io_frame.mutex.unlock();
          swip_value.warm(&bf);

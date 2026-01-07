@@ -30,7 +30,7 @@ struct IOFrame {
       TO_DELETE = 2,
       UNDEFINED = 3  // for debugging
    };
-   mean::mutex mutex;
+   mean::mmutex mutex;
    STATE state = STATE::UNDEFINED;
    BufferFrame* bf = nullptr;
    // -------------------------------------------------------------------------------------
@@ -176,7 +176,7 @@ struct CoolingPartition {
 };
 struct IoPartition {
    // -------------------------------------------------------------------------------------
-   mean::mutex io_mutex;
+   mean::mmutex io_mutex;
    HashTable io_ht;
    IoPartition(u64 first_pid, u64 pid_distance, u64 free_bfs_limit, u64 cooling_bfs_limit);
    // -------------------------------------------------------------------------------------
