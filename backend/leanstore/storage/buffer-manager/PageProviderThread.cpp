@@ -30,6 +30,7 @@
 #include <array>
 #include <stdexcept>
 #include <string>
+#include "arch.hh"
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {
@@ -59,6 +60,8 @@ void BufferManager::pageProviderCycle(int partition_id) {
    ensure(partition_id < (int)cooling_partitions_count);
    CoolingPartition& partition = cooling_partitions[partition_id];
    if (phase_1_condition(partition) > 64) {
+      assert(arch::irq_enabled()); 
+      // std::cout << "called for " << partition_id << std::endl; 
       u64 picked = pageProviderPhase1(partition, 128, partition_id);
       //u64 picked = pageProviderPhase1Vec(partition, 128);
       COUNTERS_BLOCK() {ThreadCounters::myCounters().pp_p1_picked += picked; }

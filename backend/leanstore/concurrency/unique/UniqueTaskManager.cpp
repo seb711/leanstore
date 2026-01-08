@@ -1,9 +1,9 @@
 // -------------------------------------------------------------------------------------
 #include "UniqueTaskManager.hpp"
+#include <osv/leanstore_debug.hh>
 #include "leanstore/concurrency/Task.hpp"
 #include "leanstore/io/IoInterface.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
-#include <osv/leanstore_debug.hh>
 // -------------------------------------------------------------------------------------
 #include <drivers/clockevent.hh>
 #include <osv/clock.hh>
@@ -280,39 +280,53 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
    // -> but we should in the end rewire the interrupt handler so nothing breaks
    // Disable interrupts while setting up
 
+#ifdef USE_INTERRUPTS
    arch::irq_disable();
 
+   leanstore::WorkerCounters::myCounters().time_counter_1++;
    auto timer_handler = []() {
-      // leanstore::WorkerCounters::myCounters().time_counter_1++; 
-      // return; 
-      assert(!arch::irq_enabled()); 
+      if (!run_task) {
+         leanstore::WorkerCounters::myCounters().time_counter_2++;
+         // arch::irq_enable();
+         return;
+      }
+      // leanstore::WorkerCounters::myCounters().time_counter_1++;
+      // return;
+      assert(!arch::irq_enabled());
 // return;
 #if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
-     // clock_event->disable();
+      // clock_event->disable();
 #endif
 
-      if (UniqueTaskExecutor::localExec()._currentTask != nullptr && UniqueTaskExecutor::localExec()._currentSink != nullptr) {
+      void* b;
+      __asm__ volatile("mov %%rbp, %0" : "=r"(b) : :);
+
+      leanstore_osv_debug::trace_try_lock(UniqueTaskExecutor::localExec()._currentSink, b);
+
+      if (UniqueTaskExecutor::localExec()._currentSink != nullptr) {
          // for now we here do nothing more than just interrupting and yield to the next one
          // this is enough for now but in the future we need here a more thorough logic
 
-         leanstore::WorkerCounters::myCounters().time_counter_1++; 
+#ifdef USE_WATCHDOG
+         last_timestamp = 0;
+#endif
 
-         // printf("interrupt here %p %p", UniqueTaskExecutor::localExec()._currentSink, (void*)UniqueTaskExecutor::localExec()._currentTask.get()); 
-         leanstore_osv_debug::trace_try_lock(UniqueTaskExecutor::localExec()._currentSink, (void*)UniqueTaskExecutor::localExec()._currentTask.get()); 
+         // printf("interrupt here %p %p", UniqueTaskExecutor::localExec()._currentSink, (void*)UniqueTaskExecutor::localExec()._currentTask.get());
 
          leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
-         assert(UniqueTaskExecutor::localExec()._currentSink != nullptr); 
-         assert(UniqueTaskExecutor::localExec()._currentTask.get() != nullptr); 
+         assert(UniqueTaskExecutor::localExec()._currentSink != nullptr);
+         assert(UniqueTaskExecutor::localExec()._currentTask.get() != nullptr);
 
-         boost::context::detail::ontop_fcontext(UniqueTaskExecutor::localExec().getCurrentSink(), (void*)UniqueTaskExecutor::localExec()._currentTask.get(), UniqueTaskExecutor::store_task_on_yield);
+         boost::context::detail::ontop_fcontext(UniqueTaskExecutor::localExec().getCurrentSink(),
+                                                (void*)UniqueTaskExecutor::localExec()._currentTask.get(), UniqueTaskExecutor::store_task_on_yield);
 #if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
          // clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
 #endif
          // enable_interrupts();
          // arch::irq_enable();
+
          return;
       } else {
-         // enable_interrupts();
          // arch::irq_enable();
          // in the case that we are not running a job right now we can just return and skip the logic
          return;
@@ -325,11 +339,11 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
 #ifndef USE_WATCHDOG
    clock_event->reset_vector(vector);
 #ifdef USE_PERIODIC_TIMER
-   clock_event->set_periodic();
+   clock_event->set_periodic(true);
    clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
 #endif
 #else
-   clock_event->set_periodic();
+   clock_event->set_periodic(true);
    clock_event->disable();
    // then we are basically good to go
 
@@ -347,25 +361,10 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
    // 0. store the starting times for the thread to know if we should preempt
    // 1. start watchdog thread that continously checks on the current core the timer
    // 2. if too high sends the interrupt
-   auto* cpu = sched::current_cpu;
-   (new sched::thread(
-        [cpu, testint] {
-           while (true) {
-              uint64_t ts = last_timestamp.load();
-              if (ts > 0 and (rdtsc() - ts) > (INTERRUPT_TIME * 5)) {
-                 // printf("interrupt\n");
-                 last_timestamp = 0;
-                 processor::apic->ipi(cpu->arch.apic_id, testint);
-                 // usleep(INTERRUPT_TIME / 500);
-                 // usleep(1);
-                 asm volatile("pause" : : : "memory");
-              }
-           }
-        },
-        sched::thread::attr().pin(sched::cpus[2]).name("watchdog")))
-       ->start();
+   leanstore_osv_debug::create_watchdog(INTERRUPT_TIME, 2, vector, last_timestamp);
 #endif
    arch::irq_enable();
+#endif
 
    ensure(tasks > 0);
    const int threads = workerCount();
@@ -395,27 +394,29 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
          // sstd::cout << "\n\n\nyeah idk what we will do here\n\n\n" << std::endl;
 
          // setup the workload function
-         
+
          // std::cout << "turn on nic " << std::hex << &UniqueTaskExecutor::localExec().nic << std::endl;
          if ((bb.end - bb.begin) > 1) {
             UniqueTaskExecutor::localExec().set_workload_function(fun);
             UniqueTaskExecutor::localExec().nic.turn_on();
          } else {
-            fun(); 
-            clock_event->disable(); 
+            fun();
+#if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER)
+            clock_event->disable();
+#endif
             UniqueTaskExecutor::localExec().moveReady(std::move(originTask));
          }
-
       });
       // std::cout << "startedTasks: " << startedTasks << std::endl;
    }
    // yield, and push to waitingTasks
 
-   clock_event->disable(); 
+   clock_event->disable();
+   leanstore_osv_debug::disable_scheduler();
 
    UniqueTaskExecutor::localExec().yieldRunningTask(originTask.get(), TaskState::Waiting);
    // UniqueTaskExecutor::localExec().yieldCurrentTask(TaskState::Waiting);
-   std::cout << "finished" << std::endl; 
+   std::cout << "finished" << std::endl;
 }
 void UniqueTaskManager::scheduleTaskSync(TaskFunction fun)
 {

@@ -32,6 +32,7 @@
 #include <tuple>
 #include "arch.hh"
 #include "exceptions.hh"
+#include "processor.hh"
 // -------------------------------------------------------------------------------------
 namespace mean
 {
@@ -49,6 +50,7 @@ static uint64_t opentasks = 0;
 //  trampoline
 thread_local TaskContextPool* tl_task_context_pool;
 thread_local bool run_task = false;
+thread_local std::atomic<uint64_t> last_timestamp = {0};
 // onjump
 boost::context::detail::transfer_t UniqueTaskExecutor::store_sink_on_yield(boost::context::detail::transfer_t t)
 {
@@ -77,32 +79,38 @@ void UniqueTaskDeleter::operator()(UniqueTask* task) const
 
 void UniqueTaskExecutor::trampoline(boost::context::detail::transfer_t t)
 {
-   arch::irq_enable();
    // assert(!arch::irq_enabled());
    auto& self = UniqueTaskExecutor::localExec();
    uint64_t arg = reinterpret_cast<uint64_t>(t.data);
    self.updateCurrentSink(t.fctx);
 
-#if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
+#ifdef USE_INTERRUPTS
+   arch::irq_enable();
+#if !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
    clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
+#endif
 #endif
    // enable_interrupts();
    self._currentTask->fun();
+
+#ifdef USE_WATCHDOG
+   last_timestamp = 0;
+#endif
    // disable_interrupts();
 
    // Run fiber function once
 
    // Finished - jump back to sink and never return
    {
-#if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
+#if defined(USE_INTERRUPTS)
       // clock_event->disable();
+      leanstore_osv_debug::set_interrupt_stack((char*)localExec()._sinkInterruptStack);
 #endif
       // sched::current_cpu->arch.set_ist_entry(2, sink_istack, 8192);
       // self._currentTask = nullptr; // i guess this is not needed here but we do it nonetheless
       // std::cout << "TASK HAS ENDED " << std::hex << self._currentTask.get() << std::endl;
       self._currentTask->state = TaskState::Done;
       jumpmu::thread_local_jumpmu_ctx = &self.defaultExecutorContext;  // same here
-      leanstore_osv_debug::set_interrupt_stack((char*)localExec()._sinkInterruptStack);
       boost::context::detail::jump_fcontext(self.getCurrentSink(), nullptr);
    }
 }
@@ -152,13 +160,12 @@ UniqueTaskExecutor::UniqueTaskExecutor(MessageHandler& msg, IoChannel& ioChannel
 {
    jumpmu::thread_local_jumpmu_ctx = &defaultExecutorContext;
 
-   // std::cout << "what the frog" << std::endl;
-
    initTaskContextPool(5000);
    tl_task_context_pool = g_task_context_pool;
 
    // we need to save the interrupt stack here
-   _sinkInterruptStack = leanstore_osv_debug::get_interrupt_stack();
+   _sinkInterruptStack = static_cast<char*>(malloc(8192)) + 8192;
+   ;  // leanstore_osv_debug::get_interrupt_stack();
 
    // setup the interrupt here
 }
@@ -174,11 +181,17 @@ TaskState UniqueTaskExecutor::runCurrentTask()
    auto task = _currentTask.get();
    jumpmu::thread_local_jumpmu_ctx = _currentTask->context.jumpmuctx;
 
-   // printf("run current task\n");
-   // -------------------------------------------------------------------------------------
-   // -------------------------------------------------------------------------------------
+// printf("run current task\n");
+// -------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------
+#ifdef USE_INTERRUPTS
    arch::irq_disable();
+   run_task = true;
+#ifdef USE_WATCHDOG
+   last_timestamp = processor::rdtsc();
+#endif
    leanstore_osv_debug::set_interrupt_stack((char*)task->context.interrupt_stack);
+#endif
 
    if (!_currentTask->context.init) {
       // normal start
@@ -191,9 +204,13 @@ TaskState UniqueTaskExecutor::runCurrentTask()
       // switch to
       boost::context::detail::ontop_fcontext(_currentTask->context.this_task_context, this, this->store_sink_on_yield);
    }
-   // clock_event->disable();
+#ifdef USE_INTERRUPTS
+   run_task = false;
+#ifdef USE_WATCHDOG
+   last_timestamp = 0;
+#endif
    arch::irq_enable();
-
+#endif
    // in case of an IO the currentTask is now invalid
    // else it is still valid
    jumpmu::thread_local_jumpmu_ctx = &defaultExecutorContext;
@@ -204,11 +221,17 @@ TaskState UniqueTaskExecutor::runCurrentTask()
 void UniqueTaskExecutor::yieldCurrentTask(TaskState ts)
 {
    if (localExec()._currentTask.get() == nullptr) {
-      return;
+      // return;
+      abort();
    }
    // std::cout << "yield with state " << (uint64_t) ts << std::endl << std::flush;
+#ifdef USE_INTERRUPTS
    arch::irq_disable();
+#if !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
    clock_event->disable();
+#endif
+#endif
+
    UniqueTask& task = currentTask();
    task.state = ts;
    // cycle(); TODO directly run scheduler and jump to next context
@@ -216,22 +239,30 @@ void UniqueTaskExecutor::yieldCurrentTask(TaskState ts)
    // *task.context.sink_process_context = task.context.sink_process_context->resume();
    auto& localTaskExecutor = UniqueTaskExecutor::localExec();
    auto sink_fcontext = localTaskExecutor.getCurrentSink();
-   leanstore_osv_debug::trace_try_lock(UniqueTaskExecutor::localExec()._currentSink, (void*)&task);
 
+#ifdef USE_INTERRUPTS
+   // leanstore_osv_debug::trace_try_lock(UniqueTaskExecutor::localExec()._currentSink, (void*)&task);
    leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
+#endif
    boost::context::detail::ontop_fcontext(sink_fcontext, (void*)&task, localTaskExecutor.store_task_on_yield);
    // Careful: function will continue here only when the task is being resumed
    // std::cout << "continue" << std::endl << std::flush;
-#if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
-   // clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
+#if defined(USE_INTERRUPTS)
+#if !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
+   clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
 #endif
    arch::irq_enable();
+#endif
    return;
 }
 void UniqueTaskExecutor::yieldRunningTask(UniqueTask* task, TaskState ts)
 {
+#ifdef USE_INTERRUPTS
    arch::irq_disable();
+#if !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
    clock_event->disable();
+#endif
+#endif
 
    task->state = ts;
 
@@ -240,14 +271,19 @@ void UniqueTaskExecutor::yieldRunningTask(UniqueTask* task, TaskState ts)
    // *task.context.sink_process_context = task.context.sink_process_context->resume();
    auto& localTaskExecutor = UniqueTaskExecutor::localExec();
    auto sink_fcontext = localTaskExecutor.getCurrentSink();
+
+#ifdef USE_INTERRUPTS
    leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
    leanstore_osv_debug::trace_try_lock2(sink_fcontext, (void*)task);
+#endif
 
    boost::context::detail::ontop_fcontext(sink_fcontext, (void*)task, localTaskExecutor.store_task_on_yield);
-#if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
-   // clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
+#if defined(USE_INTERRUPTS)
+#if !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
+   clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
 #endif
    arch::irq_enable();
+#endif
    return;
 }
 // -------------------------------------------------------------------------------------
@@ -315,18 +351,6 @@ void UniqueTaskExecutor::cycle()
          leanstore::ThreadCounters::myCounters().exec_cycles += everyPoll;
          counters.cycles = cycles;
          ioChannel.poll();
-         if (cycles % (8 * 1024)) {
-            auto now = getSeconds();
-            if (now - counterUpdateTime > 0.99999) {
-               counterUpdateTime = now;
-               /*COUNTERS_BLOCK()*/ {
-                  ioChannel.counters.updateLeanStoreCounters();
-               }
-               /*COUNTERS_BLOCK()*/ {
-                  ioChannel.counters.reset();
-               }
-            }
-         }
       }
 
       // i want something here that
@@ -367,6 +391,7 @@ void UniqueTaskExecutor::cycle()
          // std::cout << "RUNNING TASK " << std::hex << _currentTask.get() << std::endl;
          counters.tasksRun++;
          if (_currentTask->state == TaskState::ReadyLock) {
+            tasksRun++;
             if (!_currentTask->lock->try_lock()) {
                tasks.push_back(std::move(_currentTask));
                COUNTERS_BLOCK()
@@ -375,8 +400,9 @@ void UniqueTaskExecutor::cycle()
                }
                break;
             }
+         } else {
+            tasksRun++;
          }
-         tasksRun++;
          TaskState state = runCurrentTask();
          switch (state) {
             case TaskState::Done:

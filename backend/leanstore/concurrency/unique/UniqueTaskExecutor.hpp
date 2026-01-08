@@ -1,4 +1,5 @@
-#pragma once
+#ifndef UNIQUETASKEXEC
+#define UNIQUETASKEXEC
 // -------------------------------------------------------------------------------------
 #include "./utils/ContextPool.hpp"
 #include "./utils/DummyNic.hpp"
@@ -27,7 +28,7 @@
 
 #define USE_INTERRUPTS
 // #define USE_PERIODIC_TIMER
-// #define USE_WATCHDOG
+#define USE_WATCHDOG
 #define INTERRUPT_ADD_SYNC
 #define INTERRUPT_TIME 40000
 
@@ -35,7 +36,6 @@
 namespace mean
 {
 // -------------------------------------------------------------------------------------
-
 // RAII wrapper for UniqueTask to auto-release memory
 class UniqueTaskDeleter
 {
@@ -151,5 +151,8 @@ class UniqueTaskExecutor : public ThreadBase
    static void yieldRunningTask(UniqueTask* task, TaskState ts);
 };
 // -------------------------------------------------------------------------------------
+extern thread_local bool run_task;
+extern thread_local std::atomic<uint64_t> last_timestamp;
 }  // namespace mean
 // -------------------------------------------------------------------------------------
+#endif

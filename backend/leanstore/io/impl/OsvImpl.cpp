@@ -53,7 +53,7 @@ u64 OsvEnv::storageSize()
 
 void* OsvEnv::allocIoMemory(size_t size, size_t align)
 {
-   void* buffer = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+   void* buffer = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
    null_check(buffer, "Memory allocation failed");
    memset(buffer, 0, size); 
    madvise(buffer, size, MADV_HUGEPAGE);
@@ -62,7 +62,7 @@ void* OsvEnv::allocIoMemory(size_t size, size_t align)
 
 void* OsvEnv::allocIoMemoryChecked(size_t size, size_t align)
 {
-   void* buffer = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+   void* buffer = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
 
    assert(buffer != MAP_FAILED);
    madvise(buffer, size, MADV_HUGEPAGE);
