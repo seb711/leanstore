@@ -20,7 +20,11 @@ bool YieldLock::try_lock()
    arch::irq_disable();
    bool b = !_lock.test_and_set(std::memory_order_acquire);
    if (b) {
+      #ifdef MEAN_USE_TASKING
+      _owner = mean::exec::getId(); // mean::exec::getId();
+      #else
       _owner = (uintptr_t) mean::UniqueTaskExecutor::localExec()._currentTask.get(); // mean::exec::getId();
+      #endif
       leanstore_osv_debug::trace_lock(this, mean::UniqueTaskExecutor::localExec()._currentTask.get()); 
    }
    arch::irq_enable(); 
