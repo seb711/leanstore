@@ -1,6 +1,8 @@
 #pragma once
 // -------------------------------------------------------------------------------------
-#include "MessageHandler.hpp"
+#include "leanstore/concurrency/utils/ThreadBase.hpp"
+#include "leanstore/concurrency/utils/YieldLock.hpp"
+#include "leanstore/concurrency/utils/MessageHandler.hpp"
 #include "leanstore/io/IoAbstraction.hpp"
 #include <osv/jumpmu.hh>
 // -------------------------------------------------------------------------------------
@@ -58,6 +60,51 @@ class Task
    long dbgAddr = 0;
    // -------------------------------------------------------------------------------------
    TaskState getState();
+};
+// -------------------------------------------------------------------------------------
+class ThreadWithJump : public Thread
+{
+   jumpmu::JumpMUContext jump_context;
+  public:
+   // -------------------------------------------------------------------------------------
+   struct meta_t {
+      std::mutex mutex;
+      std::condition_variable cv;
+      TaskFunction task;
+      bool wt_ready = true;
+      bool job_set = false;
+      bool job_done = false;
+   } meta;
+   std::atomic<ThreadWithJump*> next; 
+   leanstore::cr::Worker* this_worker;
+   ThreadWithJump(std::function<void()> fun, std::string name = "Thread", int id = -1) : Thread(fun, name, id) {}
+   int process() override
+   {
+      jumpmu::thread_local_jumpmu_ctx = &jump_context;
+      fun();
+      jumpmu::thread_local_jumpmu_ctx = nullptr;
+      return 0;
+   }
+   void sendTask(TaskFunction taskFun) {
+      std::unique_lock guard(meta.mutex);
+      meta.cv.wait(guard, [&]() { return !meta.job_set && meta.wt_ready; });
+      meta.job_set = true;
+      meta.job_done = false;
+      meta.task = taskFun;
+      guard.unlock();
+      meta.cv.notify_one();
+      //guard.lock();
+      //meta.cv.wait(guard, [&]() { return meta.job_done; });
+   }
+   void sendTaskBlocking(TaskFunction taskFun) {
+      sendTask(taskFun);
+      std::unique_lock guard(meta.mutex);
+      meta.cv.wait(guard, [&]() { return meta.job_done; });
+   }
+   void shutdown() {
+      stop();
+      meta.cv.notify_one();
+   }
 };
 // -------------------------------------------------------------------------------------
 }  // namespace mean

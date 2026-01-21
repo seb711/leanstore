@@ -5,7 +5,6 @@
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
 #include "leanstore/storage/buffer-manager/DTRegistry.hpp"
 #include "leanstore/concurrency/Mean.hpp"
-#include "leanstore/concurrency/TaskManager.hpp"
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 #include <stdio.h>

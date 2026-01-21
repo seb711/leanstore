@@ -46,11 +46,11 @@ void CRTable::open()
     columns.emplace("tx_wait_latency_us",
         [&](Column& col) { col << (local_thread_tx > 0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_wait_tx_time) / local_thread_tx : 0); });
     
-     columns.emplace("time_counter_0",
-         [&](Column& col) { col << (local_time_counter_0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_0) / local_time_counter_0 : 0); });
-
     //  columns.emplace("time_counter_0",
-     //    [&](Column& col) { col << local_time_counter_0; });
+    //      [&](Column& col) { col << local_time_counter_0 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_0) / local_time_counter_0 : 0); });
+
+     columns.emplace("time_counter_0",
+       [&](Column& col) { col << local_time_counter_0; });
     
     columns.emplace("time_counter_1",
     //     [&](Column& col) { col << (local_time_counter_1 ? sum(WorkerCounters::worker_counters, &WorkerCounters::total_time_sum_1) / local_time_counter_1 : 0); });

@@ -47,6 +47,7 @@ struct BufferFrame& FreeList::tryPop(JMUW<std::unique_lock<mean::mmutex>>& lock)
          jumpmu::jump();
       }
    } else {
+      // printf("no free pages\n"); 
       lock->unlock();
       jumpmu::jump(jumpmu::UserJumpReason::NoFreePages);
    }

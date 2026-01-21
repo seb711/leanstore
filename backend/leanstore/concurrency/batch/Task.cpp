@@ -1,8 +1,8 @@
 // -------------------------------------------------------------------------------------
 #include "TaskExecutor.hpp"
 // -------------------------------------------------------------------------------------
-#include "MessageHandler.hpp"
-#include "ThreadBase.hpp"
+#include "leanstore/concurrency/utils/MessageHandler.hpp"
+#include "leanstore/concurrency/utils/ThreadBase.hpp"
 // -------------------------------------------------------------------------------------
 #include "boost/context/continuation.hpp"
 #include "boost/context/continuation_fcontext.hpp"

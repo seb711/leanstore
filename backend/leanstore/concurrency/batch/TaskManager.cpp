@@ -1,7 +1,7 @@
 // -------------------------------------------------------------------------------------
+#include "Task.hpp"
 #include "TaskManager.hpp"
 #include "leanstore/concurrency/Mean.hpp"
-#include "leanstore/concurrency/Task.hpp"
 #include "leanstore/io/IoInterface.hpp"
 // -------------------------------------------------------------------------------------
 #include <algorithm>
@@ -50,7 +50,7 @@ void TaskManager::init(int workerThreads, int exclusiveThreads, IoOptions ioOpti
              // -------------------------------------------------------------------------------------
              while (ThreadBase::this_thread().keepRunning()) {
                 auto& meta = static_cast<ThreadWithJump*>(&ThreadBase::this_thread())->meta;
-                std::unique_lock guard(meta.mutex);
+                std::unique_lock<std::mutex> guard(meta.mutex);
                 meta.cv.wait(guard, [&]() { return ThreadBase::this_thread().keepRunning() == false || meta.job_set; });
                 if (!ThreadBase::this_thread().keepRunning()) {
                    break;
@@ -93,7 +93,7 @@ void TaskManager::adjustWorkerCount(int workerThreads) {
          int id = i + exclusiveThreads;
          ensure(id < ioChannels);
          // physical channel
-         execs.push_back(std::make_unique<TaskExecutor>(messageManager->getMessageHandler(id), execIoChannel(), id));
+         execs.push_back(std::make_unique<TaskExecutor>(messageManager->getMessageHandler(id), IoInterface::instance().getIoChannel(id), id));
          execs.back()->setCpuAffinityBeforeStart(id + threadAffinityOffset);
          workers[id] = new leanstore::cr::Worker(id, workers, workerThreads + exclusiveThreads);
          execs.back()->this_worker = workers[id];
@@ -219,7 +219,7 @@ int TaskManager::execId()
 // -------------------------------------------------------------------------------------
 IoChannel& TaskManager::execIoChannel()
 {
-   return IoInterface::instance().getIoChannel(0);
+   return TaskExecutor::localExec().ioChannel;
 }
 // -------------------------------------------------------------------------------------
 // task

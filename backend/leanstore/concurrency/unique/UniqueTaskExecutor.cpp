@@ -5,8 +5,8 @@
 #include "Time.hpp"
 #include "leanstore/concurrency-recovery/Worker.hpp"
 #include "leanstore/concurrency/Mean.hpp"
-#include "leanstore/concurrency/MessageHandler.hpp"
-#include "leanstore/concurrency/ThreadBase.hpp"
+#include "leanstore/concurrency/utils/MessageHandler.hpp"
+#include "leanstore/concurrency/utils/ThreadBase.hpp"
 #include "leanstore/concurrency/unique/UniqueTask.hpp"
 #include "leanstore/profiling/counters/CPUCounters.hpp"
 #include "leanstore/profiling/counters/ThreadCounters.hpp"
@@ -43,7 +43,7 @@ namespace mean
 #define DEBUG_TASK_COUNTERS_BLOCK(X)
 #endif
 
-static uint64_t opentasks = 0;
+thread_local uint64_t opentasks = 0;
 // std::atomic<bool> TaskExecutor::pause = true;
 // std::atomic<int> TaskExecutor::pause_seen = 0;
 //  HERE WE NEED TO DEFINE ALL THE FUNCTION OF FIBERS
@@ -70,7 +70,8 @@ boost::context::detail::transfer_t UniqueTaskExecutor::store_task_on_yield(boost
 // RAII wrapper implementation
 void UniqueTaskDeleter::operator()(UniqueTask* task) const
 {
-   opentasks--;
+   opentasks--; 
+   // leanstore_osv_debug::trace_unlock(task, &UniqueTaskExecutor::localExec()); 
    if (task) {
       UniqueTaskExecutor::localExec().g_task_context_pool->deallocate(task->context);
    }
@@ -149,6 +150,8 @@ UniqueTaskExecutor::UniqueTaskPtr UniqueTaskExecutor::createTask(TaskFunction fu
    g_task_context_pool->allocate(task->context);
    initializeTaskContext(task->context, task->context.stack, TaskContextPool::getStackSize(), entry_fn);
 
+   // leanstore_osv_debug::trace_lock(task, &UniqueTaskExecutor::localExec()); 
+
    opentasks++;
 
    return UniqueTaskPtr(task);
@@ -163,9 +166,83 @@ UniqueTaskExecutor::UniqueTaskExecutor(MessageHandler& msg, IoChannel& ioChannel
    initTaskContextPool(5000);
    tl_task_context_pool = g_task_context_pool;
 
-   // we need to save the interrupt stack here
+// we need to save the interrupt stack here
+#ifdef USE_INTERRUPTS
+   arch::irq_disable();
+
+   auto timer_handler = []() {
+      leanstore::WorkerCounters::myCounters().time_counter_1++;
+      if (!run_task) {
+         leanstore::WorkerCounters::myCounters().time_counter_2++;
+         return;
+      }
+
+      assert(!arch::irq_enabled());
+
+      void* b;
+      __asm__ volatile("mov %%rbp, %0" : "=r"(b) : :);
+
+      if (UniqueTaskExecutor::localExec()._currentTask != nullptr && UniqueTaskExecutor::localExec()._currentSink != nullptr) {
+         // for now we here do nothing more than just interrupting and yield to the next one
+         // this is enough for now but in the future we need here a more thorough logic
+
+#ifdef USE_WATCHDOG
+         last_timestamp = 0;
+#endif
+
+         leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
+         assert(UniqueTaskExecutor::localExec()._currentSink != nullptr);
+         assert(UniqueTaskExecutor::localExec()._currentTask.get() != nullptr);
+
+         boost::context::detail::ontop_fcontext(UniqueTaskExecutor::localExec().getCurrentSink(),
+                                                (void*)UniqueTaskExecutor::localExec()._currentTask.get(), UniqueTaskExecutor::store_task_on_yield);
+
+#if !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
+         clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
+#endif
+         return;
+      } else {
+         // in the case that we are not running a job right now we can just return and skip the logic
+         return;
+      }
+   };
+
+   // Register the timer handler
+   auto vector = idt.register_handler(timer_handler);
+
+#ifndef USE_WATCHDOG
+   clock_event->reset_vector(vector);
+#ifdef USE_PERIODIC_TIMER
+   clock_event->set_periodic(true);
+   clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
+#endif
+#else
+   clock_event->set_periodic(true);
+   clock_event->disable();
+   // then we are basically good to go
+
+   // what we need to do in the other logics
+   // set the working flag correct
+
+   // IF LAPIC TIMER SET
+   // just removes the current LAPIC timer handler from the core
+   // bend the lapic timer to the vector we have just created
+   // set timer to 0
+   // IF WATCHDOG THREAD
+   // register worker thread
+   // END
+   // how would you implement a watchdog thread?
+   // 0. store the starting times for the thread to know if we should preempt
+   // 1. start watchdog thread that continously checks on the current core the timer
+   // 2. if too high sends the interrupt
+   leanstore_osv_debug::create_watchdog(INTERRUPT_TIME, 2, vector, last_timestamp);
+#endif
+   arch::irq_enable();
+#endif
+
+   printf("create unique task executor %i\n", id);
    _sinkInterruptStack = static_cast<char*>(malloc(8192)) + 8192;
-   ;  // leanstore_osv_debug::get_interrupt_stack();
+   // leanstore_osv_debug::get_interrupt_stack();
 
    // setup the interrupt here
 }
@@ -220,6 +297,8 @@ TaskState UniqueTaskExecutor::runCurrentTask()
 // -------------------------------------------------------------------------------------
 void UniqueTaskExecutor::yieldCurrentTask(TaskState ts)
 {
+   assert(arch::irq_enabled());
+
    if (localExec()._currentTask.get() == nullptr) {
       // return;
       abort();
@@ -241,7 +320,6 @@ void UniqueTaskExecutor::yieldCurrentTask(TaskState ts)
    auto sink_fcontext = localTaskExecutor.getCurrentSink();
 
 #ifdef USE_INTERRUPTS
-   // leanstore_osv_debug::trace_try_lock(UniqueTaskExecutor::localExec()._currentSink, (void*)&task);
    leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
 #endif
    boost::context::detail::ontop_fcontext(sink_fcontext, (void*)&task, localTaskExecutor.store_task_on_yield);
@@ -257,6 +335,7 @@ void UniqueTaskExecutor::yieldCurrentTask(TaskState ts)
 }
 void UniqueTaskExecutor::yieldRunningTask(UniqueTask* task, TaskState ts)
 {
+   assert(arch::irq_enabled());
 #ifdef USE_INTERRUPTS
    arch::irq_disable();
 #if !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
@@ -274,7 +353,6 @@ void UniqueTaskExecutor::yieldRunningTask(UniqueTask* task, TaskState ts)
 
 #ifdef USE_INTERRUPTS
    leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
-   leanstore_osv_debug::trace_try_lock2(sink_fcontext, (void*)task);
 #endif
 
    boost::context::detail::ontop_fcontext(sink_fcontext, (void*)task, localTaskExecutor.store_task_on_yield);
@@ -364,8 +442,8 @@ void UniqueTaskExecutor::cycle()
             // if (cycles % (everyPoll * 128) == 0) {
             //    std::cout << "test " << requests << std::endl;
             // }
-            leanstore::WorkerCounters::myCounters().total_time_sum_0 += requests;
-            leanstore::WorkerCounters::myCounters().time_counter_0++;
+            // leanstore::WorkerCounters::myCounters().total_time_sum_0 += requests;
+            // leanstore::WorkerCounters::myCounters().time_counter_0++;
 
             for (int i = 0; i < requests; i++) {
                UniqueTaskPtr task = createTask(workloadFunction, trampoline);  // new UniqueTask(fun);
@@ -388,11 +466,11 @@ void UniqueTaskExecutor::cycle()
       int tasksRun = 0;
       // WE HAVE HERE A INDIVIUAL SCHEDULING DECISION -> IO TASKS GET WORKED THROUGH FIRST -> WHY?
       while (tasksRun < maxTasksRun && popTask(_currentTask)) {  // pop after maxTaskRun check
-         // std::cout << "RUNNING TASK " << std::hex << _currentTask.get() << std::endl;
          counters.tasksRun++;
          if (_currentTask->state == TaskState::ReadyLock) {
             tasksRun++;
             if (!_currentTask->lock->try_lock()) {
+               leanstore::WorkerCounters::myCounters().time_counter_0++;
                tasks.push_back(std::move(_currentTask));
                COUNTERS_BLOCK()
                {
@@ -400,6 +478,7 @@ void UniqueTaskExecutor::cycle()
                }
                break;
             }
+            // _currentTask->lock->unlock();
          } else {
             tasksRun++;
          }
@@ -485,6 +564,7 @@ void UniqueTaskExecutor::cycle()
 }
 void UniqueTaskExecutor::registerPageProvider(void* bm_ptr, u64 partition_id)
 {
+   printf("register page provider %lu\n", partition_id); 
    this->partition_id = partition_id;
    this->buffer_manager = static_cast<BufferManager*>(bm_ptr);
    ensure(buffer_manager->cooling_partitions_count > partition_id);

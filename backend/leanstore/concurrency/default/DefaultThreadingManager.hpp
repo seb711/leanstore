@@ -1,11 +1,10 @@
 #pragma once
 // -------------------------------------------------------------------------------------
-#include "BlockedRange.hpp"
-#include "MessageHandler.hpp"
-#include "Task.hpp"
-#include "ThreadBase.hpp"
+#include "leanstore/utils/BlockedRange.hpp"
+#include "leanstore/concurrency/utils/MessageHandler.hpp"
+#include "leanstore/concurrency/utils/ThreadBase.hpp"
+#include "leanstore/concurrency/batch/Task.hpp"
 #include "leanstore/concurrency-recovery/Worker.hpp"
-#include "leanstore/concurrency/ThreadingManager.hpp"
 #include "leanstore/io/IoInterface.hpp"
 // -------------------------------------------------------------------------------------
 #include <condition_variable>

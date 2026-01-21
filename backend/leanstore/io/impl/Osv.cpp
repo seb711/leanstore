@@ -102,7 +102,7 @@ uint64_t NVMeController::nsNumLbas()
 uint32_t NVMeController::requestMaxQPairs()
 {
    // TODO: RETRIEVE THIS BY OSV DRIVER (-> IMPLEMENT THE METHODS IN OSV)
-   return 4;
+   return 8;
 }
 // -------------------------------------------------------------------------------------
 void NVMeController::allocateQPairs(int number)

@@ -3,7 +3,7 @@
 #include "leanstore/Config.hpp"
 #include "leanstore/concurrency/Mean.hpp"
 #include "leanstore/utils/RandomGenerator.hpp"
-#include "leanstore/concurrency/YieldLock.hpp"
+#include "leanstore/concurrency/utils/YieldLock.hpp"
 // -------------------------------------------------------------------------------------
 #include <osv/jumpmu.hh>
 // -------------------------------------------------------------------------------------
@@ -67,7 +67,7 @@ struct alignas(64) HybridLatch {
    void assertExclusivelyLatched() { assert(isExclusivelyLatched()); }
    void assertNotExclusivelyLatched() { assert(!isExclusivelyLatched()); }
    // -------------------------------------------------------------------------------------
-   bool isExclusivelyLatched() { return (version & LATCH_EXCLUSIVE_BIT) == LATCH_EXCLUSIVE_BIT; }
+   bool isExclusivelyLatched() const { return (version & LATCH_EXCLUSIVE_BIT) == LATCH_EXCLUSIVE_BIT; }
 };
 static_assert(sizeof(HybridLatch) == 64, "");
 // -------------------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 #include "Partition.hpp"
 
 #include "leanstore/utils/Misc.hpp"
+#include <osv/leanstore_debug.hh>
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 #include <sys/mman.h>
@@ -18,10 +19,9 @@ void* malloc_huge(size_t size)
    madvise(p, size, MADV_HUGEPAGE);
    memset(p, 0, size);
    return p;
-}
-// -------------------------------------------------------------------------------------
-HashTable::Entry::Entry(PID key) : key(key) {}
-HashTable::Entry::Entry() : key(0) {}
+}// -------------------------------------------------------------------------------------
+HashTable::Entry::Entry(PID key) : key(key), next(nullptr) {}
+HashTable::Entry::Entry() : key(0), next(nullptr) {}
 // -------------------------------------------------------------------------------------
 HashTable::HashTable(u64 sizeInBits) : alloc_stack(1ull << sizeInBits)
 {
@@ -54,6 +54,10 @@ IOFrame& HashTable::insert(PID key)
    uint64_t pos = hashKey(key) & mask;
    e->next = entries[pos];
    entries[pos] = e;
+   
+   // Assert no self-loop after insertion
+   assert(e->next != e && "Self-loop detected: entry points to itself");
+   
    return e->value;
 }
 // -------------------------------------------------------------------------------------
@@ -61,10 +65,15 @@ HashTable::Handler HashTable::lookup(PID key)
 {
    uint64_t pos = hashKey(key) & mask;
    Entry** e_ptr = entries + pos;
-   Entry* e = *e_ptr;  // e is only here for readability
+   Entry* e = *e_ptr;
+   
    while (e) {
+      // Assert no self-loop before processing
+      assert(e->next != e && "Self-loop detected in linked list");
+      
       if (e->key == key)
          return {e_ptr};
+      
       e_ptr = &(e->next);
       e = e->next;
    }
@@ -74,13 +83,20 @@ HashTable::Handler HashTable::lookup(PID key)
 void HashTable::remove(HashTable::Handler& handler)
 {
    Entry* to_delete = *handler.holder;
-   *handler.holder = (*handler.holder)->next;
+   assert(to_delete->next != to_delete && "Self-loop detected on entry to be removed");
+   
+   *handler.holder = to_delete->next;
+   to_delete->next = nullptr;  // Clear before returning to pool
    alloc_stack.ret(to_delete);
 }
 // -------------------------------------------------------------------------------------
 void HashTable::remove(u64 key)
 {
    auto handler = lookup(key);
+   if (handler.holder == nullptr) {
+      // already deleted
+      return; 
+   }
    assert(handler);
    remove(handler);
 }
@@ -89,9 +105,14 @@ bool HashTable::has(u64 key)
 {
    uint64_t pos = hashKey(key) & mask;
    auto e = entries[pos];
+   
    while (e) {
+      // Assert no self-loop during traversal
+      assert(e->next != e && "Self-loop detected in linked list");
+      
       if (e->key == key)
          return true;
+      
       e = e->next;
    }
    return false;

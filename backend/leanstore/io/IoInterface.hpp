@@ -2,7 +2,7 @@
 
 #include <unordered_map>
 #include "IoAbstraction.hpp"
-#include "leanstore/concurrency/MessageHandler.hpp"
+#include "leanstore/concurrency/utils/MessageHandler.hpp"
 // -------------------------------------------------------------------------------------
 namespace mean
 {

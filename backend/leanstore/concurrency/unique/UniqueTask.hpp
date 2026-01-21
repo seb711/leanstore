@@ -1,8 +1,9 @@
 #pragma once
 // -------------------------------------------------------------------------------------
 #include <osv/jumpmu.hh>
-#include "leanstore/concurrency/MessageHandler.hpp"
-#include "leanstore/concurrency/Task.hpp"
+#include "leanstore/concurrency/utils/MessageHandler.hpp"
+#include "leanstore/concurrency/utils/YieldLock.hpp"
+#include "leanstore/concurrency/batch/Task.hpp"
 #include "leanstore/io/IoAbstraction.hpp"
 // -------------------------------------------------------------------------------------
 #include "boost/context/continuation.hpp"

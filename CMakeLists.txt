@@ -24,7 +24,7 @@ endif()
 
 add_compile_options(-Werror -Wno-error=unused-parameter -Wno-error=unused-variable -Wno-error=unused-local-typedefs -Wno-error=unused-but-set-variable -Wno-error=maybe-uninitialized -Wno-error=sign-compare -Wno-error=unused-function -Wno-error=missing-field-initializers) 
 
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG -O1")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3")
 #set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fsanitize=address")
 #set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fsanitize=undefined")

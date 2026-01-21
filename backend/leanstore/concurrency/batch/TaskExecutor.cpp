@@ -1,13 +1,13 @@
 // -------------------------------------------------------------------------------------
 #include "TaskExecutor.hpp"
+#include "Task.hpp"
 // -------------------------------------------------------------------------------------
 #include "Exceptions.hpp"
-#include "MessageHandler.hpp"
-#include "ThreadBase.hpp"
 #include "Time.hpp"
-#include "leanstore/concurrency-recovery/Worker.hpp"
+#include "leanstore/concurrency/utils/MessageHandler.hpp"
+#include "leanstore/concurrency/utils/ThreadBase.hpp"
 #include "leanstore/concurrency/Mean.hpp"
-#include "leanstore/concurrency/Task.hpp"
+#include "leanstore/concurrency-recovery/Worker.hpp"
 #include "leanstore/profiling/counters/CPUCounters.hpp"
 #include "leanstore/profiling/counters/ThreadCounters.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
@@ -101,34 +101,6 @@ int TaskExecutor::process()
    // std::cout << "# task exec end return " << id() << " #" << std::endl << std::flush;
    return 0;
 }
-#ifdef ENABLE_CYLCLETRACE
-std::vector<std::pair<char, u64>> cyTrace;
-u64 cyTracePos = 0;
-void initCyTrace() {
-   cyTrace.resize(1000000);
-}
-inline void pushCyTrace(char type, u64 tp) {
-   if (cyTracePos == cyTrace.size())
-      cyTracePos = 0;
-   cyTrace[cyTracePos++] = std::pair<char,u64>(type, tp);
-}
-void printCyTrace() {
-   int pos = cyTracePos;
-   int cycle = 0;
-   for (int i = 0; i < cyTrace.size(); i++) {
-      if (pos == cyTrace.size())
-         pos = 0;
-      auto& c = cyTrace[pos++];
-      std::cout << i << "," << c.first << "," << c.second << "," << cycle << std::endl;
-      if (c.first == 'm')
-         cycle++;
-   }
-}
-#else
-void initCyTrace() {}
-inline void pushCyTrace(char type, u64 tp) { }
-void printCyTrace() { }
-#endif
 bool TaskExecutor::popTask(Task*& task) {
    if (tasks_io_done.try_pop(task)) {
       return true;
@@ -137,9 +109,7 @@ bool TaskExecutor::popTask(Task*& task) {
 }
 void TaskExecutor::cycle()
 {
-   initCyTrace();
    // -------------------------------------------------------------------------------------
-   DEBUG_TASK_COUNTERS_BLOCK(auto lastCycle = readTSC(); pushCyTrace('s', lastCycle); );
    u64 cycles = 0;
    u64 cyclesNothingRun = 0;
    const u64 sleepIfNothingRunForCycles = 100000;
@@ -157,40 +127,15 @@ void TaskExecutor::cycle()
       constexpr int everyPoll = 64;
       constexpr int everyPP = 32;
       constexpr int delaySubmit = 32;
-      //  DEBUG_TASK_COUNTERS_BLOCK(
-      //    const auto ioPollEnd = readTSC(); counters.ioPollDuration += ioPollEnd - lastCycle; pushCyTrace('i', ioPollEnd);
-      //   counters.taskCount = tasks.size(); counters.taskWaitingCount = waitingTaskCount;
-      // )
       // run poll Routines
       // TODO for runs with >> 60 threads, this hast to be changed
       if (cycles % (8*1024) == 0 || cyclesNothingRun > sleepIfNothingRunForCycles) {
          messageHandler.poll(this);
          counters.msgPollCalled++;
       }
-      // DEBUG_TASK_COUNTERS_BLOCK(
-      //    const auto pollerStart = readTSC(); counters.msgPollDuration += (pollerStart - ioPollEnd) > 0 ? pollerStart - ioPollEnd : 0 ; pushCyTrace('m', pollerStart);
-      // )
-      /*
-         if (pollers.size() > 0) {
-      // std::cout << "run pollers..." << std::endl;
-      for (auto& p : pollers) {
-      // std::cout << "run pollers i " << std::endl;
-      // p->poll();
-      runUserThread(*p);
-      //	std::cout << "done run pollers i " << std::endl;
-      }
-      }
-      */
       if (cycles % everyPP  == 0) {
          pageProviderCycle();
       }
-      /* DEBUG_TASK_COUNTERS_BLOCK(
-         const auto ioSubStart = readTSC();
-         const auto pollerDuration = ioSubStart - pollerStart;
-         counters.pollerDuration += pollerDuration;
-         pushCyTrace('p', ioSubStart);
-         if (pollerDuration > leanstore::ThreadCounters::myCounters().exec_cycl_max_task_us) { leanstore::ThreadCounters::myCounters().exec_cycl_max_subm_us = pollerDuration; }
-      ) */
       if (delaySubmit == 0) {
          int submitted = ioChannel.submit();
          DEBUG_TASK_COUNTERS_BLOCK(
@@ -223,14 +168,6 @@ void TaskExecutor::cycle()
             }
          }
       }
-
-      /* DEBUG_TASK_COUNTERS_BLOCK(
-         const auto taskStart = readTSC();
-         const auto subDration = (taskStart - ioSubStart) > 0 ? taskStart - ioSubStart: 0;
-         if (subDration > leanstore::ThreadCounters::myCounters().exec_cycl_max_task_us) { leanstore::ThreadCounters::myCounters().exec_cycl_max_subm_us = subDration; }
-         counters.ioSubDuration += subDration;
-         pushCyTrace('s', taskStart);
-      ) */
       // -------------------------------------------------------------------------------------
       // schedule next task
       const int maxTasksRun = 1;
@@ -312,37 +249,10 @@ void TaskExecutor::cycle()
       if (tasksRun == 0) {
          COUNTERS_BLOCK() { leanstore::ThreadCounters::myCounters().exec_no_tasks_run++; }
          cyclesNothingRun++;
-         /*
-         if (cyclesNothingRun > sleepIfNothingRunForCycles) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            if (waitingTaskCount > 0 && cyclesNothingRun == sleepIfNothingRunForCycles + 5000) { // thread did not move in 5 seconds
-               //ensure(false);
-               std::cout << "something might be stuck: thread: " << mean::exec::getId() << " native: " << std::hex <<std::this_thread::get_id() << std::dec;
-               std::cout << " waiting: " << waitingTaskCount << " tasks: " << tasks.contains << " io_done: " << tasks_io_done.contains  << std::endl;
-               //raise(SIGINT);
-            } 
-         }
-         //*/
       } else {
          cyclesNothingRun = 0;
       }
-      /* DEBUG_TASK_COUNTERS_BLOCK(
-         const auto taskEnd = readTSC();
-         const auto taskDuration = taskEnd - taskStart;
-         counters.taskDuration += taskDuration;
-         const auto totalDuration = taskEnd - lastCycle;
-         if (taskDuration > leanstore::ThreadCounters::myCounters().exec_cycl_max_task_us) { leanstore::ThreadCounters::myCounters().exec_cycl_max_task_us = taskDuration; }
-         if (totalDuration > leanstore::ThreadCounters::myCounters().exec_cycl_max_dur) { leanstore::ThreadCounters::myCounters().exec_cycl_max_dur = totalDuration; }
-         
-            if (totalDuration / 2 / 1000 > 10000) {
-            std::cout << "long cycle.. thr: " << mean::exec::getId() << " duration: " << totalDuration / 2 / 1000<<  std::endl;
-            }
-            
-         lastCycle = taskEnd; pushCyTrace('t', taskEnd);
-         ) */
-         // std::this_thread::sleep_for(std::chrono::seconds(1));
    }
-   printCyTrace();
 }
 
 // -------------------------------------------------------------------------------------
@@ -357,25 +267,6 @@ void TaskExecutor::registerPageProvider(void* bm_ptr, u64 partition_id) {
    buffer_manager->cooling_partitions[partition_id].state.debug_thread = mean::exec::getId();
 }
 void TaskExecutor::pageProviderCycle() {
-   /*
-      if (TaskExecutor::pause) {
-   // all ios must be done to have a save partition reflow
-   if (local_pause_seen) {
-   return;
-   }
-   bool allDone = true;
-   for (u64 p_i = p_begin; p_i < p_end; p_i++) {
-   allDone &= buffer_manager->partitions[p_i].state.submitted == buffer_manager->partitions[p_i].state.done;
-   }
-   if (allDone) {
-   TaskExecutor::pause_seen++;
-   local_pause_seen = true;
-   }
-   return;
-   } else if (local_pause_seen) {
-   local_pause_seen = false;
-   }
-   */
    if (buffer_manager && partition_id >= 0) {
       buffer_manager->pageProviderCycle(partition_id);
    }

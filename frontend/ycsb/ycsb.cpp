@@ -67,7 +67,7 @@ void run_ycsb() {
       cout << "-------------------------------------------------------------------------------------" << endl;
       cout << "Inserting values" << endl;
       begin = chrono::high_resolution_clock::now();
-      mean::BlockedRange bb(0, (u64)1);
+      BlockedRange bb(0, (u64)1);
       ensure((bool)((bb.end - bb.begin) >= 1));
 #if defined(MEAN_USE_TASKING) || defined(MEAN_USE_UNIQUE_TASKING)
 // #if 0
@@ -168,7 +168,7 @@ auto ycsb_insert_fun = [&]() {
            mean::task::yield();
             running_threads_counter--;
       };
-      mean::BlockedRange bb(0, (u64)1000000000000ul);
+      BlockedRange bb(0, (u64)1000000000000ul);
       auto startTsc = mean::readTSC();
       auto startTP = mean::getTimePoint();
       mean::task::parallelFor(bb, ycsb_tx, FLAGS_worker_tasks, 100000, true);
@@ -203,7 +203,7 @@ int main(int argc, char** argv)
          FLAGS_worker_threads, //std::min(std::thread::hardware_concurrency(), FLAGS_tpcc_warehouse_count),
          0/*FLAGS_pp_threads*/, ioOptions);
    } else {
-      ioOptions.channelCount = 1; // FLAGS_worker_threads + FLAGS_pp_threads;
+      ioOptions.channelCount = 3; // FLAGS_worker_threads + FLAGS_pp_threads;
       mean::env::init(FLAGS_worker_threads, FLAGS_pp_threads, ioOptions);
    }
    mean::env::start(run_ycsb);

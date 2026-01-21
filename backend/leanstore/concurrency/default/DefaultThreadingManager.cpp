@@ -1,7 +1,6 @@
 // -------------------------------------------------------------------------------------
 #include "DefaultThreadingManager.hpp"
-#include "leanstore/concurrency/ConnectedIoChannel.hpp"
-#include "leanstore/concurrency/Task.hpp"
+#include "leanstore/concurrency/batch/Task.hpp"
 #include "leanstore/io/IoInterface.hpp"
 #include "leanstore/io/impl/LibaioImpl.hpp"
 #include "leanstore/profiling/counters/CPUCounters.hpp"

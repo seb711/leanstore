@@ -1,10 +1,10 @@
 #pragma once
 // -------------------------------------------------------------------------------------
 #include "Exceptions.hpp"
-#include "MessageHandler.hpp"
 #include "Task.hpp"
-#include "ThreadBase.hpp"
 #include "Units.hpp"
+#include "leanstore/concurrency/utils/MessageHandler.hpp"
+#include "leanstore/concurrency/utils/ThreadBase.hpp"
 #include "leanstore/concurrency-recovery/Worker.hpp"
 #include "leanstore/io/IoAbstraction.hpp"
 #include "leanstore/profiling/counters/TaskExecutorCounters.hpp"

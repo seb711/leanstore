@@ -3,9 +3,8 @@
 #include <libaio.h>
 // -------------------------------------------------------------------------------------
 #include "unique/UniqueTaskManager.hpp"
-#include "TaskManager.hpp"
-#include "ThreadingManager.hpp"
-#include "DefaultThreadingManager.hpp"
+#include "batch/TaskManager.hpp"
+#include "default/DefaultThreadingManager.hpp"
 #include "osv/OsvJobManager.hpp"
 // -------------------------------------------------------------------------------------
 #include <mutex>
@@ -21,9 +20,6 @@ namespace mean
 #ifdef MEAN_USE_DEFAULT_THREADING
 #pragma message ("Compiling with MEAN_USE_THREADING enabled")
 using ExecEnv = DefaultThreadingManager;
-#elifdef MEAN_USE_THREADING
-#pragma message ("Compiling with MEAN_USE_THREADING enabled")
-using ExecEnv = ThreadingManager;
 #elif defined(MEAN_USE_UNIQUE_TASKING)
 #pragma message ("Compiling with MEAN_USE_TASKING enabled")
 using ExecEnv = UniqueTaskManager;

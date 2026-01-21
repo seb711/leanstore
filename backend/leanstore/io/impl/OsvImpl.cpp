@@ -28,6 +28,7 @@ void OsvEnv::init(IoOptions options)
    // allocates for every NVMController queues
    controller->allocateQPairs();
    int qs = controller->qpairSize();
+   printf("use %i channels %p\n", qs, &channels); 
    for (int i = 0; i < qs; i++) {
       channels.push_back(std::make_unique<OsvChannel>(options, *controller, i));
    }
@@ -35,9 +36,14 @@ void OsvEnv::init(IoOptions options)
 
 OsvChannel& OsvEnv::getIoChannel(int channel)
 {
+   
+   printf("use channel size %lu\n", channels.size()); 
+   printf("use %i channel %p\n", channel, &channels); 
+
    ensure(channels.size() > 0, "don't forget to initizalize the io env first");
    ensure(channel < (int)channels.size(), "There are only " + std::to_string(channels.size()) + " channels available.");
    // std::cout << "getChannel: " << channel << std::endl << std::flush;
+   printf("use channel %p\n", (void*) channels.at(channel).get()); 
    return *channels.at(channel);
 }
 
@@ -55,8 +61,8 @@ void* OsvEnv::allocIoMemory(size_t size, size_t align)
 {
    void* buffer = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
    null_check(buffer, "Memory allocation failed");
-   memset(buffer, 0, size); 
    madvise(buffer, size, MADV_HUGEPAGE);
+   memset(buffer, 0, size); 
    return buffer;
 }
 

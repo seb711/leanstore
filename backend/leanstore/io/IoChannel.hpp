@@ -179,7 +179,6 @@ struct IoChannelCounterAggregator {
       ss << " write:(m99p9:" << maxWrite99p9 << ")]";
    }
 };
-class RemoteIoChannel;
 class IoChannel
 {
   public:
@@ -211,7 +210,6 @@ class IoChannel
    virtual void pushBlocking(IoRequestType type, char* data, s64 addr, u64 len, bool write_back = false);
    virtual bool readStackFull() = 0;
    virtual bool writeStackFull() = 0;
-   virtual void registerRemoteChannel(RemoteIoChannel* rem) = 0;
    // -------------------------------------------------------------------------------------
    virtual int submitMin() {return 1; } // minium number of ios so that they can be submitted. Else less or none of the ios that have been pushed will be pushed.
    virtual int submitable() = 0;

@@ -1,7 +1,7 @@
 // -------------------------------------------------------------------------------------
 #include "UniqueTaskManager.hpp"
 #include <osv/leanstore_debug.hh>
-#include "leanstore/concurrency/Task.hpp"
+#include "leanstore/concurrency/batch/Task.hpp"
 #include "leanstore/io/IoInterface.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
 // -------------------------------------------------------------------------------------
@@ -105,7 +105,7 @@ void UniqueTaskManager::adjustWorkerCount(int workerThreads)
          int id = i + exclusiveThreads;
          ensure(id < ioChannels);
          // physical channel
-         execs.push_back(std::make_unique<UniqueTaskExecutor>(messageManager->getMessageHandler(id), execIoChannel(), *nics.back(), id));
+         execs.push_back(std::make_unique<UniqueTaskExecutor>(messageManager->getMessageHandler(id), IoInterface::instance().getIoChannel(i - runningExecs), *nics.back(), id));
          execs.back()->setCpuAffinityBeforeStart(id + threadAffinityOffset);
          workers[id] = new leanstore::cr::Worker(id, workers, workerThreads + exclusiveThreads);
          execs.back()->this_worker = workers[id];
@@ -128,9 +128,7 @@ void UniqueTaskManager::reflowPageProviderPartitions()
       }
       if (t_i < (int)buffer_manager->cooling_partitions_count) {
          sendTask(t_i, [=]() {
-            // std::cout << "register page provider" << std::endl;
             UniqueTaskExecutor::localExec().registerPageProvider(buffer_manager, t_i);
-            // std::cout << "register page provider ended" << std::endl;
          });
       }
    }
@@ -241,7 +239,7 @@ int UniqueTaskManager::execId()
 // -------------------------------------------------------------------------------------
 IoChannel& UniqueTaskManager::execIoChannel()
 {
-   return IoInterface::instance().getIoChannel(0);
+   return UniqueTaskExecutor::localExec().ioChannel;
 }
 // -------------------------------------------------------------------------------------
 // task
@@ -280,92 +278,6 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
    // -> but we should in the end rewire the interrupt handler so nothing breaks
    // Disable interrupts while setting up
 
-#ifdef USE_INTERRUPTS
-   arch::irq_disable();
-
-   leanstore::WorkerCounters::myCounters().time_counter_1++;
-   auto timer_handler = []() {
-      if (!run_task) {
-         leanstore::WorkerCounters::myCounters().time_counter_2++;
-         // arch::irq_enable();
-         return;
-      }
-      // leanstore::WorkerCounters::myCounters().time_counter_1++;
-      // return;
-      assert(!arch::irq_enabled());
-// return;
-#if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
-      // clock_event->disable();
-#endif
-
-      void* b;
-      __asm__ volatile("mov %%rbp, %0" : "=r"(b) : :);
-
-      leanstore_osv_debug::trace_try_lock(UniqueTaskExecutor::localExec()._currentSink, b);
-
-      if (UniqueTaskExecutor::localExec()._currentSink != nullptr) {
-         // for now we here do nothing more than just interrupting and yield to the next one
-         // this is enough for now but in the future we need here a more thorough logic
-
-#ifdef USE_WATCHDOG
-         last_timestamp = 0;
-#endif
-
-         // printf("interrupt here %p %p", UniqueTaskExecutor::localExec()._currentSink, (void*)UniqueTaskExecutor::localExec()._currentTask.get());
-
-         leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
-         assert(UniqueTaskExecutor::localExec()._currentSink != nullptr);
-         assert(UniqueTaskExecutor::localExec()._currentTask.get() != nullptr);
-
-         boost::context::detail::ontop_fcontext(UniqueTaskExecutor::localExec().getCurrentSink(),
-                                                (void*)UniqueTaskExecutor::localExec()._currentTask.get(), UniqueTaskExecutor::store_task_on_yield);
-#if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
-         // clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
-#endif
-         // enable_interrupts();
-         // arch::irq_enable();
-
-         return;
-      } else {
-         // arch::irq_enable();
-         // in the case that we are not running a job right now we can just return and skip the logic
-         return;
-      }
-   };
-
-   // Register the timer handler
-   auto vector = idt.register_handler(timer_handler);
-
-#ifndef USE_WATCHDOG
-   clock_event->reset_vector(vector);
-#ifdef USE_PERIODIC_TIMER
-   clock_event->set_periodic(true);
-   clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
-#endif
-#else
-   clock_event->set_periodic(true);
-   clock_event->disable();
-   // then we are basically good to go
-
-   // what we need to do in the other logics
-   // set the working flag correct
-
-   // IF LAPIC TIMER SET
-   // just removes the current LAPIC timer handler from the core
-   // bend the lapic timer to the vector we have just created
-   // set timer to 0
-   // IF WATCHDOG THREAD
-   // register worker thread
-   // END
-   // how would you implement a watchdog thread?
-   // 0. store the starting times for the thread to know if we should preempt
-   // 1. start watchdog thread that continously checks on the current core the timer
-   // 2. if too high sends the interrupt
-   leanstore_osv_debug::create_watchdog(INTERRUPT_TIME, 2, vector, last_timestamp);
-#endif
-   arch::irq_enable();
-#endif
-
    ensure(tasks > 0);
    const int threads = workerCount();
    int originExecId = UniqueTaskExecutor::localExec().id();
@@ -391,7 +303,7 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
    for (int thr = 0; thr < threads; thr++) {
       sendTask(thr + exclusiveThreads, [&originTask, &fun, &bb]() {
          // here setup the local executor
-         // sstd::cout << "\n\n\nyeah idk what we will do here\n\n\n" << std::endl;
+         // std::cout << "\n\n\nyeah idk what we will do here\n\n\n" << std::endl;
 
          // setup the workload function
 
@@ -400,7 +312,9 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
             UniqueTaskExecutor::localExec().set_workload_function(fun);
             UniqueTaskExecutor::localExec().nic.turn_on();
          } else {
+            // run the function directly
             fun();
+
 #if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER)
             clock_event->disable();
 #endif
@@ -408,11 +322,14 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
          }
       });
       // std::cout << "startedTasks: " << startedTasks << std::endl;
+      if ((bb.end - bb.begin) == 1) {
+         break; 
+      }
    }
    // yield, and push to waitingTasks
 
-   clock_event->disable();
-   leanstore_osv_debug::disable_scheduler();
+   // clock_event->disable();
+   // leanstore_osv_debug::disable_scheduler();
 
    UniqueTaskExecutor::localExec().yieldRunningTask(originTask.get(), TaskState::Waiting);
    // UniqueTaskExecutor::localExec().yieldCurrentTask(TaskState::Waiting);
@@ -468,6 +385,8 @@ UniqueTaskExecutor& UniqueTaskManager::getExec(int id)
 }
 void UniqueTaskManager::sendTask(int to, TaskFunction taskFun)
 {
+
+   printf("sending task to %i\n", to); 
    auto taskFun1 = new TaskFunction(taskFun);
    UniqueTaskExecutor::localExec().sendMessage(
        to,

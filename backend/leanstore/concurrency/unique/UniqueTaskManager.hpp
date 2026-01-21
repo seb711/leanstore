@@ -1,10 +1,9 @@
 #pragma once
 // -------------------------------------------------------------------------------------
-#include "leanstore/concurrency/BlockedRange.hpp"
 #include "UniqueTaskExecutor.hpp"
+#include "leanstore/utils/BlockedRange.hpp"
 #include "leanstore/concurrency-recovery/Worker.hpp"
 #include "leanstore/io/IoInterface.hpp"
-#include "leanstore/concurrency/ThreadingManager.hpp"
 // -------------------------------------------------------------------------------------
 #include <atomic>
 #include <iostream>
@@ -21,7 +20,6 @@ class UniqueTaskManager
    std::atomic<int> exclusiveThreadCounter = {0};
    std::unordered_map<int, std::reference_wrapper<UniqueTaskExecutor>> exclusiveThreadsMap;
    std::vector<std::unique_ptr<ThreadWithJump>> exclusive_threads;
-   std::vector<std::unique_ptr<IoChannel>> remoteChannels;
    std::unique_ptr<MessageHandlerManager> messageManager = nullptr;
    std::vector<DummyNIC*> nics; 
 

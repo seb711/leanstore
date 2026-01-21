@@ -17,6 +17,7 @@
 #include <unordered_set>
 #include <vector>
 #include <stack>
+#include <boost/lockfree/queue.hpp>
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {
@@ -126,14 +127,19 @@ struct CoolingPartition {
    s64 outstanding = 0;
    // -------------------------------------------------------------------------------------
    const u64 pid_distance;
-   std::mutex pids_mutex;  // protect free pids vector
-   std::vector<PID> freed_pids;
-   u64 next_pid;
+   // Lock-free queue for freed PIDs
+   boost::lockfree::queue<PID> freed_pids_queue;
+   atomic<u64> next_pid;
+   atomic<u64> freed_pids_count;  // Track count for statistics
    // -------------------------------------------------------------------------------------
    CoolingPartition(u64 first_pid, u64 pid_distance, u64 free_bfs_limit, u64 cooling_bfs_limit, u64 max_outsanding_ios)
       : cooling_queue(cooling_bfs_limit * 2), // FIXME
-      io_queue(max_outsanding_ios ),
-      free_bfs_limit(free_bfs_limit), cooling_bfs_limit(cooling_bfs_limit), pid_distance(pid_distance)
+      io_queue(max_outsanding_ios),
+      free_bfs_limit(free_bfs_limit), 
+      cooling_bfs_limit(cooling_bfs_limit), 
+      pid_distance(pid_distance),
+      freed_pids_queue(1024),  // Initial capacity, can grow dynamically
+      freed_pids_count(0)
    {
       next_pid = first_pid;
    }
@@ -142,28 +148,38 @@ struct CoolingPartition {
    // -------------------------------------------------------------------------------------
    inline PID nextPID()
    {
-      std::unique_lock<std::mutex> g_guard(pids_mutex);
-      if (freed_pids.size()) {
-         const u64 pid = freed_pids.back();
-         freed_pids.pop_back();
+      PID pid;
+      // Try to pop a freed PID from the lock-free queue
+      if (freed_pids_queue.pop(pid)) {
+         freed_pids_count.fetch_sub(1, std::memory_order_relaxed);
          return pid;
       } else {
-         const u64 pid = next_pid;
-         next_pid += pid_distance;
+         // No freed PIDs available, allocate a new one
+         pid = next_pid.fetch_add(pid_distance, std::memory_order_relaxed);
          ensure((pid * PAGE_SIZE / 1024 / 1024 / 1024) <= FLAGS_ssd_gib);
          return pid;
       }
    }
+   
    void freePage(PID pid)
    {
-      std::unique_lock<std::mutex> g_guard(pids_mutex);
-      freed_pids.push_back(pid);
+      // Push the freed PID to the lock-free queue
+      while (!freed_pids_queue.push(pid)) {
+         // If push fails (queue is full), try again
+         // boost::lockfree::queue will handle dynamic growth in most cases
+         // but we need to handle the bounded case
+      }
+      freed_pids_count.fetch_add(1, std::memory_order_relaxed);
    }
-   u64 allocatedPages() { return next_pid / pid_distance; }
+   
+   u64 allocatedPages() 
+   { 
+      return next_pid.load(std::memory_order_relaxed) / pid_distance; 
+   }
+   
    u64 freedPages()
    {
-      std::unique_lock<std::mutex> g_guard(pids_mutex);
-      return freed_pids.size();
+      return freed_pids_count.load(std::memory_order_relaxed);
    }
    // -------------------------------------------------------------------------------------
    void pushFreeList()

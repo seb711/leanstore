@@ -183,8 +183,15 @@ BufferFrame& BufferManager::randomBufferFrame()
 BufferFrame& BufferManager::partitionRandomBufferFrame(u64 partition, u64 max_partitions)
 {
    // it's a bit more complex as pool_size might not be a multiple of partitions_count 
-   u64 bfs_remaining = dram_pool_size % max_partitions;
+   // dram_pool_size = amount of frames in the dram 
+   u64 bfs_remaining = dram_pool_size % max_partitions; // this checks if the pages were evenly distributed (you cannot evenly distribut 7 pages among 3 partitions...)
+   
+   // calculate how many pages this partition has
    u64 bfs_this_partition = dram_pool_size/max_partitions + (partition < bfs_remaining ? 1 : 0); // +1 if this partition has a page more
+   
+   // now calculate the correct position of the frame 
+   // problem: the frames are round robin distributed and not in blocks
+   // buffer0 -> p0, buffer1 -> p1, buffer2 -> p2, buffer3 -> p0, buffer4 -> p1, ...
    auto rand_buffer_i = partition + utils::RandomGenerator::getRandU64(0, bfs_this_partition) * cooling_partitions_count;
    assert(rand_buffer_i < dram_pool_size);
    return bfs[rand_buffer_i];

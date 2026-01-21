@@ -1,15 +1,15 @@
 #include "Time.hpp"
 #include "adapter.hpp"
 #include "leanstore/Config.hpp"
+#include "leanstore/concurrency-recovery/Worker.hpp"
 #include "leanstore/profiling/counters/CPUCounters.hpp"
 #include "leanstore/profiling/counters/ThreadCounters.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
 #include "leanstore/utils/Misc.hpp"
 #include "leanstore/utils/Parallelize.hpp"
 #include "leanstore/utils/RandomGenerator.hpp"
-#include "leanstore/utils/ZipfGenerator.hpp"
 #include "leanstore/utils/ScrambledZipfGenerator.hpp"
-#include "leanstore/concurrency-recovery/Worker.hpp"
+#include "leanstore/utils/ZipfGenerator.hpp"
 #include "schema.hpp"
 #include "types.hpp"
 // -------------------------------------------------------------------------------------
@@ -66,7 +66,7 @@ void run_ycsb()
 
    mean::task::scheduleTaskSync([&]() { kv_store = LeanStoreAdapter<item_t>(db, "ycsb", "y"); });
 
-   Workload wl(kv_store); 
+   Workload wl(kv_store);
 
    db.registerConfigEntry("ycsb_read_ratio", FLAGS_ycsb_read_ratio);
    db.registerConfigEntry("ycsb_target_gib", FLAGS_target_gib);
@@ -76,22 +76,25 @@ void run_ycsb()
                                     : FLAGS_target_gib * 1024 * 1024 * 1024 * 1.0 / 2.0 / (sizeof(uint64_t) + sizeof(BytesPayload<120>));
    // Insert values
    {
+      db.startProfilingThread();
       const u64 n = ycsb_tuple_count;
       std::cout << "-------------------------------------------------------------------------------------" << endl;
       cout << "Inserting " << n << " values" << endl;
       begin = chrono::high_resolution_clock::now();
-      mean::BlockedRange bb(0, (u64)n);
-      ensure((bool)((bb.end - bb.begin) > 1));
+      BlockedRange bb(0, (u64)1);
+      ensure((bool)((bb.end - bb.begin) >= 1));
 // #ifdef MEAN_USE_TASKING
-#if 0
-      auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>& cancleable) {
-         wl.insert();
-         mean::task::yield();
+#if defined(MEAN_USE_TASKING) || defined(MEAN_USE_UNIQUE_TASKING)
+      auto ycsb_insert_fun = [&]() {
+         for (uint32_t t = 0; t < n; t++) {
+            wl.insert();
+            mean::task::yield();
+         }
       };
-      mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks, 100000, false);
+      mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks);
 #else
 #ifndef NEW_JUMPMU
-      // jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext(); 
+      // jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext();
 #endif
       for (uint64_t i = 0; i < bb.end; i++) {
          wl.insert();
@@ -106,7 +109,6 @@ void run_ycsb()
       cout << "Inserted volume: (pages, MiB) = (" << written_pages << ", " << mib << ")" << endl;
       cout << "-------------------------------------------------------------------------------------" << endl;
    }
-   db.startProfilingThread();
    // -------------------------------------------------------------------------------------
    auto zipf_random = std::make_unique<utils::ScrambledZipfGenerator>(0, ycsb_tuple_count, FLAGS_zipf_factor);
    cout << setprecision(4);
@@ -129,24 +131,24 @@ void run_ycsb()
          int txtype = wl.tx();
          auto now = mean::readTSC();
          // auto timeDiff = mean::tscDifferenceUs(now, before);
-         
+
 #ifdef NEW_JUMPMU
-           auto timeDiffIncWait = mean::tscDifferenceUs(now, jumpmu::thread_local_jumpmu.tx_start_time);
+         auto timeDiffIncWait = mean::tscDifferenceUs(now, jumpmu::thread_local_jumpmu.tx_start_time);
 #else
-           auto timeDiffIncWait = mean::tscDifferenceUs(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time);
+         auto timeDiffIncWait = mean::tscDifferenceUs(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time);
 #endif
          if (txtype == 0) {
             WorkerCounters::myCounters().total_tx_time += timeDiffIncWait;
             WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiffIncWait);
             WorkerCounters::myCounters().tx++;
          } else {
-            WorkerCounters::myCounters().total_ltx_time += timeDiffIncWait; // / 1000
-            WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait ); // / 1000
+            WorkerCounters::myCounters().total_ltx_time += timeDiffIncWait;                      // / 1000
+            WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);  // / 1000
             WorkerCounters::myCounters().ltx++;
          }
          running_threads_counter--;
       };
-      mean::BlockedRange bb(0, (u64)1000000000000ul);
+      BlockedRange bb(0, (u64)1000000000000ul);
       auto startTsc = mean::readTSC();
       auto startTP = mean::getTimePoint();
       mean::task::parallelFor(bb, ycsb_tx, FLAGS_worker_tasks, 100000, true);
@@ -154,9 +156,9 @@ void run_ycsb()
       auto diffTP = mean::timePointDifference(mean::getTimePoint(), startTP) / 1e9;
       std::cout << "done: time: " << diffTP << " tsc: " << diffTSC << std::endl;
    }
-   #ifndef NEW_JUMPMU
-   delete  jumpmu::thread_local_jumpmu_ctx; 
-   #endif
+#ifndef NEW_JUMPMU
+   delete jumpmu::thread_local_jumpmu_ctx;
+#endif
    mean::env::shutdown();
    cout << "-------------------------------------------------------------------------------------" << endl;
    // -------------------------------------------------------------------------------------
@@ -164,7 +166,7 @@ void run_ycsb()
 // -------------------------------------------------------------------------------------
 int main(int argc, char** argv)
 {
-   std::cout << "run process1" << std::endl; 
+   std::cout << "run process1" << std::endl;
 
    gflags::SetUsageMessage("Leanstore Frontend");
    gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -179,24 +181,24 @@ int main(int argc, char** argv)
    ioOptions.raid5 = FLAGS_raid5;
 #ifndef MEAN_USE_TASKING
    ioOptions.iodepth = 2048 + 512;
-#else 
-   ioOptions.iodepth = (FLAGS_async_batch_size + FLAGS_worker_tasks) * 2; // hacky, how to take into account for remotes 
-#endif   // -------------------------------------------------------------------------------------
+#else
+   ioOptions.iodepth = (FLAGS_async_batch_size + FLAGS_worker_tasks) * 2;  // hacky, how to take into account for remotes
+#endif  // -------------------------------------------------------------------------------------
    if (FLAGS_nopp) {
       ioOptions.channelCount = FLAGS_worker_threads;
       mean::env::init(FLAGS_worker_threads,  // std::min(std::thread::hardware_concurrency(), FLAGS_tpcc_warehouse_count),
                       0 /*FLAGS_pp_threads*/, ioOptions);
    } else {
-         std::cout << "init" << std::endl; 
+      std::cout << "init" << std::endl;
 #ifdef MEAN_USE_JOBBING
       ioOptions.channelCount = 1;  // FLAGS_worker_threads + FLAGS_pp_threads;
 #else
       ioOptions.channelCount = FLAGS_worker_threads + FLAGS_pp_threads;
-#endif      
-mean::env::init(FLAGS_worker_threads, FLAGS_pp_threads, ioOptions);
-               std::cout << "init finished" << std::endl; 
+#endif
+      mean::env::init(FLAGS_worker_threads, FLAGS_pp_threads, ioOptions);
+      std::cout << "init finished" << std::endl;
    }
-   std::cout << "run process2" << std::endl; 
+   std::cout << "run process2" << std::endl;
    mean::env::start(run_ycsb);
    // -------------------------------------------------------------------------------------
    mean::env::join();

@@ -1,8 +1,8 @@
 #pragma once
 // -------------------------------------------------------------------------------------
-#include "BlockedRange.hpp"
-#include "Task.hpp"
-#include "YieldLock.hpp"
+#include "leanstore/utils/BlockedRange.hpp"
+#include "leanstore/concurrency/batch/Task.hpp"
+#include "leanstore/concurrency/utils/YieldLock.hpp"
 #include "leanstore/io/IoInterface.hpp"
 // -------------------------------------------------------------------------------------
 #include <functional>

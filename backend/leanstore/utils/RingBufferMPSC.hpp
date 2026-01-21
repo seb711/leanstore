@@ -1,6 +1,6 @@
 #pragma once
 
-#include "leanstore/concurrency/YieldLock.hpp"
+#include "leanstore/concurrency/utils/YieldLock.hpp"
 
 #include <mutex>
 #include <stdexcept>

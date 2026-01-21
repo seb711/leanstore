@@ -78,9 +78,6 @@ class Workload {
       }
 
       int insert() {
-         if (current_idx.load() % 1000000 == 0) {
-            std::cout << current_idx.load() << std::endl; 
-         }
          newIncrEntry(); 
          return 0; 
       }
