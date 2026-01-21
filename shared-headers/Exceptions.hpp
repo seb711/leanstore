@@ -63,13 +63,7 @@ inline void ensure(bool e, std::string msg = "")
    }
 }
 #else
-inline void ensure(bool e, std::string msg = "")
-{
-   if (__builtin_expect(!(e), 0)) {
-      throw leanstore::ex::EnsureFailed(std::string(__func__) + " in " + std::string(__FILE__) + "@" + std::to_string(__LINE__) + ": " +  msg);
-      abort(); 
-   }
-}
+inline void ensure(bool e, std::string msg = "") {}
 //#define ensure(e)                                                                                                                               //
 //(__builtin_expect(!(e), 0) ? throw leanstore::ex::EnsureFailed(std::string(__func__) + " in " + std::string(__FILE__) + "@" +
 //std::to_string(__LINE__) + //                                                      " msg: " + std::string(#e)) //                             :

@@ -118,7 +118,7 @@ void LeanStore::startProfilingThread()
    #ifdef MEAN_USE_JOBBING
       CPU_SET(2, &cpuset);
    #else
-      CPU_SET(3, &cpuset);
+      CPU_SET(FLAGS_worker_threads, &cpuset);
    #endif
       auto thread = pthread_self();
       int s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);

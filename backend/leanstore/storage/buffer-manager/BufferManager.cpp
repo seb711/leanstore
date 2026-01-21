@@ -323,7 +323,8 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
       // -------------------------------------------------------------------------------------
       io_frame.state = IOFrame::STATE::READING;
       io_frame.readers_counter = 1;
-      io_frame.mutex.lock(); /// HEREREER
+      ensure(jumpmu::thread_local_jumpmu_ctx->lock_counter > 0); 
+      ensure(io_frame.mutex.try_lock()); /// HEREREER
       // -------------------------------------------------------------------------------------
       g_guard->unlock();
       // -------------------------------------------------------------------------------------

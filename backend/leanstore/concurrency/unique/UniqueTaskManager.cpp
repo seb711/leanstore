@@ -59,7 +59,7 @@ void UniqueTaskManager::init(int workerThreads, int exclusiveThreads, IoOptions 
              // -------------------------------------------------------------------------------------
              while (ThreadBase::this_thread().keepRunning()) {
                 auto& meta = static_cast<ThreadWithJump*>(&ThreadBase::this_thread())->meta;
-                std::unique_lock guard(meta.mutex);
+                std::unique_lock<std::mutex> guard(meta.mutex);
                 meta.cv.wait(guard, [&]() { return ThreadBase::this_thread().keepRunning() == false || meta.job_set; });
                 if (!ThreadBase::this_thread().keepRunning()) {
                    break;
@@ -138,11 +138,13 @@ void UniqueTaskManager::start(TaskFunction taskFun)
 {
    for (auto& exe : execs) {
       exe->start();
+      printf("start thread\n"); 
    }
    for (auto& exe : execs) {
       while (!exe->ready()) {
       }
    }
+   printf("everybody is ready\n"); 
    auto taskf = new TaskFunction(taskFun);
    messageManager->dbgSendMessage(
        exclusiveThreads, exclusiveThreads,
@@ -309,6 +311,8 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
 
          // std::cout << "turn on nic " << std::hex << &UniqueTaskExecutor::localExec().nic << std::endl;
          if ((bb.end - bb.begin) > 1) {
+
+            UniqueTaskExecutor::localExec().setupInterruptHandling(); 
             UniqueTaskExecutor::localExec().set_workload_function(fun);
             UniqueTaskExecutor::localExec().nic.turn_on();
          } else {
@@ -318,6 +322,8 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
 #if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER)
             clock_event->disable();
 #endif
+
+            printf("move origin to ready\n"); 
             UniqueTaskExecutor::localExec().moveReady(std::move(originTask));
          }
       });

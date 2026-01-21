@@ -57,7 +57,7 @@ class HybridPageGuard
        : bf(&BMC::global_bf->tryFastResolveSwip(p_guard.guard, swip.template cast<BufferFrame>())), guard(bf->header.latch)
    {
       if (if_contended == LATCH_FALLBACK_MODE::SPIN) {
-         guard.toOptimisticSpin();
+         guard.toOptimisticOrJump();
       } else if (if_contended == LATCH_FALLBACK_MODE::EXCLUSIVE) {
          guard.toOptimisticOrExclusive();
       } else if (if_contended == LATCH_FALLBACK_MODE::SHARED) {

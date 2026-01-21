@@ -23,6 +23,8 @@
 #include <queue>
 #include <unordered_map>
 
+#define USE_INTERRUPTS
+#define USE_PERIODIC_TIMER
 #define INTERRUPT_TIME FLAGS_tmp
 
 namespace mean
@@ -96,6 +98,7 @@ class UniqueTaskExecutor : public ThreadBase
    static UniqueTaskPtr getCurrentTaskOwnership();
    static void yieldCurrentTask(TaskState ts);
    static void yieldRunningTask(UniqueTask* task, TaskState ts);
+   void setupInterruptHandling();
 
    // Public Members
    TaskContextPool* g_task_context_pool;
@@ -111,7 +114,6 @@ class UniqueTaskExecutor : public ThreadBase
 
   private:
    // Lifecycle
-   void setupInterruptHandling();
 
    // Thread Pool Management
    void initTaskContextPool(size_t capacity);
@@ -153,6 +155,9 @@ class UniqueTaskExecutor : public ThreadBase
    void handleReadyJumpLockTask();
    void handleReadyTask();
    void updateCycleCounters(int tasks_run, u64& cycles_nothing_run);
+
+   static std::atomic<int> interruptVector; 
+   static void setupInterruptVector(); 
 
    // Task Queues
    static const int MAX_TASKS = 1 << 14;

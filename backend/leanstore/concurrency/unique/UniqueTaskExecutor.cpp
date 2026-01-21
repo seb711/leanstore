@@ -40,6 +40,8 @@ thread_local TaskContextPool* tl_task_context_pool;
 thread_local bool run_task = false;
 thread_local std::atomic<uint64_t> last_timestamp = {0};
 
+std::atomic<int> UniqueTaskExecutor::interruptVector = {-1}; 
+
 // ============================================================================
 // Context Switch Callbacks (CRITICAL - DO NOT MODIFY)
 // ============================================================================
@@ -155,7 +157,7 @@ UniqueTaskExecutor::UniqueTaskExecutor(MessageHandler& msg, IoChannel& io_channe
    initTaskContextPool(5000);
    tl_task_context_pool = g_task_context_pool;
 
-   setupInterruptHandling();
+   // setupInterruptHandling();
 
    printf("create unique task executor %i\n", executor_id);
    _sinkInterruptStack = static_cast<char*>(malloc(8192)) + 8192;
@@ -166,46 +168,60 @@ UniqueTaskExecutor::~UniqueTaskExecutor()
    destroyTaskContextPool();
 }
 
+void UniqueTaskExecutor::setupInterruptVector() {
+   int exp = -1; 
+   if (interruptVector.compare_exchange_strong(exp, 1)) {
+      #ifdef USE_INTERRUPTS 
+      arch::irq_disable();
+      
+      auto timer_handler = []() {
+         leanstore::WorkerCounters::myCounters().time_counter_1++;
+         // return; 
+      
+         if (!run_task or jumpmu::thread_local_jumpmu_ctx->lock_counter > 0) {
+            leanstore::WorkerCounters::myCounters().time_counter_2++;
+            return;
+         }
+      
+         assert(!arch::irq_enabled());
+      
+         if (UniqueTaskExecutor::localExec()._currentTask != nullptr && UniqueTaskExecutor::localExec()._currentSink != nullptr) {
+      
+      #ifdef USE_WATCHDOG
+            last_timestamp = 0;
+      #endif
+            leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
+      
+            assert(UniqueTaskExecutor::localExec()._currentSink != nullptr);
+            assert(UniqueTaskExecutor::localExec()._currentTask.get() != nullptr);
+
+            leanstore_osv_debug::trace_interrupted(&UniqueTaskExecutor::localExec()._currentTask, jumpmu::thread_local_jumpmu_ctx->lock_counter); 
+      
+            boost::context::detail::ontop_fcontext(UniqueTaskExecutor::localExec().getCurrentSink(),
+                                                   (void*)UniqueTaskExecutor::localExec()._currentTask.get(), UniqueTaskExecutor::store_task_on_yield);
+      
+      #if !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
+            clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
+      #endif
+            return;
+         }
+      };
+      
+      auto vector = idt.register_handler(timer_handler);
+      interruptVector.store(vector); 
+   }
+   
+   while (interruptVector.load() <= 1) {}
+}
+
 void UniqueTaskExecutor::setupInterruptHandling()
 {
-#ifdef USE_INTERRUPTS
-   arch::irq_disable();
-
-   auto timer_handler = []() {
-      leanstore::WorkerCounters::myCounters().time_counter_1++;
-
-      if (!run_task) {
-         leanstore::WorkerCounters::myCounters().time_counter_2++;
-         return;
-      }
-
-      assert(!arch::irq_enabled());
-
-      if (UniqueTaskExecutor::localExec()._currentTask != nullptr && UniqueTaskExecutor::localExec()._currentSink != nullptr) {
-
-#ifdef USE_WATCHDOG
-         last_timestamp = 0;
-#endif
-         leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
-
-         assert(UniqueTaskExecutor::localExec()._currentSink != nullptr);
-         assert(UniqueTaskExecutor::localExec()._currentTask.get() != nullptr);
-
-         boost::context::detail::ontop_fcontext(UniqueTaskExecutor::localExec().getCurrentSink(),
-                                                (void*)UniqueTaskExecutor::localExec()._currentTask.get(), UniqueTaskExecutor::store_task_on_yield);
-
-#if !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
-         clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
-#endif
-         return;
-      }
-   };
-
-   auto vector = idt.register_handler(timer_handler);
+   UniqueTaskExecutor::setupInterruptVector(); 
 
 #ifndef USE_WATCHDOG
-   clock_event->reset_vector(vector);
+   clock_event->reset_vector(interruptVector.load());
 #ifdef USE_PERIODIC_TIMER
+   // printf("setup clock\n"); 
    clock_event->set_periodic(true);
    clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
 #endif
@@ -512,6 +528,9 @@ bool UniqueTaskExecutor::tryAcquireTaskLock()
          leanstore::ThreadCounters::myCounters().exec_tasks_st_ready_lckskip++;
          return false;
       }
+      _currentTask->lock->unlock(); 
+      // jumpmu::thread_local_jumpmu_ctx->lock_counter--;
+      // _currentTask->context.jumpmuctx->lock_counter++; 
    }
    return true;
 }

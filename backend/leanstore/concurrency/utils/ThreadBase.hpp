@@ -2,8 +2,8 @@
 // -------------------------------------------------------------------------------------
 #include "Exceptions.hpp"
 // -------------------------------------------------------------------------------------
-#include <sys/types.h>
 #include <sys/resource.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include <atomic>
@@ -31,11 +31,10 @@ class ThreadBase
 
    int _process()
    {
-      while (_wait_for_init) { } // wait until parent thread is done creating this thread
+      while (_wait_for_init) {}  // wait until parent thread is done creating this thread
       _this_thread = this;
       setNameThisThread(name);
       setCpuAffinityThisThread(cpuAffinity);
-
 
       _ready = true;
       // u32   tid = gettid();
@@ -54,7 +53,7 @@ class ThreadBase
 
    }
    */
-   virtual ~ThreadBase(){};
+   virtual ~ThreadBase() {};
 
    ThreadBase(const ThreadBase& other) = delete;
    ThreadBase(ThreadBase&& other) = delete;
@@ -98,7 +97,8 @@ class ThreadBase
       }
    }
 
-   void setCpuAffinityThisThread(int cpuAffinity) {
+   void setCpuAffinityThisThread(int cpuAffinity)
+   {
       this->cpuAffinity = cpuAffinity;
       if (cpuAffinity >= 0) {
          cpu_set_t cpuset;
@@ -123,9 +123,7 @@ class ThreadBase
 
    int getCpuAffinity() const { return cpuAffinity; }
 
-   std::thread& thread_impl() {
-      return tWorker;
-   }
+   std::thread& thread_impl() { return tWorker; }
 
    static ThreadBase& this_thread()
    {

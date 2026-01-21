@@ -229,7 +229,7 @@ bool BufferManager::hasConflictingIoFrame(const BufferFrame& bf)
    if (!io_partition.io_mutex.try_lock()) {
       return true;
    }
-
+   
    bool has_conflict = io_partition.io_ht.lookup(bf.header.pid).holder != nullptr;
    io_partition.io_mutex.unlock();
 
