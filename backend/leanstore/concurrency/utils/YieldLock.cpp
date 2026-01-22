@@ -35,8 +35,8 @@ void YieldLock::lock()
    // if (!try_lock()) {
    while (!try_lock()) {
       _waiting++;
-      if (_waiting > 10)
-         abort();
+      // if (_waiting > 10)
+      //   abort();
       /*
        */
       // auto& this_task = mean::task::this_task();

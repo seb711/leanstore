@@ -311,7 +311,9 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
 
          // std::cout << "turn on nic " << std::hex << &UniqueTaskExecutor::localExec().nic << std::endl;
          if ((bb.end - bb.begin) > 1) {
-
+            // problem with the interrupt handling is that you can only set it up in a
+            // running environment and not before that -> otherwise the interrupt handler go 
+            // crazy (-> probably would need some work on the interrupts)
             UniqueTaskExecutor::localExec().setupInterruptHandling(); 
             UniqueTaskExecutor::localExec().set_workload_function(fun);
             UniqueTaskExecutor::localExec().nic.turn_on();

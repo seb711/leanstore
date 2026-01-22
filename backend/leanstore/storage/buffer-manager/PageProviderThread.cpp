@@ -47,7 +47,7 @@ void BufferManager::pageProviderThread(u64 partition_begin, u64 partition_end)
    // Thread entry point - can be extended with initialization if needed
 }
 
-void BufferManager::pageProviderCycle(int partition_id)
+int BufferManager::pageProviderCycle(int partition_id)
 {
    ensure(partition_id < static_cast<int>(cooling_partitions_count));
    CoolingPartition& partition = cooling_partitions[partition_id];
@@ -56,13 +56,14 @@ void BufferManager::pageProviderCycle(int partition_id)
    //            If there are less than 64 free pages or (to be) free pages
    if (calculateCoolingDeficit(partition) > 64) {
       assert(arch::irq_enabled());
-      unswizzleHotPages(partition, 128, partition_id);
+      uint64_t unswizzledHotPages = unswizzleHotPages(partition, 128, partition_id);
    }
 
    // Phase 2: Process cooling queue and initiate I/O for dirty pages
    s64 pages_to_process = calculateFreeBufferDeficit(partition);
+   int cooledDownPages = 0; 
    if (pages_to_process > 0) {
-      processCoolingQueue(partition, pages_to_process, partition.state.freed_bfs_batch);
+      cooledDownPages = processCoolingQueue(partition, pages_to_process, partition.state.freed_bfs_batch);
    }
 
    // Phase 3: Complete I/O operations and evict clean pages
@@ -72,6 +73,8 @@ void BufferManager::pageProviderCycle(int partition_id)
    if (partition.state.freed_bfs_batch.size()) {
       partition.pushFreeList();
    }
+
+   return cooledDownPages; 
 }
 
 // ============================================================================

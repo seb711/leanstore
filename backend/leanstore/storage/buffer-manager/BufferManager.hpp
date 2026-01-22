@@ -111,7 +111,7 @@ class BufferManager
    s64 calculateFreeBufferDeficit(CoolingPartition& partition) const;
 
    void pageProviderThread(u64 partition_begin, u64 partition_end);
-   void pageProviderCycle(int partition_id);
+   int pageProviderCycle(int partition_id);
 
    bool isValidCoolingCandidate(const BufferFrame& bf) const;
    bool hasOnlyEvictedChildren(BufferFrame& buffer_frame, OptimisticGuard& guard);

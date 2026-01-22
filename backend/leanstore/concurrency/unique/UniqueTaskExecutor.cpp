@@ -38,9 +38,11 @@ namespace mean
 thread_local uint64_t opentasks = 0;
 thread_local TaskContextPool* tl_task_context_pool;
 thread_local bool run_task = false;
-thread_local std::atomic<uint64_t> last_timestamp = {0};
 
-std::atomic<int> UniqueTaskExecutor::interruptVector = {-1}; 
+UniqueTaskExecutor::PaddedTimestamp UniqueTaskExecutor::timestamps[8];
+
+std::atomic<int> UniqueTaskExecutor::interruptVector = {-1};
+std::atomic<int> UniqueTaskExecutor::readyExecutors = {0};
 
 // ============================================================================
 // Context Switch Callbacks (CRITICAL - DO NOT MODIFY)
@@ -133,7 +135,7 @@ void UniqueTaskExecutor::trampoline(boost::context::detail::transfer_t t)
    self._currentTask->fun();
 
 #ifdef USE_WATCHDOG
-   last_timestamp = 0;
+   timestamps[self.core_id] = 0;
 #endif
 
    {
@@ -153,6 +155,7 @@ void UniqueTaskExecutor::trampoline(boost::context::detail::transfer_t t)
 UniqueTaskExecutor::UniqueTaskExecutor(MessageHandler& msg, IoChannel& io_channel, DummyNIC& nic, int executor_id)
     : ThreadBase("te_", executor_id), ioChannel(io_channel), nic(nic), messageHandler(msg)
 {
+   core_id = executor_id;
    jumpmu::thread_local_jumpmu_ctx = &defaultExecutorContext;
    initTaskContextPool(5000);
    tl_task_context_pool = g_task_context_pool;
@@ -168,69 +171,82 @@ UniqueTaskExecutor::~UniqueTaskExecutor()
    destroyTaskContextPool();
 }
 
-void UniqueTaskExecutor::setupInterruptVector() {
-   int exp = -1; 
+void UniqueTaskExecutor::setupInterruptVector()
+{
+   // this is the solution for now. i guess you could
+   // think about a better solution but
+
+   // 1. rebuild the apic table to make it core local (-> probably the best solution); but this would mean that we copy the interrupt table for each
+   // smp core
+   // 2. make one vector per core (problem: this cannot scale infinitely because the interrupt table can only be 256 entries (-> but this would be
+   // most probably enough))
+   // 3. somehow setup the vector in the threading manager and not the executor (-> but this makes single-responsiblity a bit blurry)
+
+#ifdef USE_INTERRUPTS
+   int exp = -1;
    if (interruptVector.compare_exchange_strong(exp, 1)) {
-      #ifdef USE_INTERRUPTS 
       arch::irq_disable();
-      
+
       auto timer_handler = []() {
          leanstore::WorkerCounters::myCounters().time_counter_1++;
-         // return; 
-      
+         // return;
+
          if (!run_task or jumpmu::thread_local_jumpmu_ctx->lock_counter > 0) {
-            leanstore::WorkerCounters::myCounters().time_counter_2++;
+            // leanstore::WorkerCounters::myCounters().time_counter_2++;
             return;
          }
-      
-         assert(!arch::irq_enabled());
-      
-         if (UniqueTaskExecutor::localExec()._currentTask != nullptr && UniqueTaskExecutor::localExec()._currentSink != nullptr) {
-      
-      #ifdef USE_WATCHDOG
-            last_timestamp = 0;
-      #endif
-            leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
-      
-            assert(UniqueTaskExecutor::localExec()._currentSink != nullptr);
-            assert(UniqueTaskExecutor::localExec()._currentTask.get() != nullptr);
 
-            leanstore_osv_debug::trace_interrupted(&UniqueTaskExecutor::localExec()._currentTask, jumpmu::thread_local_jumpmu_ctx->lock_counter); 
-      
-            boost::context::detail::ontop_fcontext(UniqueTaskExecutor::localExec().getCurrentSink(),
-                                                   (void*)UniqueTaskExecutor::localExec()._currentTask.get(), UniqueTaskExecutor::store_task_on_yield);
-      
-      #if !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
+         assert(!arch::irq_enabled());
+
+         auto& self = UniqueTaskExecutor::localExec();
+
+         if (self._currentTask != nullptr && self._currentSink != nullptr) {
+
+#ifdef USE_WATCHDOG
+            timestamps[self.core_id] = 0;
+#endif
+            leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
+
+            assert(self._currentSink != nullptr);
+            assert(self._currentTask.get() != nullptr);
+
+            leanstore_osv_debug::trace_interrupted(&self._currentTask, jumpmu::thread_local_jumpmu_ctx->lock_counter);
+
+            boost::context::detail::ontop_fcontext(self.getCurrentSink(), (void*)self._currentTask.get(), UniqueTaskExecutor::store_task_on_yield);
+
+#if !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
             clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
-      #endif
+#endif
             return;
          }
       };
-      
+
       auto vector = idt.register_handler(timer_handler);
-      interruptVector.store(vector); 
+      interruptVector.store(vector);
    }
-   
-   while (interruptVector.load() <= 1) {}
+
+   while (interruptVector.load() <= 1) {
+   }
+#endif
 }
 
 void UniqueTaskExecutor::setupInterruptHandling()
 {
-   UniqueTaskExecutor::setupInterruptVector(); 
+#ifdef USE_INTERRUPTS
+   UniqueTaskExecutor::setupInterruptVector();
 
-#ifndef USE_WATCHDOG
    clock_event->reset_vector(interruptVector.load());
 #ifdef USE_PERIODIC_TIMER
-   // printf("setup clock\n"); 
+   // printf("setup clock\n");
    clock_event->set_periodic(true);
    clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
 #endif
-#else
+
+#if defined(USE_WATCHDOG) && !defined(USE_PERIODIC_TIMER)
+   // this block is a bit odd and we could probably do better than this
    clock_event->set_periodic(true);
    clock_event->disable();
-   leanstore_osv_debug::create_watchdog(INTERRUPT_TIME, 2, vector, last_timestamp);
 #endif
-
    arch::irq_enable();
 #endif
 }
@@ -248,7 +264,7 @@ TaskState UniqueTaskExecutor::runCurrentTask()
    arch::irq_disable();
    run_task = true;
 #ifdef USE_WATCHDOG
-   last_timestamp = processor::rdtsc();
+   timestamps[this->core_id] = processor::rdtsc();
 #endif
    leanstore_osv_debug::set_interrupt_stack((char*)task->context.interrupt_stack);
 #endif
@@ -260,15 +276,16 @@ TaskState UniqueTaskExecutor::runCurrentTask()
       boost::context::detail::ontop_fcontext(_currentTask->context.this_task_context, this, this->store_sink_on_yield);
    }
 
+   jumpmu::thread_local_jumpmu_ctx = &defaultExecutorContext;
+
 #ifdef USE_INTERRUPTS
    run_task = false;
 #ifdef USE_WATCHDOG
-   last_timestamp = 0;
+   timestamps[this->core_id] = 0;
 #endif
    arch::irq_enable();
 #endif
 
-   jumpmu::thread_local_jumpmu_ctx = &defaultExecutorContext;
    return task->getState();
 }
 
@@ -342,6 +359,148 @@ void UniqueTaskExecutor::yieldRunningTask(UniqueTask* task, TaskState state)
 }
 
 // ============================================================================
+// Background Work
+// ============================================================================
+void UniqueTaskExecutor::setupBackgroundWork()
+{
+   // here for the first draft we setup each of the methods; these are
+   // 1. MessageHandler
+   // 2. IO Poller/Submitter
+   // 3. PageProvider
+   // 4. Nic
+
+   // MESSAGE HANDLER
+   std::function<uint64_t(void)> message_handler_fn = [&]() -> uint64_t { return messageHandler.poll(this); };
+   std::unique_ptr<UniqueBackgroundWork> message_handler_bg = std::make_unique<UniqueBackgroundWork>(message_handler_fn, 20);
+   background_work[0] = std::move(message_handler_bg);
+
+   // IO POLLER
+   std::function<uint64_t(void)> io_poller_fn = [this]() -> uint64_t { return ioChannel.poll(); };
+   std::unique_ptr<UniqueBackgroundWork> io_poller_bg = std::make_unique<UniqueBackgroundWork>(io_poller_fn, 128);
+   background_work[1] = std::move(io_poller_bg);
+
+   // IO SUBMITTER
+   std::function<uint64_t(void)> io_submitter_fn = [this]() -> uint64_t { return ioChannel.submit(); };
+   std::unique_ptr<UniqueBackgroundWork> io_submitter_bg = std::make_unique<UniqueBackgroundWork>(io_submitter_fn, 128);
+   background_work[2] = std::move(io_submitter_bg);
+
+   // PAGE PROVIDER
+   std::function<uint64_t(void)> page_provider_fn = [this]() -> uint64_t {
+      if (buffer_manager && partition_id >= 0) {
+         return buffer_manager->pageProviderCycle(partition_id);
+      }
+      return 0;
+   };
+   std::unique_ptr<UniqueBackgroundWork> page_provider_bg = std::make_unique<UniqueBackgroundWork>(page_provider_fn, 70);
+   background_work[3] = std::move(page_provider_bg);
+
+   // NIC
+   std::function<uint64_t(void)> dummy_nic_handler_fn = [this]() -> uint64_t { return pollWorkload(); };
+   std::unique_ptr<UniqueBackgroundWork> dummy_nic_handler_bg = std::make_unique<UniqueBackgroundWork>(dummy_nic_handler_fn, 128);
+   background_work[4] = std::move(dummy_nic_handler_bg);
+
+   // NOT SURE ABOUT THE WATCHDOG HERE (-> this is REALLY latency critical)
+}
+
+void UniqueTaskExecutor::handleBackgroundWork()
+{
+   // 1. Calculate how many tiles (10μs slices) have passed
+   uint64_t current_tsc = mean::readTSC();
+   uint64_t current_time_us = current_tsc / 4;  // Convert TSC to microseconds
+
+   // 1.1 Calculate how many tiles we need to move forward
+   uint64_t time_elapsed_us = current_time_us - last_background_check;
+   uint64_t tiles_to_advance = time_elapsed_us / 10;  // Each tile is 10μs
+
+   if (last_background_check == 0) {
+      tiles_to_advance = time_wheel.size();
+      printf("we advance now %li tiles\n", tiles_to_advance);
+   }
+
+   // Limit tiles to prevent processing more than the wheel size
+   if (tiles_to_advance > time_wheel.size()) {
+      tiles_to_advance = time_wheel.size();
+   }
+
+   // 1.2 OR all bytes as we advance through the circular array, then zero them out
+   uint8_t pending_work = 0;
+
+   // Calculate starting position from last_background_check
+   size_t start_position = (last_background_check / 10) % time_wheel.size();
+
+   for (uint64_t i = 0; i < tiles_to_advance; ++i) {
+      size_t pos = (start_position + i) % time_wheel.size();
+      pending_work |= time_wheel[pos];
+      time_wheel[pos] = 0;  // Zero out after reading
+   }
+
+   // Update last check time (this implicitly updates our position in the wheel)
+   last_background_check = current_time_us;
+
+   // Calculate current position after advancement
+   size_t current_position = (current_time_us / 10) % time_wheel.size();
+
+   // 2. Run all tasks that have their bit set
+   for (size_t task_id = 0; task_id < background_work.size(); ++task_id) {
+      // Check if this task's bit is set
+      if ((pending_work & (1 << task_id)) == 0) {
+         continue;  // Task not scheduled
+      }
+
+      auto* task = background_work[task_id].get();
+      if (!task) {
+         continue;  // No task in this slot
+      }
+
+      // std::cout << "schedule task " << task_id << std::endl; 
+
+      // 2.1 Run the background task and measure time
+      uint64_t start_time = mean::readTSC();
+      uint64_t done_work = task->background_fn();
+      uint64_t end_time = mean::readTSC();
+
+      // 2.2 & 2.3 Calculate and store time to complete
+      uint64_t ttc = (end_time - start_time) / 4;  // Convert to microseconds
+      task->meta.runtime_avg += ttc;
+
+      // Update timestamp
+      task->meta.timestamp = current_time_us;
+
+      // 2.4 Calculate next execution time using EWMA
+      // Adjust frequency based on work done vs max work
+      double work_ratio = static_cast<double>(done_work) / task->meta.max_work;
+
+      // EWMA with alpha = 0.3 (adjust based on needs)
+      constexpr double alpha = 0.8;
+      uint16_t target_frequency;
+
+      if (work_ratio > 0.5) {
+         // Significant work done, run more frequently
+         target_frequency = static_cast<uint16_t>(task->meta.cfrequency * 0.8);
+         if (target_frequency < 100)
+            target_frequency = 100;  // Min 100μs
+      } else if (work_ratio < 0.1) {
+         // Little work done, run less frequently
+         target_frequency = static_cast<uint16_t>(task->meta.cfrequency * 1.2);
+         if (target_frequency > 5000)
+            target_frequency = 5000;  // Max 5000μs
+      } else {
+         target_frequency = task->meta.cfrequency;
+      }
+
+      // Apply EWMA
+      task->meta.cfrequency = static_cast<uint16_t>(alpha * target_frequency + (1.0 - alpha) * task->meta.cfrequency);
+
+      // 2.5 Schedule next execution in the time wheel
+      uint64_t tiles_ahead = task->meta.cfrequency / 10;  // Convert μs to tiles
+      size_t next_run_position = (current_position + tiles_ahead) % time_wheel.size();
+      time_wheel[next_run_position] |= (1 << task_id);
+   }
+
+   // 3. Return (implicit)
+}
+
+// ============================================================================
 // Main Execution Loop
 // ============================================================================
 
@@ -350,12 +509,18 @@ int UniqueTaskExecutor::process()
    ensure(tasks.size() == 0);
    leanstore::cr::Worker::tls_ptr = this_worker;
    leanstore::CPUCounters::registerThread(std::to_string(id()), false);
+#ifdef USE_BACKGROUND_TASKS
+   setupBackgroundWork();
+   // last_background_check = mean::readTSC();
+   time_wheel[0] = 30;
+#endif
    cycle();
    return 0;
 }
 
 void UniqueTaskExecutor::cycle()
 {
+   UniqueTaskExecutor::readyExecutors++;
    u64 cycles = 0;
    u64 cycles_nothing_run = 0;
    const u64 sleep_threshold_cycles = 100000;
@@ -364,13 +529,13 @@ void UniqueTaskExecutor::cycle()
    random_generator.seed(mean::exec::getId());
 
    while (_keep_running) {
-      handleSleep();
-
-      cycles++;
-
+      
       if (shouldPollMessages(cycles, cycles_nothing_run, sleep_threshold_cycles)) {
          pollMessages();
       }
+      #ifndef USE_BACKGROUND_TASKS
+      handleSleep();
+      cycles++;
 
       if (shouldRunPageProvider(cycles)) {
          pageProviderCycle();
@@ -385,6 +550,28 @@ void UniqueTaskExecutor::cycle()
       if (shouldPollWorkload(cycles)) {
          pollWorkload();
       }
+#else
+      handleBackgroundWork();
+#endif
+
+#if defined(USE_INTERRUPTS) && defined(USE_WATCHDOG)
+      // here you need to check if another thread needs a nudge
+      // WE DO NOT SPIN UP ANOTHER THREAD BUT JUST USE THE CURRENT INFRA
+      // thread_i controls thread_i+1
+
+      // here fore we first want to check when we have last accesses the other timestamp (because maybe it is not needed yet)
+      // if bigger then we want to check the timestamp (cache inval)
+      // and send an interrupt if needed (-> that's it)
+      if (shouldCheckWatchdog()) {
+         uint64_t current_timestamp = mean::readTSC();
+         int watchdog_core = (this->core_id + 1) % FLAGS_worker_threads;
+         if (UniqueTaskExecutor::timestamps[watchdog_core] > 0 &&
+             (current_timestamp - UniqueTaskExecutor::timestamps[watchdog_core]) > INTERRUPT_TIME * 4) {
+            leanstore_osv_debug::send_watchdog_ipi(interruptVector, watchdog_core);
+         }
+         last_watchdog_access = current_timestamp;
+      }
+#endif
 
       int tasks_run = runScheduledTasks();
       updateCycleCounters(tasks_run, cycles_nothing_run);
@@ -466,16 +653,17 @@ bool UniqueTaskExecutor::shouldPollWorkload(u64 cycles) const
    return cycles % every_poll == 0 && nic.active;
 }
 
-void UniqueTaskExecutor::pollWorkload()
+int UniqueTaskExecutor::pollWorkload()
 {
+   if (!nic.active) return 0;  
    if (FLAGS_tx_rate > 0) {
-      pollWorkloadWithRate();
+      return pollWorkloadWithRate();
    } else {
-      pollWorkloadWithoutRate();
+      return pollWorkloadWithoutRate();
    }
 }
 
-void UniqueTaskExecutor::pollWorkloadWithRate()
+int UniqueTaskExecutor::pollWorkloadWithRate()
 {
    size_t requests = nic.poll();
 
@@ -486,16 +674,28 @@ void UniqueTaskExecutor::pollWorkloadWithRate()
    }
 
    nic.consume(requests);
+   return requests;
 }
 
-void UniqueTaskExecutor::pollWorkloadWithoutRate()
+int UniqueTaskExecutor::pollWorkloadWithoutRate()
 {
    if (FLAGS_worker_tasks - opentasks > 0) {
       size_t new_tasks = FLAGS_worker_tasks - opentasks;
       for (size_t i = 0; i < new_tasks; i++) {
          this->pushTask(workloadFunction);
       }
+      return new_tasks;
    }
+   return 0;
+}
+
+bool UniqueTaskExecutor::shouldCheckWatchdog()
+{
+   if (interruptVector > 1 && (UniqueTaskExecutor::readyExecutors == FLAGS_worker_threads) &&
+       ((mean::readTSC() - last_watchdog_access) > INTERRUPT_TIME * 4)) {  // oh man we should really normalize this
+      return true;
+   }
+   return false;
 }
 
 int UniqueTaskExecutor::runScheduledTasks()
@@ -528,9 +728,9 @@ bool UniqueTaskExecutor::tryAcquireTaskLock()
          leanstore::ThreadCounters::myCounters().exec_tasks_st_ready_lckskip++;
          return false;
       }
-      _currentTask->lock->unlock(); 
+      _currentTask->lock->unlock();
       // jumpmu::thread_local_jumpmu_ctx->lock_counter--;
-      // _currentTask->context.jumpmuctx->lock_counter++; 
+      // _currentTask->context.jumpmuctx->lock_counter++;
    }
    return true;
 }

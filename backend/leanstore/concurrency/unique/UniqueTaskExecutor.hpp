@@ -4,6 +4,7 @@
 #include "./helper/DummyNic.hpp"
 #include "Exceptions.hpp"
 #include "UniqueTask.hpp"
+#include "UniqueBackgroundWork.hpp"
 #include "Units.hpp"
 #include "leanstore/Config.hpp"
 #include "leanstore/concurrency-recovery/Worker.hpp"
@@ -23,9 +24,13 @@
 #include <queue>
 #include <unordered_map>
 
-#define USE_INTERRUPTS
-#define USE_PERIODIC_TIMER
+// #define USE_INTERRUPTS
+// #define USE_PERIODIC_TIMER
+// #define USE_WATCHDOG
 #define INTERRUPT_TIME FLAGS_tmp
+
+
+// #define USE_BACKGROUND_TASKS
 
 namespace mean
 {
@@ -113,6 +118,30 @@ class UniqueTaskExecutor : public ThreadBase
    leanstore::cr::Worker* this_worker;
 
   private:
+   // Watchdog Syncing Structure
+   // Padded atomic timestamp that occupies exactly one cache line
+   struct alignas(64) PaddedTimestamp {
+      std::atomic<uint64_t> timestamp;
+
+      // Padding to fill the rest of the cache line
+      char padding[64 - sizeof(std::atomic<uint64_t>)];
+
+      // Assignment operator from uint64_t
+      PaddedTimestamp& operator=(uint64_t value)
+      {
+         timestamp.store(value, std::memory_order_release);
+         return *this;
+      }
+
+      // Optional: conversion operator to read the value
+      operator uint64_t() const { return timestamp.load(std::memory_order_acquire); }
+
+      PaddedTimestamp() : timestamp(0) {}
+   };
+
+   // Now create your array
+   static PaddedTimestamp timestamps[8];
+
    // Lifecycle
 
    // Thread Pool Management
@@ -138,9 +167,11 @@ class UniqueTaskExecutor : public ThreadBase
    void submitIo();
    void handleDelayedIoSubmission(u64 cycles, u64& delay_until_cycle, int delay_amount);
    bool shouldPollWorkload(u64 cycles) const;
-   void pollWorkload();
-   void pollWorkloadWithRate();
-   void pollWorkloadWithoutRate();
+public: 
+   int pollWorkload();
+   int pollWorkloadWithRate();
+   int pollWorkloadWithoutRate();
+   bool shouldCheckWatchdog();
 
    // Task Execution
    TaskState runCurrentTask();
@@ -156,8 +187,13 @@ class UniqueTaskExecutor : public ThreadBase
    void handleReadyTask();
    void updateCycleCounters(int tasks_run, u64& cycles_nothing_run);
 
-   static std::atomic<int> interruptVector; 
-   static void setupInterruptVector(); 
+   // Background Work
+   void setupBackgroundWork(); 
+   void handleBackgroundWork(); 
+
+   static std::atomic<int> interruptVector;
+   static std::atomic<int> readyExecutors; 
+   static void setupInterruptVector();
 
    // Task Queues
    static const int MAX_TASKS = 1 << 14;
@@ -167,6 +203,11 @@ class UniqueTaskExecutor : public ThreadBase
 #ifndef NDEBUG
    std::unordered_map<UniqueTask*, std::tuple<TaskState, TimePoint, bool>> waiting_tasks;
 #endif
+
+   // Background Work
+   uint64_t last_background_check = 0; 
+   std::array<uint8_t, 1000> time_wheel = {0}; 
+   std::array<std::unique_ptr<UniqueBackgroundWork>, 8> background_work = {nullptr}; 
 
    // Workload
    TaskFunction workloadFunction;
@@ -180,6 +221,11 @@ class UniqueTaskExecutor : public ThreadBase
    std::atomic<u64> waitingTaskCount = {0};
    std::atomic<u64> waitIoTaskCount = {0};
 
+   // Watchdog stuff
+   int core_id;
+   uint64_t last_watchdog_access = 0;
+
+   public: 
    // Page Provider State
    s64 partition_id = -1;
    BufferManager* buffer_manager;

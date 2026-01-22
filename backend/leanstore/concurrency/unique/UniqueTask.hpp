@@ -1,9 +1,9 @@
 #pragma once
 // -------------------------------------------------------------------------------------
 #include <osv/jumpmu.hh>
+#include "leanstore/concurrency/batch/Task.hpp"
 #include "leanstore/concurrency/utils/MessageHandler.hpp"
 #include "leanstore/concurrency/utils/YieldLock.hpp"
-#include "leanstore/concurrency/batch/Task.hpp"
 #include "leanstore/io/IoAbstraction.hpp"
 // -------------------------------------------------------------------------------------
 #include "boost/context/continuation.hpp"
@@ -18,7 +18,7 @@
 namespace mean
 {
 class UniqueTaskExecutor;
-class UniqueTaskDeleter; 
+class UniqueTaskDeleter;
 // -------------------------------------------------------------------------------------
 struct UniqueTaskContext {
    bool init = false;
@@ -37,11 +37,12 @@ class UniqueTask
   private:
    UniqueTaskContext context;
    TaskFunction fun;
-   uint64_t arg; 
+   uint64_t arg;
    TaskState state = TaskState::Ready;
    static void trampoline(boost::context::detail::transfer_t t);
    friend UniqueTaskExecutor;
-   friend UniqueTaskDeleter;  
+   friend UniqueTaskDeleter;
+
   public:
    YieldLock* lock;
    UniqueTask(TaskFunction fun) : fun(fun) {}
