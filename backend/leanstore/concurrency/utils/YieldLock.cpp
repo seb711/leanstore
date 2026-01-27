@@ -32,8 +32,7 @@ void YieldLock::lock()
 {
    // this implementation is super unsafe -> you have to be sure that you have the lock when you
    // resume after locking here -> not documented...
-   // if (!try_lock()) {
-   while (!try_lock()) {
+   if (!try_lock()) {
       _waiting++;
       // if (_waiting > 10)
       //   abort();
@@ -45,10 +44,6 @@ void YieldLock::lock()
       mean::task::yield(mean::TaskState::ReadyLock);
       // must be locked at this point
       _waiting--;
-
-#ifndef MEAN_USE_TASKING
-      // break;
-#endif
    }
    assert(jumpmu::thread_local_jumpmu_ctx->lock_counter > 0);
 }

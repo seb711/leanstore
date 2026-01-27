@@ -405,6 +405,7 @@ int BufferManager::processCoolingQueue(CoolingPartition& partition, u64 pages_to
             }
          } else {
             // Evict clean pages immediately
+            pages_processed++; 
             __builtin_prefetch(bf.header.optimistic_parent_pointer.child.parent_bf, 0, 1);
             evictBufferFrame(partition, freed_batch, bf, guard);
          }

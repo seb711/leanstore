@@ -29,8 +29,7 @@
 // #define USE_WATCHDOG
 #define INTERRUPT_TIME FLAGS_tmp
 
-
-// #define USE_BACKGROUND_TASKS
+#define USE_BACKGROUND_TASKS
 
 namespace mean
 {
@@ -206,7 +205,7 @@ public:
 
    // Background Work
    uint64_t last_background_check = 0; 
-   std::array<uint8_t, 1000> time_wheel = {0}; 
+   std::array<uint8_t, 1 << 14> time_wheel; 
    std::array<std::unique_ptr<UniqueBackgroundWork>, 8> background_work = {nullptr}; 
 
    // Workload
