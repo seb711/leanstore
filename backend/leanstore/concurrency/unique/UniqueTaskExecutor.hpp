@@ -29,7 +29,7 @@
 // #define USE_WATCHDOG
 #define INTERRUPT_TIME FLAGS_tmp
 
-#define USE_BACKGROUND_TASKS
+// #define USE_BACKGROUND_TASKS
 
 namespace mean
 {
@@ -195,7 +195,7 @@ public:
    static void setupInterruptVector();
 
    // Task Queues
-   static const int MAX_TASKS = 1 << 14;
+   static const int MAX_TASKS = 1 << 10;
    leanstore::utils::RingBuffer<UniqueTaskPtr> tasks{MAX_TASKS};
    leanstore::utils::RingBuffer<UniqueTaskPtr> tasks_io_done{MAX_TASKS};
 
