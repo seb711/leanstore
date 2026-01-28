@@ -144,6 +144,7 @@ void UniqueTaskExecutor::trampoline(boost::context::detail::transfer_t t)
 #if defined(USE_INTERRUPTS)
       leanstore_osv_debug::set_interrupt_stack((char*)localExec()._sinkInterruptStack);
 #endif
+      arch::irq_disable(); 
       self._currentTask->state = TaskState::Done;
       jumpmu::thread_local_jumpmu_ctx = &self.defaultExecutorContext;
       boost::context::detail::jump_fcontext(self.getCurrentSink(), nullptr);
@@ -165,7 +166,7 @@ UniqueTaskExecutor::UniqueTaskExecutor(MessageHandler& msg, IoChannel& io_channe
    // setupInterruptHandling();
 
    printf("create unique task executor %i\n", executor_id);
-   _sinkInterruptStack = static_cast<char*>(malloc(8192)) + 8192;
+   _sinkInterruptStack = static_cast<char*>(malloc(g_task_context_pool->getStackSize())) + g_task_context_pool->getStackSize();
 }
 
 UniqueTaskExecutor::~UniqueTaskExecutor()
@@ -190,6 +191,7 @@ void UniqueTaskExecutor::setupInterruptVector()
       arch::irq_disable();
 
       auto timer_handler = []() {
+         ensure(jumpmu::thread_local_jumpmu_ctx->CANARY == 0xFEFE and jumpmu::thread_local_jumpmu_ctx->CANARY2 == 0xbaba); 
          leanstore::WorkerCounters::myCounters().time_counter_1++;
          // return;
 
@@ -198,7 +200,7 @@ void UniqueTaskExecutor::setupInterruptVector()
             return;
          }
 
-         assert(!arch::irq_enabled());
+         ensure(!arch::irq_enabled());
 
          auto& self = UniqueTaskExecutor::localExec();
 
@@ -212,7 +214,7 @@ void UniqueTaskExecutor::setupInterruptVector()
             assert(self._currentSink != nullptr);
             assert(self._currentTask.get() != nullptr);
 
-            leanstore_osv_debug::trace_interrupted(&self._currentTask, jumpmu::thread_local_jumpmu_ctx->lock_counter);
+            // leanstore_osv_debug::trace_interrupted(&self._currentTask, jumpmu::thread_local_jumpmu_ctx->lock_counter);
 
             boost::context::detail::ontop_fcontext(self.getCurrentSink(), (void*)self._currentTask.get(), UniqueTaskExecutor::store_task_on_yield);
 
@@ -278,8 +280,6 @@ TaskState UniqueTaskExecutor::runCurrentTask()
       boost::context::detail::ontop_fcontext(_currentTask->context.this_task_context, this, this->store_sink_on_yield);
    }
 
-   jumpmu::thread_local_jumpmu_ctx = &defaultExecutorContext;
-
 #ifdef USE_INTERRUPTS
    run_task = false;
 #ifdef USE_WATCHDOG
@@ -287,6 +287,7 @@ TaskState UniqueTaskExecutor::runCurrentTask()
 #endif
    arch::irq_enable();
 #endif
+   jumpmu::thread_local_jumpmu_ctx = &defaultExecutorContext;
 
    return task->getState();
 }
@@ -378,12 +379,12 @@ void UniqueTaskExecutor::setupBackgroundWork()
 
    // IO POLLER
    std::function<uint64_t(void)> io_poller_fn = [this]() -> uint64_t { return ioChannel.poll(); };
-   std::unique_ptr<UniqueBackgroundWork> io_poller_bg = std::make_unique<UniqueBackgroundWork>(io_poller_fn, 16);
+   std::unique_ptr<UniqueBackgroundWork> io_poller_bg = std::make_unique<UniqueBackgroundWork>(io_poller_fn, 64);
    background_work[1] = std::move(io_poller_bg);
 
    // IO SUBMITTER
    std::function<uint64_t(void)> io_submitter_fn = [this]() -> uint64_t { return ioChannel.submit(); };
-   std::unique_ptr<UniqueBackgroundWork> io_submitter_bg = std::make_unique<UniqueBackgroundWork>(io_submitter_fn, 16);
+   std::unique_ptr<UniqueBackgroundWork> io_submitter_bg = std::make_unique<UniqueBackgroundWork>(io_submitter_fn, 64);
    background_work[2] = std::move(io_submitter_bg);
 
    // PAGE PROVIDER
@@ -461,7 +462,7 @@ void UniqueTaskExecutor::handleBackgroundWork()
       }
 
       // Apply EWMA and schedule next run
-      constexpr double alpha = 0.5;
+      constexpr double alpha = 0.8;
       task->meta.cfrequency = static_cast<uint16_t>(alpha * target_frequency + (1 - alpha) * task->meta.cfrequency);
       uint64_t tiles_ahead = task->meta.cfrequency / TIMING_WHEEL_SLOT_SIZE;
       size_t next_run_position = (current_position + tiles_ahead) % time_wheel.size();
@@ -477,6 +478,7 @@ int UniqueTaskExecutor::process()
    ensure(tasks.size() == 0);
    leanstore::cr::Worker::tls_ptr = this_worker;
    leanstore::CPUCounters::registerThread(std::to_string(id()), false);
+   jumpmu::thread_local_jumpmu_ctx = &defaultExecutorContext;
 #ifdef USE_BACKGROUND_TASKS
    setupBackgroundWork();
    time_wheel[0] = 31;  // THIS IS SUPER IMPORTANT AS IT INITS THE FIRST RUN
@@ -497,6 +499,7 @@ void UniqueTaskExecutor::cycle()
    random_generator.seed(mean::exec::getId());
 
    while (_keep_running) {
+      
 #ifndef USE_BACKGROUND_TASKS
       handleSleep();
       cycles++;
@@ -670,7 +673,7 @@ bool UniqueTaskExecutor::shouldCheckWatchdog()
 int UniqueTaskExecutor::runScheduledTasks()
 {
 #ifdef USE_BACKGROUND_TASKS
-   int max_tasks_per_cycle = std::min((unsigned long)16, tasks.size() + tasks_io_done.size());
+   int max_tasks_per_cycle = std::min((unsigned long)64, tasks.size() + tasks_io_done.size());
 #else
    const int max_tasks_per_cycle = 1;  // std::min((unsigned long)16, tasks.size() + tasks_io_done.size());
 #endif
@@ -705,9 +708,9 @@ bool UniqueTaskExecutor::tryAcquireTaskLock()
          leanstore::ThreadCounters::myCounters().exec_tasks_st_ready_lckskip++;
          return false;
       }
-      // _currentTask->lock->unlock();
-      jumpmu::thread_local_jumpmu_ctx->lock_counter--;
-      _currentTask->context.jumpmuctx->lock_counter++;
+      _currentTask->lock->unlock();
+      // jumpmu::thread_local_jumpmu_ctx->lock_counter--;
+      // _currentTask->context.jumpmuctx->lock_counter++;
    }
    return true;
 }

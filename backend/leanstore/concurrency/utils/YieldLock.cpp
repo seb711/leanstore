@@ -32,7 +32,7 @@ void YieldLock::lock()
 {
    // this implementation is super unsafe -> you have to be sure that you have the lock when you
    // resume after locking here -> not documented...
-   if (!try_lock()) {
+   while (!try_lock()) {
       _waiting++;
       // if (_waiting > 10)
       //   abort();

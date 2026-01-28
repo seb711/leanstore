@@ -24,12 +24,12 @@
 #include <queue>
 #include <unordered_map>
 
-// #define USE_INTERRUPTS
-// #define USE_PERIODIC_TIMER
+#define USE_INTERRUPTS
+#define USE_PERIODIC_TIMER
 // #define USE_WATCHDOG
 #define INTERRUPT_TIME FLAGS_tmp
 
-// #define USE_BACKGROUND_TASKS
+#define USE_BACKGROUND_TASKS
 
 namespace mean
 {
@@ -206,7 +206,9 @@ public:
    // Background Work
    uint64_t last_background_check = 0; 
    std::array<uint8_t, 1 << 12> time_wheel; 
-   std::array<std::unique_ptr<UniqueBackgroundWork>, 8> background_work = {nullptr}; 
+   std::array<std::unique_ptr<UniqueBackgroundWork>, 8> background_work = {nullptr};
+   std::uniform_int_distribution<> distr; 
+   std::mt19937 gen;  
 
    // Workload
    TaskFunction workloadFunction;

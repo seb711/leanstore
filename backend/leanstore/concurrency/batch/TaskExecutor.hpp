@@ -28,7 +28,7 @@ namespace mean
 // -------------------------------------------------------------------------------------
 class TaskExecutor : public ThreadBase
 {
-   static const int MAX_TASKS = 256;
+   static const int MAX_TASKS = 512;
    leanstore::utils::RingBuffer<Task*> tasks{MAX_TASKS};
    leanstore::utils::RingBuffer<Task*> tasks_io_done{MAX_TASKS};
 #ifndef NDEBUG

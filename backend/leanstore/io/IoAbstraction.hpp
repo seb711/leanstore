@@ -110,6 +110,7 @@ RequestStackLockfree<RaidRequest<TImplRequest>> request_stack;
    IoBaseRequest* getIoRequest() override { 
       RaidRequest<TImplRequest>* req = nullptr;
       if (!request_stack.popFromFreeStack(req)) {
+         abort(); 
          return nullptr;
       }
       return &req->base;
@@ -132,11 +133,7 @@ RequestStackLockfree<RaidRequest<TImplRequest>> request_stack;
    // -------------------------------------------------------------------------------------
    void _push(const IoBaseRequest& usr) override { 
       IoBaseRequest* req = getIoRequest();
-      if (!req) {
-         throw std::logic_error("Cannot push more: free: " + std::to_string(request_stack.free) + " pushed: " + std::to_string(request_stack.pushed)  + " max: " + std::to_string(request_stack.max_entries));
-         // abort(); 
-      }
-      ensure(req);
+      ensure(req); 
       req->copyFields(usr);
       pushIoRequest(req);
    }
