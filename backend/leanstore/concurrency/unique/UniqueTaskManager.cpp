@@ -20,6 +20,9 @@
 // -------------------------------------------------------------------------------------
 namespace mean
 {
+UniqueTaskExecutor::UniqueTaskPtr originTask;
+std::atomic<uint8_t> parallel_threads;
+
 // -------------------------------------------------------------------------------------
 UniqueTaskManager::~UniqueTaskManager()
 {
@@ -105,7 +108,8 @@ void UniqueTaskManager::adjustWorkerCount(int workerThreads)
          int id = i + exclusiveThreads;
          ensure(id < ioChannels);
          // physical channel
-         execs.push_back(std::make_unique<UniqueTaskExecutor>(messageManager->getMessageHandler(id), IoInterface::instance().getIoChannel(i - runningExecs), *nics.back(), id));
+         execs.push_back(std::make_unique<UniqueTaskExecutor>(messageManager->getMessageHandler(id),
+                                                              IoInterface::instance().getIoChannel(i - runningExecs), *nics.back(), id));
          execs.back()->setCpuAffinityBeforeStart(id + threadAffinityOffset);
          workers[id] = new leanstore::cr::Worker(id, workers, workerThreads + exclusiveThreads);
          execs.back()->this_worker = workers[id];
@@ -127,9 +131,7 @@ void UniqueTaskManager::reflowPageProviderPartitions()
          exclusiveThreads = buffer_manager->cooling_partitions_count;
       }
       if (t_i < (int)buffer_manager->cooling_partitions_count) {
-         sendTask(t_i, [=]() {
-            UniqueTaskExecutor::localExec().registerPageProvider(buffer_manager, t_i);
-         });
+         sendTask(t_i, [=]() { UniqueTaskExecutor::localExec().registerPageProvider(buffer_manager, t_i); });
       }
    }
 }
@@ -138,13 +140,13 @@ void UniqueTaskManager::start(TaskFunction taskFun)
 {
    for (auto& exe : execs) {
       exe->start();
-      printf("start thread\n"); 
+      printf("start thread\n");
    }
    for (auto& exe : execs) {
       while (!exe->ready()) {
       }
    }
-   printf("everybody is ready\n"); 
+   printf("everybody is ready\n");
    auto taskf = new TaskFunction(taskFun);
    messageManager->dbgSendMessage(
        exclusiveThreads, exclusiveThreads,
@@ -165,6 +167,8 @@ void UniqueTaskManager::shutdown()
    for (auto* nic : nics) {
       delete nic;
    }
+   IoInterface::instance().~RaidEnvironment(); 
+   std::cout << "delete here? " << std::endl; 
 }
 // -------------------------------------------------------------------------------------
 void UniqueTaskManager::join()
@@ -283,7 +287,7 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
    ensure(tasks > 0);
    const int threads = workerCount();
    int originExecId = UniqueTaskExecutor::localExec().id();
-   UniqueTaskExecutor::UniqueTaskPtr originTask = UniqueTaskExecutor::localExec().getCurrentTaskOwnership();
+   originTask = UniqueTaskExecutor::localExec().getCurrentTaskOwnership();
    if (bbgranularity < 1) {
       bbgranularity = std::max(1ul, (bb.end - bb.begin) / threads / tasks / 20);
    }
@@ -302,8 +306,10 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
    // we create here a workload nic (-> basically a workload generator but that is timing aware)
    // therefore we need a rate and a function
 
-   for (int thr = 0; thr < threads; thr++) {
-      sendTask(thr + exclusiveThreads, [&originTask, &fun, &bb]() {
+   parallel_threads = ((bb.end - bb.begin) == 1) ? 1 : threads;
+
+   for (int thr = 0; thr < parallel_threads; thr++) {
+      sendTask(thr + exclusiveThreads, [&fun, &bb]() {
          // here setup the local executor
          // std::cout << "\n\n\nyeah idk what we will do here\n\n\n" << std::endl;
 
@@ -312,9 +318,9 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
          // std::cout << "turn on nic " << std::hex << &UniqueTaskExecutor::localExec().nic << std::endl;
          if ((bb.end - bb.begin) > 1) {
             // problem with the interrupt handling is that you can only set it up in a
-            // running environment and not before that -> otherwise the interrupt handler go 
+            // running environment and not before that -> otherwise the interrupt handler go
             // crazy (-> probably would need some work on the interrupts)
-            UniqueTaskExecutor::localExec().setupInterruptHandling(); 
+            UniqueTaskExecutor::localExec().setupInterruptHandling();
             UniqueTaskExecutor::localExec().set_workload_function(fun);
             UniqueTaskExecutor::localExec().nic.turn_on();
          } else {
@@ -325,14 +331,10 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
             clock_event->disable();
 #endif
 
-            printf("move origin to ready\n"); 
+            printf("move origin to ready\n");
             UniqueTaskExecutor::localExec().moveReady(std::move(originTask));
          }
       });
-      // std::cout << "startedTasks: " << startedTasks << std::endl;
-      if ((bb.end - bb.begin) == 1) {
-         break; 
-      }
    }
    // yield, and push to waitingTasks
 
@@ -393,8 +395,7 @@ UniqueTaskExecutor& UniqueTaskManager::getExec(int id)
 }
 void UniqueTaskManager::sendTask(int to, TaskFunction taskFun)
 {
-
-   printf("sending task to %i\n", to); 
+   printf("sending task to %i\n", to);
    auto taskFun1 = new TaskFunction(taskFun);
    UniqueTaskExecutor::localExec().sendMessage(
        to,

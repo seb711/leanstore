@@ -174,7 +174,6 @@ auto ycsb_insert_fun = [&]() {
       mean::task::parallelFor(bb, ycsb_tx, FLAGS_worker_tasks, 100000, true);
       auto diffTSC = mean::tscDifferenceNs(mean::readTSC(), startTsc) / 1e9;
       auto diffTP = mean::timePointDifference(mean::getTimePoint(), startTP) / 1e9;
-      while (true) {}
       std::cout << "done: time: " << diffTP << " tsc: " << diffTSC << std::endl;
    }
    mean::env::shutdown();

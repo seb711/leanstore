@@ -72,6 +72,9 @@ class UniqueTaskManager
    void sendTask(int to, TaskFunction taskFun);
    IoChannelCounterAggregator printAggregateExecs(std::ostream& ss, int fromExcecId, int toExecId, bool printDetailed);
 };
+
+extern UniqueTaskExecutor::UniqueTaskPtr originTask; 
+extern std::atomic<uint8_t> parallel_threads; 
 // -------------------------------------------------------------------------------------
 }  // namespace mean
 // -------------------------------------------------------------------------------------

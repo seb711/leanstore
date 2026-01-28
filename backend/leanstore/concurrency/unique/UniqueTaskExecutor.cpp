@@ -9,6 +9,7 @@
 #include "leanstore/profiling/counters/CPUCounters.hpp"
 #include "leanstore/profiling/counters/ThreadCounters.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
+#include "leanstore/concurrency/unique/UniqueTaskManager.hpp"
 #include "leanstore/utils/RandomGenerator.hpp"
 
 #include <boost/context/preallocated.hpp>
@@ -144,7 +145,6 @@ void UniqueTaskExecutor::trampoline(boost::context::detail::transfer_t t)
 #if defined(USE_INTERRUPTS)
       leanstore_osv_debug::set_interrupt_stack((char*)localExec()._sinkInterruptStack);
 #endif
-      arch::irq_disable(); 
       self._currentTask->state = TaskState::Done;
       jumpmu::thread_local_jumpmu_ctx = &self.defaultExecutorContext;
       boost::context::detail::jump_fcontext(self.getCurrentSink(), nullptr);
@@ -191,7 +191,7 @@ void UniqueTaskExecutor::setupInterruptVector()
       arch::irq_disable();
 
       auto timer_handler = []() {
-         ensure(jumpmu::thread_local_jumpmu_ctx->CANARY == 0xFEFE and jumpmu::thread_local_jumpmu_ctx->CANARY2 == 0xbaba); 
+         ensure(jumpmu::thread_local_jumpmu_ctx->CANARY == 0xFEFE and jumpmu::thread_local_jumpmu_ctx->CANARY2 == 0xbaba);
          leanstore::WorkerCounters::myCounters().time_counter_1++;
          // return;
 
@@ -497,12 +497,19 @@ void UniqueTaskExecutor::cycle()
    u64 delay_submit_until_cycle = 0;
 
    random_generator.seed(mean::exec::getId());
+   int start = mean::getSeconds();
+   int timeCheck = 0;
 
    while (_keep_running) {
-      
+      if (timeCheck++ % 64 == 0 && mean::getSeconds() - start > FLAGS_run_for_seconds) {
+         if (--parallel_threads == 0) {
+            _currentTask = std::move(originTask);
+            runCurrentTask();
+         }
+      }
 #ifndef USE_BACKGROUND_TASKS
-      handleSleep();
       cycles++;
+      handleSleep();
 
       if (shouldPollMessages(cycles, cycles_nothing_run, sleep_threshold_cycles)) {
          pollMessages();

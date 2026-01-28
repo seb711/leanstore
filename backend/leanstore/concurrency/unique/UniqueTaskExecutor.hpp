@@ -24,8 +24,8 @@
 #include <queue>
 #include <unordered_map>
 
-#define USE_INTERRUPTS
-#define USE_PERIODIC_TIMER
+// #define USE_INTERRUPTS
+// #define USE_PERIODIC_TIMER
 // #define USE_WATCHDOG
 #define INTERRUPT_TIME FLAGS_tmp
 
@@ -237,5 +237,4 @@ public:
 // Thread-local State
 extern thread_local bool run_task;
 extern thread_local std::atomic<uint64_t> last_timestamp;
-
 }  // namespace mean

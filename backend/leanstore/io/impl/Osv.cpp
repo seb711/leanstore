@@ -56,11 +56,13 @@ NVMeController::NVMeController()
 NVMeController::~NVMeController()
 {
    // TODO: somehow we should see if we release the io_queues but for now we wont do that -> just exit
-   for (auto& qpair : qpairs) {
-      assert(device_id != -1);
-      osv_remove_io_user_queue(device_id, qpair);
-   }
-   qpairs.clear();
+   // for (auto& qpair : qpairs) {
+   //    assert(device_id != -1);
+   //    osv_remove_io_user_queue(device_id, qpair);
+   // }
+   // qpairs.clear();
+   std::cout << "shutdown controller " << device_id << std::endl; 
+   osv_shutdown_controller(device_id); 
 }
 // -------------------------------------------------------------------------------------
 uint32_t NVMeController::nsLbaDataSize()
