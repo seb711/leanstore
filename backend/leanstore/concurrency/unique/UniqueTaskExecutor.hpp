@@ -205,7 +205,7 @@ public:
 
    // Background Work
    uint64_t last_background_check = 0; 
-   std::array<uint8_t, 1 << 14> time_wheel; 
+   std::array<uint8_t, 1 << 12> time_wheel; 
    std::array<std::unique_ptr<UniqueBackgroundWork>, 8> background_work = {nullptr}; 
 
    // Workload

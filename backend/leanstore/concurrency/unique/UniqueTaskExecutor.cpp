@@ -372,8 +372,8 @@ void UniqueTaskExecutor::setupBackgroundWork()
    // 4. Nic
 
    // MESSAGE HANDLER
-   std::function<uint64_t(void)> message_handler_fn = [&]() -> uint64_t { return messageHandler.poll(this); };
-   std::unique_ptr<UniqueBackgroundWork> message_handler_bg = std::make_unique<UniqueBackgroundWork>(message_handler_fn, 20);
+   std::function<uint64_t(void)> message_handler_fn = [this]() -> uint64_t { return messageHandler.poll(this); };
+   std::unique_ptr<UniqueBackgroundWork> message_handler_bg = std::make_unique<UniqueBackgroundWork>(message_handler_fn, 64);
    background_work[0] = std::move(message_handler_bg);
 
    // IO POLLER
@@ -389,8 +389,8 @@ void UniqueTaskExecutor::setupBackgroundWork()
    // PAGE PROVIDER
    std::function<uint64_t(void)> page_provider_fn = [this]() -> uint64_t {
       if (buffer_manager && partition_id >= 0) {
-         uint64_t res = buffer_manager->pageProviderCycle(partition_id); 
-         leanstore_osv_debug::trace_leanstore_sched_comp(3, res / 64.0, res); 
+         uint64_t res = buffer_manager->pageProviderCycle(partition_id);
+         leanstore_osv_debug::trace_leanstore_sched_comp(3, res / 64.0, res);
          return res;
       }
       return 0;
@@ -399,9 +399,9 @@ void UniqueTaskExecutor::setupBackgroundWork()
    background_work[3] = std::move(page_provider_bg);
 
    // NIC
-   // std::function<uint64_t(void)> dummy_nic_handler_fn = [this]() -> uint64_t { return pollWorkload(); };
-   // std::unique_ptr<UniqueBackgroundWork> dummy_nic_handler_bg = std::make_unique<UniqueBackgroundWork>(dummy_nic_handler_fn, 4);
-   // background_work[4] = std::move(dummy_nic_handler_bg);
+   std::function<uint64_t(void)> dummy_nic_handler_fn = [this]() -> uint64_t { return pollWorkload(); };
+   std::unique_ptr<UniqueBackgroundWork> dummy_nic_handler_bg = std::make_unique<UniqueBackgroundWork>(dummy_nic_handler_fn, 4);
+   background_work[4] = std::move(dummy_nic_handler_bg);
 
    // NOT SURE ABOUT THE WATCHDOG HERE (-> this is REALLY latency critical)
 }
@@ -412,11 +412,10 @@ void UniqueTaskExecutor::handleBackgroundWork()
    uint64_t current_tsc = mean::readTSC() / 1000;
    uint64_t current_time_us = current_tsc / 4;
    size_t current_position = (current_time_us / TIMING_WHEEL_SLOT_SIZE) % time_wheel.size();
-   
+
    // Calculate tiles to advance (handle wraparound)
-   uint64_t tiles_to_advance = current_position >= last_background_check 
-       ? current_position - last_background_check 
-       : time_wheel.size() - last_background_check + current_position;
+   uint64_t tiles_to_advance = current_position >= last_background_check ? current_position - last_background_check
+                                                                         : time_wheel.size() - last_background_check + current_position;
 
    // OR all bytes in range and clear them
    uint8_t pending_work = 0;
@@ -427,14 +426,16 @@ void UniqueTaskExecutor::handleBackgroundWork()
    }
 
    last_background_check = current_position;
-   if (pending_work == 0) return;
+   if (pending_work == 0)
+      return;
 
    // Execute scheduled tasks
    for (size_t task_id = 0; task_id < background_work.size(); ++task_id) {
-      if (!(pending_work & (1 << task_id)) || !background_work[task_id]) continue;
+      if (!(pending_work & (1 << task_id)) || !background_work[task_id])
+         continue;
 
       auto* task = background_work[task_id].get();
-      
+
       // Run task and measure time
       uint64_t start_time = mean::readTSC();
       leanstore::WorkerCounters::myCounters().time_counter_1++;
@@ -448,17 +449,19 @@ void UniqueTaskExecutor::handleBackgroundWork()
       // Adjust frequency based on work done
       double work_ratio = static_cast<double>(done_work) / task->meta.max_work;
       uint16_t target_frequency = task->meta.cfrequency;
-      
+
       if (work_ratio > 0.9) {
          target_frequency = static_cast<uint16_t>(task->meta.cfrequency * 0.8);
-         if (target_frequency < TIMING_WHEEL_SLOT_SIZE) target_frequency = TIMING_WHEEL_SLOT_SIZE;
+         if (target_frequency < TIMING_WHEEL_SLOT_SIZE)
+            target_frequency = TIMING_WHEEL_SLOT_SIZE;
       } else if (work_ratio < 0.1) {
          target_frequency = static_cast<uint16_t>(task->meta.cfrequency * 1.2);
-         if (target_frequency > 5000) target_frequency = 5000;
+         if (target_frequency > 5000)
+            target_frequency = 5000;
       }
 
       // Apply EWMA and schedule next run
-      constexpr double alpha = 0.5; 
+      constexpr double alpha = 0.5;
       task->meta.cfrequency = static_cast<uint16_t>(alpha * target_frequency + (1 - alpha) * task->meta.cfrequency);
       uint64_t tiles_ahead = task->meta.cfrequency / TIMING_WHEEL_SLOT_SIZE;
       size_t next_run_position = (current_position + tiles_ahead) % time_wheel.size();
@@ -476,8 +479,8 @@ int UniqueTaskExecutor::process()
    leanstore::CPUCounters::registerThread(std::to_string(id()), false);
 #ifdef USE_BACKGROUND_TASKS
    setupBackgroundWork();
-   // last_background_check = mean::readTSC();
-   time_wheel[0] = 30;
+   time_wheel[0] = 31;  // THIS IS SUPER IMPORTANT AS IT INITS THE FIRST RUN
+                        // last_background_check = mean::readTSC();
 #endif
    cycle();
    return 0;
@@ -494,17 +497,17 @@ void UniqueTaskExecutor::cycle()
    random_generator.seed(mean::exec::getId());
 
    while (_keep_running) {
+#ifndef USE_BACKGROUND_TASKS
+      handleSleep();
+      cycles++;
+
       if (shouldPollMessages(cycles, cycles_nothing_run, sleep_threshold_cycles)) {
          pollMessages();
       }
-      
+
       if (shouldPollWorkload(cycles)) {
          pollWorkload();
       }
-#ifndef USE_BACKGROUND_TASKS
-
-      handleSleep();
-      cycles++;
 
       if (shouldRunPageProvider(cycles)) {
          pageProviderCycle();
@@ -666,8 +669,11 @@ bool UniqueTaskExecutor::shouldCheckWatchdog()
 
 int UniqueTaskExecutor::runScheduledTasks()
 {
-   const int max_tasks_per_cycle = 16;
-
+#ifdef USE_BACKGROUND_TASKS
+   int max_tasks_per_cycle = std::min((unsigned long)16, tasks.size() + tasks_io_done.size());
+#else
+   const int max_tasks_per_cycle = 1;  // std::min((unsigned long)16, tasks.size() + tasks_io_done.size());
+#endif
    int tasks_run = 0;
 
    while (tasks_run < max_tasks_per_cycle && popTask(_currentTask)) {
@@ -675,6 +681,7 @@ int UniqueTaskExecutor::runScheduledTasks()
 
       if (!tryAcquireTaskLock()) {
          tasks_run++;
+         // continue;
          break;
       }
 
@@ -683,8 +690,8 @@ int UniqueTaskExecutor::runScheduledTasks()
       handleTaskState(state);
    }
 
-   leanstore::WorkerCounters::myCounters().time_counter_3++; 
-   leanstore::WorkerCounters::myCounters().total_time_sum_3 += tasks_run; 
+   leanstore::WorkerCounters::myCounters().time_counter_3++;
+   leanstore::WorkerCounters::myCounters().total_time_sum_3 += tasks_run;
 
    return tasks_run;
 }
@@ -699,8 +706,8 @@ bool UniqueTaskExecutor::tryAcquireTaskLock()
          return false;
       }
       // _currentTask->lock->unlock();
-      // jumpmu::thread_local_jumpmu_ctx->lock_counter--;
-      // _currentTask->context.jumpmuctx->lock_counter++;
+      jumpmu::thread_local_jumpmu_ctx->lock_counter--;
+      _currentTask->context.jumpmuctx->lock_counter++;
    }
    return true;
 }
