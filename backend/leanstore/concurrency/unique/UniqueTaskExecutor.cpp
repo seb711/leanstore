@@ -646,7 +646,9 @@ int UniqueTaskExecutor::pollWorkloadWithRate()
 {
    size_t requests = nic.poll();
 
-   for (size_t i = 0; i < requests; i++) {
+   size_t task_to_do = std::min(requests, FLAGS_worker_tasks - opentasks); 
+
+   for (size_t i = 0; i < task_to_do; i++) {
       UniqueTaskPtr task = createTask(workloadFunction, trampoline);
       task->context.jumpmuctx->tx_start_time = nic.get(i)->timestamp;
       tasks.push_back(std::move(task));

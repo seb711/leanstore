@@ -62,7 +62,7 @@ if(LEANSTORE_INCLUDE_XNVME)
    message("Including XNVME")
    
    # Try to find static versions
-   find_library(XNVME_STATIC_LIB libxnvme.a PATHS ${XNVME_LIBRARY_PATH})
+   find_library(XNVME_STATIC_LIB libxnvme.a PATHS ${X_LIBRARY_PATH})
    find_library(SSL_STATIC_LIB libssl.a)
    
    if(XNVME_STATIC_LIB)

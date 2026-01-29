@@ -195,7 +195,7 @@ public:
    static void setupInterruptVector();
 
    // Task Queues
-   static const int MAX_TASKS = 1 << 10;
+   static const int MAX_TASKS = 1 << 12;
    leanstore::utils::RingBuffer<UniqueTaskPtr> tasks{MAX_TASKS};
    leanstore::utils::RingBuffer<UniqueTaskPtr> tasks_io_done{MAX_TASKS};
 

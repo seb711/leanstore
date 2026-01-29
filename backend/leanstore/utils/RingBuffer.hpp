@@ -56,7 +56,7 @@ public:
         // Check if buffer is full
         TValue* current_read = read_ptr.load(std::memory_order_acquire);
         if (next_write == current_read) { // full
-            throw std::logic_error("full");
+            throw std::logic_error("cannot push more into ringbuffer: full");
         }
         
         // Write the value
@@ -84,7 +84,7 @@ public:
         // Check if buffer is full
         TValue* current_read = read_ptr.load(std::memory_order_acquire);
         if (next_write == current_read) { // full
-            throw std::logic_error("full");
+            throw std::logic_error("cannot push more into ringbuffer: full");
         }
         
         // Write the value (move)
