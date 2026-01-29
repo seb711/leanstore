@@ -67,27 +67,43 @@ void run_ycsb() {
       cout << "-------------------------------------------------------------------------------------" << endl;
       cout << "Inserting values" << endl;
       begin = chrono::high_resolution_clock::now();
-      BlockedRange bb(0, (u64)1);
-      ensure((bool)((bb.end - bb.begin) >= 1));
+
+      // Atomic counter for block coordination
+      std::atomic<u64> current_block_start{0};
+      const u64 block_size = 1 << 18; // Adjust granularity as needed
+      const u64 total_items = n;
+
 #if defined(MEAN_USE_TASKING) || defined(MEAN_USE_UNIQUE_TASKING)
-// #if 0
-auto ycsb_insert_fun = [&]() {
-         // vector<u64> keys(range.size());
-         // std::iota(keys.begin(), keys.end(), range.begin());
-         // std::random_shuffle(keys.begin(), keys.end());
-         for (uint32_t t = 0; t < n; t++) {
-            YCSBPayload payload;
-            utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
-            auto& key = t;
-            table.insert(key, payload);
-            YCSBPayload result; /// FIXME remove this check
-            table.lookup(t, result);
-            ensure(result == payload);
-   
-            // mean::task::yield();
+      auto ycsb_insert_fun = [&]() {
+         while (true) {
+            // Atomically fetch the next block to work on
+            u64 block_start = current_block_start.fetch_add(block_size, std::memory_order_relaxed);
+            
+            // Check if we're done
+            if (block_start >= total_items) {
+               break;
+            }
+            
+            // Calculate actual block end (handle last block being smaller)
+            u64 block_end = std::min(block_start + block_size, total_items);
+            
+            // Process this block
+            for (u64 t = block_start; t < block_end; t++) {
+               YCSBPayload payload;
+               utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
+               auto& key = t;
+               table.insert(key, payload);
+               
+               YCSBPayload result; /// FIXME remove this check
+               table.lookup(t, result);
+               ensure(result == payload);
+            }
          }
       };
-      mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks);
+
+      BlockedRange bb(0, (u64)1);
+      ensure((bool)((bb.end - bb.begin) >= 1));
+      mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks, false);
 #else
 #ifdef NEW_JUMPMU
             jumpmu::thread_local_jumpmu.pid = -2; 

@@ -79,7 +79,7 @@ void* OsvEnv::allocIoMemoryChecked(size_t size, size_t align)
 
 void OsvEnv::freeIoMemory(void* ptr, [[maybe_unused]] size_t size)
 {
-   // std::free(ptr);
+   std::free(ptr);
 }
 
 int OsvEnv::deviceCount()

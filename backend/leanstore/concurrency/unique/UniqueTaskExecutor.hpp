@@ -29,7 +29,7 @@
 // #define USE_WATCHDOG
 #define INTERRUPT_TIME FLAGS_tmp
 
-#define USE_BACKGROUND_TASKS
+// #define USE_BACKGROUND_TASKS
 
 namespace mean
 {

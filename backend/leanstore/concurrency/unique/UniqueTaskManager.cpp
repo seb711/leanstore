@@ -288,12 +288,9 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
    const int threads = workerCount();
    int originExecId = UniqueTaskExecutor::localExec().id();
    originTask = UniqueTaskExecutor::localExec().getCurrentTaskOwnership();
-   if (bbgranularity < 1) {
-      bbgranularity = std::max(1ul, (bb.end - bb.begin) / threads / tasks / 20);
-   }
+
    // std::cout << "threads: " << threads << " tasks: " << tasks << " granularity: " << bbgranularity << std::endl;
    const unsigned int totalTasks = threads * tasks;
-   std::atomic<u64> bbnow = {bb.begin};
    std::atomic<u64> doneTasks = {0};
    std::atomic<bool> cancleable = {false};
    int startedTasks = 0;
@@ -306,17 +303,20 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
    // we create here a workload nic (-> basically a workload generator but that is timing aware)
    // therefore we need a rate and a function
 
-   parallel_threads = ((bb.end - bb.begin) == 1) ? 1 : threads;
+   parallel_threads = threads;
+
+   std::atomic<uint8_t> done_tasks = {0}; 
 
    for (int thr = 0; thr < parallel_threads; thr++) {
-      sendTask(thr + exclusiveThreads, [&fun, &bb]() {
+      done_tasks++; 
+      sendTask(thr + exclusiveThreads, [&done_tasks, &rate_active, &fun]() {
          // here setup the local executor
          // std::cout << "\n\n\nyeah idk what we will do here\n\n\n" << std::endl;
 
          // setup the workload function
 
          // std::cout << "turn on nic " << std::hex << &UniqueTaskExecutor::localExec().nic << std::endl;
-         if ((bb.end - bb.begin) > 1) {
+         if (rate_active) {
             // problem with the interrupt handling is that you can only set it up in a
             // running environment and not before that -> otherwise the interrupt handler go
             // crazy (-> probably would need some work on the interrupts)
@@ -330,9 +330,9 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
 #if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER)
             clock_event->disable();
 #endif
-
-            printf("move origin to ready\n");
-            UniqueTaskExecutor::localExec().moveReady(std::move(originTask));
+            if (--done_tasks == 0) {
+               UniqueTaskExecutor::localExec().moveReady(std::move(originTask));
+            } 
          }
       });
    }

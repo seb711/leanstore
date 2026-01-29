@@ -65,7 +65,7 @@ class TaskManager
    TaskExecutor& getExec(int id);
    int size() const;
   private:
-   void sendTask(int to, TaskFunction taskFun);
+   Task* sendTask(int to, TaskFunction taskFun);
    IoChannelCounterAggregator printAggregateExecs(std::ostream& ss, int fromExcecId, int toExecId, bool printDetailed);
 };
 // -------------------------------------------------------------------------------------

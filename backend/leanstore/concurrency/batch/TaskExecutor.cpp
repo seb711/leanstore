@@ -57,7 +57,7 @@ void TaskExecutor::runUserThread(Task& task)
       // std::cout << "xx runUserThread init " << std::endl;
       task.context.init = true;
       task.context.this_task_context =
-          boost::context::callcc(std::allocator_arg, boost::context::fixedsize_stack(8 * 1024 * 1024), [&task](boost::context::continuation&& sink) {
+          boost::context::callcc(std::allocator_arg, boost::context::fixedsize_stack(64 * 1024), [&task](boost::context::continuation&& sink) {
              // task.context.this_task_context = boost::context::callcc([&task](boost::context::continuation&& sink_process_context){
              // std::cout << "callcc lamda " <<std::endl << std::flush;
              task.context.sink_process_context = &sink;
