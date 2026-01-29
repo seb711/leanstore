@@ -24,10 +24,9 @@ std::string SSDTable::getName()
 // -------------------------------------------------------------------------------------
 void SSDTable::open()
 {
-   columns.emplace("key", [&](Column& col) { col << ssd; });
+   columns.emplace("key", [&](Column& col) { col << "ssd"; });
    columns.emplace("name", [&](Column& col) {
-         col << mean::IoInterface::instance().getDeviceInfo().devices[ssd].name; 
-         assert(ssd == mean::IoInterface::instance().getDeviceInfo().devices[ssd].id); 
+         col << ""; 
    });
    columns.emplace("pushed_k", [&](Column& col) { col << local_pushed / KILO;});
    columns.emplace("polled_l", [&](Column& col) { col << local_polled / KILO;});
@@ -47,15 +46,7 @@ void SSDTable::open()
 void SSDTable::next()
 {
    clear();
-   int ssds = mean::IoInterface::instance().getDeviceInfo().devices.size();
-   for (int i = 0; i < ssds; i++) {
-      ssd = i;
-      local_pushed = sum(SSDCounters::ssd_counters, &SSDCounters::pushed, ssd);
-      local_polled = sum(SSDCounters::ssd_counters, &SSDCounters::polled, ssd);
-      for (auto& c : columns) {
-         c.second.generator(c.second);
-      }
-   }
+   
 }
 // -------------------------------------------------------------------------------------
 }  // namespace profiling

@@ -116,7 +116,9 @@ void TaskExecutor::cycle()
    u64 delaySubmitUntilCycle = 0;
    auto counterUpdateTime = getSeconds();
    random_generator.seed(mean::exec::getId());
+
    while (_keep_running) {
+
       if (sleep != 0) {
          float s = sleep.exchange(0);
          std::cout << "sleep for: " << s << std::endl;

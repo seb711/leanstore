@@ -4,10 +4,10 @@
 #include "Exceptions.hpp"
 #include "Time.hpp"
 #include "leanstore/Config.hpp"
-#include "leanstore/storage/btree/core/BTreeGeneric.hpp"
 #include "leanstore/profiling/counters/CPUCounters.hpp"
 #include "leanstore/profiling/counters/PPCounters.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
+#include "leanstore/storage/btree/core/BTreeGeneric.hpp"
 #include "leanstore/storage/buffer-manager/Swip.hpp"
 #include "leanstore/sync-primitives/Latch.hpp"
 #include "leanstore/sync-primitives/PlainGuard.hpp"
@@ -57,12 +57,14 @@ BufferManager::BufferManager()
       cooling_partitions_count = FLAGS_pp_threads;
       io_partitions_count = (1 << FLAGS_partition_bits);
       partitions_mask = io_partitions_count - 1;
-      
-      const u64 free_bfs_limit = std::max(std::ceil((FLAGS_free_pct * 1.0 * dram_pool_size / 100.0) / static_cast<double>(cooling_partitions_count)), 0.0); //128.0);
-      const u64 cooling_bfs_upper_bound = std::max(std::ceil((FLAGS_cool_pct * 1.0 * dram_pool_size / 100.0) / static_cast<double>(cooling_partitions_count)), 0.0);// 128.0);
+
+      const u64 free_bfs_limit =
+          std::max(std::ceil((FLAGS_free_pct * 1.0 * dram_pool_size / 100.0) / static_cast<double>(cooling_partitions_count)), 0.0);  // 128.0);
+      const u64 cooling_bfs_upper_bound =
+          std::max(std::ceil((FLAGS_cool_pct * 1.0 * dram_pool_size / 100.0) / static_cast<double>(cooling_partitions_count)), 0.0);  // 128.0);
 
       std::cout << "free_bfs_limit: " << free_bfs_limit << " cooling_bfs_upper_bound: " << cooling_bfs_upper_bound << std::endl;
-      const u64 max_outsanding_ios = (FLAGS_async_batch_size + FLAGS_worker_tasks)*2;
+      const u64 max_outsanding_ios = (FLAGS_async_batch_size + FLAGS_worker_tasks) * 2;
       io_partitions = reinterpret_cast<IoPartition*>(malloc(sizeof(IoPartition) * io_partitions_count));
       for (u64 p_i = 0; p_i < io_partitions_count; p_i++) {
          new (io_partitions + p_i) IoPartition(max_outsanding_ios);
@@ -83,44 +85,44 @@ BufferManager::BufferManager()
       });
       // -------------------------------------------------------------------------------------
    }
-   // -------------------------------------------------------------------------------------
-   
-   // Init SSD pool
-   #if (defined(MEAN_USE_THREADING) || defined(MEAN_USE_DEFAULT_THREADING)) && defined(IS_LINUX)
+// -------------------------------------------------------------------------------------
+
+// Init SSD pool
+#if (defined(MEAN_USE_THREADING) || defined(MEAN_USE_DEFAULT_THREADING)) && defined(IS_LINUX)
    int flags = O_RDWR | O_DIRECT;
    if (FLAGS_trunc) {
-     flags |= O_TRUNC | O_CREAT;
+      flags |= O_TRUNC | O_CREAT;
    }
    ssd_fd = open(FLAGS_ssd_path.c_str(), flags, 0666);
    posix_check(ssd_fd > -1);
    if (FLAGS_falloc > 0) {
-     const u64 gib_size = 1024ull * 1024ull * 1024ull;
-     auto dummy_data = (u8*)aligned_alloc(512, gib_size);
-     for (u64 i = 0; i < FLAGS_falloc; i++) {
-       const int ret = pwrite(ssd_fd, dummy_data, gib_size, gib_size * i);
-       posix_check(ret == gib_size);
-     }
-     free(dummy_data);
-     fsync(ssd_fd);
+      const u64 gib_size = 1024ull * 1024ull * 1024ull;
+      auto dummy_data = (u8*)aligned_alloc(512, gib_size);
+      for (u64 i = 0; i < FLAGS_falloc; i++) {
+         const int ret = pwrite(ssd_fd, dummy_data, gib_size, gib_size * i);
+         posix_check(ret == gib_size);
+      }
+      free(dummy_data);
+      fsync(ssd_fd);
    }
    ensure(fcntl(ssd_fd, F_GETFL) != -1);
-   #endif
-   
+#endif
+
    // -------------------------------------------------------------------------------------
    // Background threads
    // -------------------------------------------------------------------------------------
    // Page Provider threads
    mean::env::registerPageProvider(this, cooling_partitions_count);
-      /*
-      for (u64 t_i = 0; t_i < FLAGS_pp_threads; t_i++) {
-        thread& page_provider_thread = pp_threads[t_i];
-        cpu_set_t cpuset;
-        CPU_ZERO(&cpuset);
-        CPU_SET(t_i, &cpuset);
-        posix_check(pthread_setaffinity_np(page_provider_thread.native_handle(), sizeof(cpu_set_t), &cpuset) == 0);
-        page_provider_thread.detach();
-      }
-      */
+   /*
+   for (u64 t_i = 0; t_i < FLAGS_pp_threads; t_i++) {
+     thread& page_provider_thread = pp_threads[t_i];
+     cpu_set_t cpuset;
+     CPU_ZERO(&cpuset);
+     CPU_SET(t_i, &cpuset);
+     posix_check(pthread_setaffinity_np(page_provider_thread.native_handle(), sizeof(cpu_set_t), &cpuset) == 0);
+     page_provider_thread.detach();
+   }
+   */
 }
 // -------------------------------------------------------------------------------------
 void BufferManager::clearSSD()
@@ -131,7 +133,7 @@ void BufferManager::clearSSD()
 void BufferManager::writeAllBufferFrames()
 {
    // TODO
-   //stopBackgroundThreads();
+   // stopBackgroundThreads();
    ensure(!FLAGS_out_of_place);
    utils::Parallelize::parallelRange(dram_pool_size, [&](u64 bf_b, u64 bf_e) {
       for (u64 bf_i = bf_b; bf_i < bf_e; bf_i++) {
@@ -176,20 +178,22 @@ CoolingPartition& BufferManager::randomCoolingPartition()
 // -------------------------------------------------------------------------------------
 BufferFrame& BufferManager::randomBufferFrame()
 {
-   auto rand_buffer_i = utils::RandomGenerator::getRandU64(0, dram_pool_size);//getRandU64STD(0, dram_pool_size);//getRand<u64>(0, dram_pool_size);
+   auto rand_buffer_i = utils::RandomGenerator::getRandU64(0, dram_pool_size);  // getRandU64STD(0, dram_pool_size);//getRand<u64>(0, dram_pool_size);
    return bfs[rand_buffer_i];
 }
 // -------------------------------------------------------------------------------------
 BufferFrame& BufferManager::partitionRandomBufferFrame(u64 partition, u64 max_partitions)
 {
-   // it's a bit more complex as pool_size might not be a multiple of partitions_count 
-   // dram_pool_size = amount of frames in the dram 
-   u64 bfs_remaining = dram_pool_size % max_partitions; // this checks if the pages were evenly distributed (you cannot evenly distribut 7 pages among 3 partitions...)
-   
+   // it's a bit more complex as pool_size might not be a multiple of partitions_count
+   // dram_pool_size = amount of frames in the dram
+   u64 bfs_remaining =
+       dram_pool_size %
+       max_partitions;  // this checks if the pages were evenly distributed (you cannot evenly distribut 7 pages among 3 partitions...)
+
    // calculate how many pages this partition has
-   u64 bfs_this_partition = dram_pool_size/max_partitions + (partition < bfs_remaining ? 1 : 0); // +1 if this partition has a page more
-   
-   // now calculate the correct position of the frame 
+   u64 bfs_this_partition = dram_pool_size / max_partitions + (partition < bfs_remaining ? 1 : 0);  // +1 if this partition has a page more
+
+   // now calculate the correct position of the frame
    // problem: the frames are round robin distributed and not in blocks
    // buffer0 -> p0, buffer1 -> p1, buffer2 -> p2, buffer3 -> p0, buffer4 -> p1, ...
    auto rand_buffer_i = partition + utils::RandomGenerator::getRandU64(0, bfs_this_partition) * cooling_partitions_count;
@@ -199,15 +203,16 @@ BufferFrame& BufferManager::partitionRandomBufferFrame(u64 partition, u64 max_pa
 // -------------------------------------------------------------------------------------
 u64 BufferManager::partitionRandomBufferFramePos(u64 partition, u64 max_partitions)
 {
-   // it's a bit more complex as pool_size might not be a multiple of partitions_count 
+   // it's a bit more complex as pool_size might not be a multiple of partitions_count
    u64 bfs_remaining = dram_pool_size % max_partitions;
-   u64 bfs_this_partition = dram_pool_size/max_partitions + (partition < bfs_remaining ? 1 : 0); // +1 if this partition has a page more
+   u64 bfs_this_partition = dram_pool_size / max_partitions + (partition < bfs_remaining ? 1 : 0);  // +1 if this partition has a page more
    auto rand_buffer_i = partition + utils::RandomGenerator::getRandU64(0, bfs_this_partition) * cooling_partitions_count;
    assert(rand_buffer_i < dram_pool_size);
    return rand_buffer_i;
 }
 // -------------------------------------------------------------------------------------
-CoolingPartition& BufferManager::getCoolingPartition(BufferFrame& bf) {
+CoolingPartition& BufferManager::getCoolingPartition(BufferFrame& bf)
+{
    u64 pos = &bf - bfs;
    return cooling_partitions[pos % cooling_partitions_count];
 }
@@ -237,7 +242,10 @@ BufferFrame& BufferManager::allocatePage()
    }
    free_bf.header.latch.assertExclusivelyLatched();
    // -------------------------------------------------------------------------------------
-   COUNTERS_BLOCK() { WorkerCounters::myCounters().allocate_operations_counter++; }
+   COUNTERS_BLOCK()
+   {
+      WorkerCounters::myCounters().allocate_operations_counter++;
+   }
    // -------------------------------------------------------------------------------------
    return free_bf;
 }
@@ -282,26 +290,26 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
       assert(swip_value.bf >= bfs && swip_value.bf <= bfs + dram_pool_size + safety_pages);
       return swip_value.bfRef();
    }
-   auto setOptimisticParentPointer = [this](Guard& swip_x_guard, Swip<BufferFrame>& swip_value){
+   auto setOptimisticParentPointer = [this](Guard& swip_x_guard, Swip<BufferFrame>& swip_value) {
       if (FLAGS_optimistic_parent_pointer) {
          jumpmuTry()
          {
-            // assumes parent and child are exclusively locked 
+            // assumes parent and child are exclusively locked
             swip_value.bfRef().header.optimistic_parent_pointer.parent.last_swip_invalidation_version = swip_value.bfRef().header.latch.version;
-            // hacky, have to find parent bf from swip, pid and  pos. 
-            static_assert(sizeof(BufferFrame) == 512+PAGE_SIZE);
+            // hacky, have to find parent bf from swip, pid and  pos.
+            static_assert(sizeof(BufferFrame) == 512 + PAGE_SIZE);
             u64 bf_index = ((u64)swip_x_guard.latch - (u64)this->bfs) / sizeof(BufferFrame);
             BufferFrame& parent_bf = this->bfs[bf_index];
-            assert(&parent_bf.header.latch == swip_x_guard.latch); // the above calculation is correct
-            assert(swip_x_guard.state == GUARD_STATE::EXCLUSIVE); // the parent is exclusively locked.
-            assert((swip_value.bfRef().header.latch.version & LATCH_EXCLUSIVE_BIT) == LATCH_EXCLUSIVE_BIT); // the child is exclusively locked.
+            assert(&parent_bf.header.latch == swip_x_guard.latch);                                           // the above calculation is correct
+            assert(swip_x_guard.state == GUARD_STATE::EXCLUSIVE);                                            // the parent is exclusively locked.
+            assert((swip_value.bfRef().header.latch.version & LATCH_EXCLUSIVE_BIT) == LATCH_EXCLUSIVE_BIT);  // the child is exclusively locked.
             // the position is needed in xmerge and contention split. They can call lowerBound to find it, just retrun -1.
-            s32 pos = -1; 
-            swip_value.bfRef().header.optimistic_parent_pointer.child.update(&parent_bf, parent_bf.header.pid,
-                  reinterpret_cast<BufferFrame**>(&swip_value),
-                  pos, parent_bf.header.latch.version, "bm"); // swip_guard == parent_bf.header.latch.version
+            s32 pos = -1;
+            swip_value.bfRef().header.optimistic_parent_pointer.child.update(
+                &parent_bf, parent_bf.header.pid, reinterpret_cast<BufferFrame**>(&swip_value), pos, parent_bf.header.latch.version,
+                "bm");  // swip_guard == parent_bf.header.latch.version
             assert(swip_value.isHOT());
-            //parent_handler.is_bf_updated = true;
+            // parent_handler.is_bf_updated = true;
          }
          jumpmuCatch() {}
       }
@@ -323,8 +331,10 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
       // -------------------------------------------------------------------------------------
       io_frame.state = IOFrame::STATE::READING;
       io_frame.readers_counter = 1;
-      ensure(jumpmu::thread_local_jumpmu_ctx->lock_counter > 0); 
-      ensure(io_frame.mutex.try_lock()); /// HEREREER
+#ifdef MEAN_USE_UNIQUE_TASKING
+      ensure(jumpmu::thread_local_jumpmu_ctx->lock_counter > 0);
+#endif
+      ensure(io_frame.mutex.try_lock());  /// HEREREER
       // -------------------------------------------------------------------------------------
       g_guard->unlock();
       // -------------------------------------------------------------------------------------
@@ -358,14 +368,15 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
       bf.header.lastWrittenGSN = bf.page.GSN;
       bf.header.state = BufferFrame::STATE::LOADED;
       bf.header.pid = pid;
-      io_frame.bf =(BufferFrame*)0x1111;
+      io_frame.bf = (BufferFrame*)0x1111;
       // -------------------------------------------------------------------------------------
       jumpmuTry()
       {
          if (io_frame.readers_counter > 250) {
             auto done = mean::getTimePoint();
-            std::cout << "high reader count read frame: " << io_frame.readers_counter << " diff " << mean::timePointDifferenceUs(done, start) << std::endl;
-            //raise(SIGINT);
+            std::cout << "high reader count read frame: " << io_frame.readers_counter << " diff " << mean::timePointDifferenceUs(done, start)
+                      << std::endl;
+            // raise(SIGINT);
          }
          swip_guard.recheck();
          JMUW<std::unique_lock<mean::mmutex>> g_guard(partition.io_mutex);
@@ -373,8 +384,8 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
          io_frame.mutex.unlock();
          swip_value.warm(&bf);
          bf.header.state = BufferFrame::STATE::HOT;  // ATTENTION: SET TO HOT AFTER
-                                                   // IT IS SWIZZLED IN
-         { // opp
+                                                     // IT IS SWIZZLED IN
+         {                                           // opp
             OptimisticGuard bf_guard(bf.header.latch);
             ExclusiveGuard bf_x_guard(bf_guard);
             setOptimisticParentPointer(swip_guard, swip_value);
@@ -406,7 +417,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
    if (io_frame.state == IOFrame::STATE::READING) {
       io_frame.readers_counter++;  // incremented while holding partition lock
       g_guard->unlock();
-      io_frame.mutex.lock(); //// HEREERERE
+      io_frame.mutex.lock();  //// HEREERERE
       io_frame.mutex.unlock();
       if (io_frame.readers_counter.fetch_add(-1) == 1) {
          g_guard->lock();
@@ -444,8 +455,8 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
                                                       // IT IS SWIZZLED IN
          // -------------------------------------------------------------------------------------
          if (io_frame.readers_counter > 180) {
-            std::cout << "frame: " << io_frame.readers_counter << " bf.dt_id: " << bf->page.dt_id<< std::endl;
-            //raise(SIGINT);
+            std::cout << "frame: " << io_frame.readers_counter << " bf.dt_id: " << bf->page.dt_id << std::endl;
+            // raise(SIGINT);
          }
          if (io_frame.readers_counter.fetch_add(-1) == 1) {
             partition.io_ht.remove(pid);
@@ -466,7 +477,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
    }
    ensure(false);
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wreturn-type" // compiler complains about: warning: control reaches end of non-void function
+#pragma GCC diagnostic ignored "-Wreturn-type"  // compiler complains about: warning: control reaches end of non-void function
 }  // namespace storage
 #pragma GCC diagnostic pop
 // -------------------------------------------------------------------------------------
@@ -490,33 +501,31 @@ void BufferManager::readPageSync(u64 pid, u8* destination)
 #elif defined(MEAN_USE_THREADING)
 #if defined(IS_LINUX)
    const int bytes_read = pread(ssd_fd, destination, bytes_left, pid * PAGE_SIZE + (PAGE_SIZE - bytes_left));
-#else 
+#else
    auto start = mean::readTSC();
    mean::task::read(reinterpret_cast<char*>(destination), pid * PAGE_SIZE, bytes_left);
-   auto now = mean::readTSC(); 
+   auto now = mean::readTSC();
 #endif
 #elif defined(MEAN_USE_DEFAULT_THREADING)
 #if defined(IS_LINUX)
    const int bytes_read = pread(ssd_fd, destination, bytes_left, pid * PAGE_SIZE + (PAGE_SIZE - bytes_left));
-#else 
+#else
    auto start = mean::readTSC();
    mean::task::read(reinterpret_cast<char*>(destination), pid * PAGE_SIZE, bytes_left);
-   auto now = mean::readTSC(); 
+   auto now = mean::readTSC();
 #endif
 #else
-   assert("false"); 
+   assert("false");
 #endif
    /* auto timeDiff = mean::tscDifferenceNs(now, start);
    // printf("%lu\n", timeDiff);
    leanstore::WorkerCounters::myCounters().total_setup_tx_time += timeDiff;
    leanstore::WorkerCounters::myCounters().setup_tx++; */
    // -------------------------------------------------------------------------------------
-   WorkerCounters::myCounters().read_operations_counter++; 
+   WorkerCounters::myCounters().read_operations_counter++;
 }
 // -------------------------------------------------------------------------------------
-void BufferManager::fDataSync()
-{
-}
+void BufferManager::fDataSync() {}
 // -------------------------------------------------------------------------------------
 u64 BufferManager::getIoPartitionID(PID pid)
 {
@@ -540,7 +549,7 @@ void BufferManager::stopBackgroundThreads()
 // -------------------------------------------------------------------------------------
 BufferManager::~BufferManager()
 {
-   //stopBackgroundThreads();
+   // stopBackgroundThreads();
    free(cooling_partitions);
    free(io_partitions);
    // -------------------------------------------------------------------------------------

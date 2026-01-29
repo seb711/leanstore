@@ -1,6 +1,6 @@
 // -------------------------------------------------------------------------------------
-#include "Task.hpp"
 #include "TaskManager.hpp"
+#include "Task.hpp"
 #include "leanstore/concurrency/Mean.hpp"
 #include "leanstore/io/IoInterface.hpp"
 // -------------------------------------------------------------------------------------
@@ -73,16 +73,18 @@ void TaskManager::init(int workerThreads, int exclusiveThreads, IoOptions ioOpti
    // workers
    adjustWorkerCount(workerThreads);
 }
-int TaskManager::workerCount() {
+int TaskManager::workerCount()
+{
    return runningExecs;
 }
 // -------------------------------------------------------------------------------------
-void TaskManager::adjustWorkerCount(int workerThreads) {
+void TaskManager::adjustWorkerCount(int workerThreads)
+{
    if (runningExecs > workerThreads) {
       // shut them down
       for (int i = workerThreads; i < runningExecs; i++) {
-            execs[i]->stop();
-            execs[i]->join();
+         execs[i]->stop();
+         execs[i]->join();
       }
       execs.resize(workerThreads);
    } else {
@@ -102,17 +104,19 @@ void TaskManager::adjustWorkerCount(int workerThreads) {
    runningExecs = workerThreads;
    // reflowPageProviderPartitions();
 }
-void TaskManager::reflowPageProviderPartitions() {
+void TaskManager::reflowPageProviderPartitions()
+{
    if (partitions_count <= 0) {
       return;
    }
-   //ensure(runningExecs == (int)buffer_manager->cooling_partitions_count);
-   std::cout << "reflowPageProviderPartitions() p_cnt: " << partitions_count << " running: " << runningExecs << " pp gettid: " << gettid() << std::endl;
+   // ensure(runningExecs == (int)buffer_manager->cooling_partitions_count);
+   std::cout << "reflowPageProviderPartitions() p_cnt: " << partitions_count << " running: " << runningExecs << " pp gettid: " << gettid()
+             << std::endl;
    for (int t_i = 0; t_i < runningExecs; t_i++) {
       if (!FLAGS_nopp) {
-         exclusiveThreads = buffer_manager->cooling_partitions_count; 
+         exclusiveThreads = buffer_manager->cooling_partitions_count;
       }
-      if (t_i < (int)buffer_manager->cooling_partitions_count){
+      if (t_i < (int)buffer_manager->cooling_partitions_count) {
          sendTask(t_i, [=] { TaskExecutor::localExec().registerPageProvider(buffer_manager, t_i); });
       }
    }
@@ -143,6 +147,7 @@ void TaskManager::shutdown()
    for (auto& exe : execs) {
       exe->stop();
    }
+   IoInterface::instance().~RaidEnvironment();
 }
 // -------------------------------------------------------------------------------------
 void TaskManager::join()
@@ -198,7 +203,7 @@ std::string TaskManager::printCountersHeader()
 std::string TaskManager::printCounters(int te_id)
 {
    std::stringstream ss;
-   execs[te_id]->counters.printCounters(ss); 
+   execs[te_id]->counters.printCounters(ss);
    execs[te_id]->counters.reset();
    ss << ",";
    execs[te_id]->ioChannel.counters.printCounters(ss);
@@ -231,7 +236,8 @@ void TaskManager::registerExclusiveThread(std::string name, int, TaskFunction fu
    ex.setNameBeforeStart(name);
    ex.sendTask(fun);
 }
-void TaskManager::registerPageProvider(void* bf_ptr, int partitions_count) {
+void TaskManager::registerPageProvider(void* bf_ptr, int partitions_count)
+{
    this->buffer_manager = static_cast<BufferManager*>(bf_ptr);
    this->partitions_count = partitions_count;
    reflowPageProviderPartitions();
@@ -248,87 +254,102 @@ void TaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int tasks
    const int threads = workerCount();
    int originExecId = TaskExecutor::localExec().id();
    Task* originTask = &TaskExecutor::localExec().currentTask();
-   if (bbgranularity < 1) { bbgranularity = std::max(1ul, (bb.end - bb.begin)/threads/tasks/20); }
-   //std::cout << "threads: " << threads << " tasks: " << tasks << " granularity: " << bbgranularity << std::endl;
-   const unsigned int totalTasks = threads*tasks;
+   if (bbgranularity < 1) {
+      bbgranularity = std::max(1ul, (bb.end - bb.begin) / threads / tasks / 20);
+   }
+   // std::cout << "threads: " << threads << " tasks: " << tasks << " granularity: " << bbgranularity << std::endl;
+   const unsigned int totalTasks = threads * tasks;
    std::atomic<u64> bbnow = {bb.begin};
    std::atomic<u64> doneTasks = {0};
-   std::atomic<bool> cancleable = {false}; 
+   std::atomic<bool> cancleable = {false};
    int startedTasks = 0;
    for (int thr = 0; thr < threads; thr++) {
       for (int ta = 0; ta < tasks; ta++) {
          startedTasks++;
-         sendTask(thr + exclusiveThreads, [&cancleable, &threads, &tasks, &rate_active, &bbnow, &bb,  &doneTasks, totalTasks, fun, bbgranularity, originTask, originExecId] {
-            // work stealing
-            u64 start = 0;
-            u64 end = 0;
-            while (start < bb.end) {
-               bool ok = false;
-               while (!ok) {
-                  start = bbnow.load();
-                  if (start < bb.begin || start >= bb.end) { break; } // all done
-                  end = std::min(start + bbgranularity, bb.end);
-                  ok = bbnow.compare_exchange_strong(start, end);
-               }
-               //TaskExecutor::localExec().disableMessagePoller = true;
-               if (ok ) {
-                  assert(start >= bb.begin && start < bb.end);
-                  //std::string s = "load: start: " + std::to_string(start) + " end: " + std::to_string(end) + " bbs: " + std::to_string(bb.begin) +  " bbe: " + std::to_string(bb.end);
-                  //std::cout << s << std::endl;
+         sendTask(thr + exclusiveThreads,
+                  [&cancleable, &threads, &tasks, &rate_active, &bbnow, &bb, &doneTasks, totalTasks, fun, bbgranularity, originTask, originExecId] {
+                     // work stealing
+                     u64 start = 0;
+                     u64 end = 0;
+                     int startTime = mean::getSeconds();
+                     int timeCheck = 0;
 
-                  auto nextStartTime = mean::readTSC();
-                  u64 longLat = 0;
-
-                  const float rate = FLAGS_tx_rate / (threads * tasks);
-                  std::random_device rd;
-                  std::mt19937 gen(rd());
-                  std::exponential_distribution<> expDist(rate);
-
-                  for (u64 id = start; id < end; id++) {
-                     fun();
-
-                      // this has to be done in order to simulate the latency
-                     while (true) {
-                        mean::task::yield();
-                        auto now = mean::readTSC();
-                        if (rate == 0 or !rate_active)
-                           break;
-                        if (now >= nextStartTime) {
-                           if (mean::tscDifferenceS(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time) > 1) {
-                              longLat++;
-                              nextStartTime = now;
-                              std::cout << "reset start time" << std::endl;
-                              if (longLat % 100000 == 0) {
-                                 // std::cout << "thr: " << mean::exec::getId() << " long latency: " << longLat << std::endl;
-                              }
-                           }
-                           auto d = expDist(gen);
-                           jumpmu::thread_local_jumpmu_ctx->tx_start_time = nextStartTime;
-                           nextStartTime += mean::nsToTSC(d * 1e9);
-                           // std::cout << "next: " << nextStartTime << std::flush << std::endl;
-                           break;
+                     while (start < bb.end) {
+                        bool ok = false;
+                        while (!ok) {
+                           start = bbnow.load();
+                           if (start < bb.begin || start >= bb.end) {
+                              break;
+                           }  // all done
+                           end = std::min(start + bbgranularity, bb.end);
+                           ok = bbnow.compare_exchange_strong(start, end);
                         }
+                        // TaskExecutor::localExec().disableMessagePoller = true;
+                        if (ok) {
+                           assert(start >= bb.begin && start < bb.end);
+                           // std::string s = "load: start: " + std::to_string(start) + " end: " + std::to_string(end) + " bbs: " +
+                           // std::to_string(bb.begin) +  " bbe: " + std::to_string(bb.end); std::cout << s << std::endl;
+
+                           auto nextStartTime = mean::readTSC();
+                           u64 longLat = 0;
+
+                           const float rate = FLAGS_tx_rate / (threads * tasks);
+                           std::random_device rd;
+                           std::mt19937 gen(rd());
+                           std::exponential_distribution<> expDist(rate);
+
+                           for (u64 id = start; id < bb.end; id++) {
+                              if (timeCheck++ % 64 == 0 && mean::getSeconds() - startTime > FLAGS_run_for_seconds) {
+                                 break;
+                              }
+
+                              fun();
+
+                              // this has to be done in order to simulate the latency
+                              while (true) {
+                                 mean::task::yield();
+                                 auto now = mean::readTSC();
+                                 if (rate == 0 or !rate_active)
+                                    break;
+                                 if (now >= nextStartTime) {
+                                    if (mean::tscDifferenceS(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time) > 1) {
+                                       longLat++;
+                                       nextStartTime = now;
+                                       std::cout << "reset start time" << std::endl;
+                                       if (longLat % 100000 == 0) {
+                                          // std::cout << "thr: " << mean::exec::getId() << " long latency: " << longLat << std::endl;
+                                       }
+                                    }
+                                    auto d = expDist(gen);
+                                    jumpmu::thread_local_jumpmu_ctx->tx_start_time = nextStartTime;
+                                    nextStartTime += mean::nsToTSC(d * 1e9);
+                                    // std::cout << "next: " << nextStartTime << std::flush << std::endl;
+                                    break;
+                                 }
+                              }
+                              // END: LATENCY TESTS
+                           }
+                           if (mean::getSeconds() - startTime > FLAGS_run_for_seconds) {
+                              break;
+                           }
+                        }
+                        // TaskExecutor::localExec().disableMessagePoller = false;
                      }
-                     // END: LATENCY TESTS
-                  }
-               }
-               //TaskExecutor::localExec().disableMessagePoller = false;
-            }
-            doneTasks++;
-            //std::cout << "dones task: " << doneTasks << " toal: " << totalTasks << std::endl;
-            if (doneTasks == totalTasks) { // last one hast to wake up the original thread.
-            // sendMessage to origin Exec, in it move origin Task from waiting to ready and let it continue
-               std::cout << "dones task: " << doneTasks << " toal: " << totalTasks << std::endl;
-               TaskExecutor::localExec().sendMessage(
-                     originExecId,
-                     [](void*, uintptr_t taskPtr) {
-                     Task* task = reinterpret_cast<Task*>(taskPtr);
-                     TaskExecutor::localExec().moveReady(task);
-                     },
-                     reinterpret_cast<uintptr_t>(originTask));
-            }
-         });
-         //std::cout << "startedTasks: " << startedTasks << std::endl;
+                     doneTasks++;
+                     // std::cout << "dones task: " << doneTasks << " toal: " << totalTasks << std::endl;
+                     if (doneTasks == totalTasks) {  // last one hast to wake up the original thread.
+                                                     // sendMessage to origin Exec, in it move origin Task from waiting to ready and let it continue
+                        std::cout << "dones task: " << doneTasks << " toal: " << totalTasks << std::endl;
+                        TaskExecutor::localExec().sendMessage(
+                            originExecId,
+                            [](void*, uintptr_t taskPtr) {
+                               Task* task = reinterpret_cast<Task*>(taskPtr);
+                               TaskExecutor::localExec().moveReady(task);
+                            },
+                            reinterpret_cast<uintptr_t>(originTask));
+                     }
+                  });
+         // std::cout << "startedTasks: " << startedTasks << std::endl;
       }
    }
    // yield, and push to waitingTasks
@@ -348,28 +369,31 @@ void TaskManager::yield(TaskState ts)
 void TaskManager::blockingIo(IoRequestType type, char* data, s64 addr, u64 len)
 {
    UserIoCallback cb;
-   cb.callback =  [](IoBaseRequest* req) {
-           auto this_task = reinterpret_cast<Task*>(req->user.user_data2.val.ptr);
-           auto this_executor = reinterpret_cast<TaskExecutor*>(req->user.user_data3.val.ptr); 
-              // std::cout << "completion addr: " << req->addr <<  std::endl << std::flush;
-              assert(this_executor->id() == req->user.user_data.val.s);  //
-              this_executor->moveReady(this_task);
-              // TODO maybe push Task to top.
-           },
+   cb.callback =
+       [](IoBaseRequest* req) {
+          auto this_task = reinterpret_cast<Task*>(req->user.user_data2.val.ptr);
+          auto this_executor = reinterpret_cast<TaskExecutor*>(req->user.user_data3.val.ptr);
+          // std::cout << "completion addr: " << req->addr <<  std::endl << std::flush;
+          assert(this_executor->id() == req->user.user_data.val.s);  //
+          this_executor->moveReady(this_task);
+          // TODO maybe push Task to top.
+       },
    cb.user_data.val.s = TaskExecutor::localExec().id();
    cb.user_data3.val.ptr = &TaskExecutor::localExec();
    cb.user_data2.val.ptr = &TaskExecutor::localExec().currentTask();
 
    TaskExecutor::localExec().ioChannel.push(type, data, addr, len, cb);
-   //TaskExecutor::localExec().ioChannel.submit();
+   // TaskExecutor::localExec().ioChannel.submit();
    TaskExecutor::yieldCurrentTask(TaskState::WaitIo);
 }
 // -------------------------------------------------------------------------------------
-Task& TaskManager::this_task() {
+Task& TaskManager::this_task()
+{
    return TaskExecutor::localExec().currentTask();
 }
-void TaskManager::set_current_task_lock(YieldLock& lock) {
-   TaskExecutor::localExec().currentTask().lock = &lock; 
+void TaskManager::set_current_task_lock(YieldLock& lock)
+{
+   TaskExecutor::localExec().currentTask().lock = &lock;
 }
 // -------------------------------------------------------------------------------------
 // other
