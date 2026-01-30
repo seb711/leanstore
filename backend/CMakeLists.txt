@@ -47,7 +47,7 @@ target_link_library_prefer_static(leanstore tabluate)
 target_link_library_prefer_static(leanstore custom_memcmp)
 
 # Always link osv dynamically
-target_link_libraries(leanstore osv)
+target_link_libraries(leanstore osv fakeosv aio)
 
 target_link_options(leanstore PRIVATE -Wl,-wrap,memcmp -Wl,-wrap,memcpy -Wl,-wrap,memmove)
 
@@ -55,6 +55,7 @@ target_link_options(leanstore PRIVATE -Wl,-wrap,memcmp -Wl,-wrap,memcpy -Wl,-wra
 # Dependencies
 # ---------------------------------------------------------------------------
 add_dependencies(leanstore liburing)
+
 
 # xnvme stuff
 if(LEANSTORE_INCLUDE_XNVME)

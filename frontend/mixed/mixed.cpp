@@ -125,9 +125,7 @@ void run_ycsb()
 
          auto before = mean::readTSC();
          uint64_t key = zipf_random->rand();
-#ifdef NEW_JUMPMU
-         jumpmu::thread_local_jumpmu.pid = i;
-#endif
+
          int txtype = wl.tx();
          auto now = mean::readTSC();
          // auto timeDiff = mean::tscDifferenceUs(now, before);

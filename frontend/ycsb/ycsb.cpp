@@ -113,7 +113,7 @@ void run_ycsb() {
 #endif 
 
       // auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>&) {
-      for (int i = 0; i < bb.end; i++) {
+      for (int i = 0; i < n; i++) {
          // vector<u64> keys(range.size());
          // std::iota(keys.begin(), keys.end(), range.begin());
          // std::random_shuffle(keys.begin(), keys.end());

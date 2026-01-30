@@ -3,6 +3,11 @@ target_link_libraries(ycsb leanstore Threads::Threads custom_memcmp osv)
 target_link_options(ycsb PRIVATE -Wl,-wrap,memcmp  -Wl,-wrap,memcpy -Wl,-wrap,memmove)
 target_include_directories(ycsb PRIVATE ${SHARED_INCLUDE_DIRECTORY})
 
+add_executable(ycsb2 ycsb/ycsb.cpp)
+target_link_libraries(ycsb2 leanstore Threads::Threads custom_memcmp osv)
+target_link_options(ycsb2 PRIVATE -Wl,-wrap,memcmp  -Wl,-wrap,memcpy -Wl,-wrap,memmove)
+target_include_directories(ycsb2 PRIVATE ${SHARED_INCLUDE_DIRECTORY})
+
 add_library(mixed SHARED mixed/mixed.cpp)
 target_link_libraries(mixed leanstore Threads::Threads custom_memcmp osv)
 target_link_options(mixed PRIVATE -Wl,-wrap,memcmp  -Wl,-wrap,memcpy -Wl,-wrap,memmove)

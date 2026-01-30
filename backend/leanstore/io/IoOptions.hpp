@@ -20,7 +20,7 @@ struct IoOptions {
    // -------------------------------------------------------------------------------------
    bool ioUringPollMode = false;
    int ioUringShareWq = 0;
-   bool ioUringNVMePassthrough = false;
+   bool ioUringNVMePassthrough = true;
    // -------------------------------------------------------------------------------------
    bool raid5 = false;
    int channelCount = 0;

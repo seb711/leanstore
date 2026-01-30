@@ -94,6 +94,7 @@ class DefaultThreadingManager
    void yield(TaskState ts);
    void blockingIo(IoRequestType type, char* data, s64 addr, u64 len);
    Task& this_task();
+   void set_current_task_lock(YieldLock& lock);
    void sleepAll(float sleep) {};
 
    // -------------------------------------------------------------------------------------

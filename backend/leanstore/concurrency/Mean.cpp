@@ -5,7 +5,6 @@
 #include "unique/UniqueTaskManager.hpp"
 #include "batch/TaskManager.hpp"
 #include "default/DefaultThreadingManager.hpp"
-#include "osv/OsvJobManager.hpp"
 // -------------------------------------------------------------------------------------
 #include <mutex>
 // -------------------------------------------------------------------------------------

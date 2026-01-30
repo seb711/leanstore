@@ -2,6 +2,7 @@
 #include "TaskManager.hpp"
 #include "Task.hpp"
 #include "leanstore/concurrency/Mean.hpp"
+#include "leanstore/concurrency/utils/SharedConfig.hpp"
 #include "leanstore/io/IoInterface.hpp"
 // -------------------------------------------------------------------------------------
 #include <algorithm>
@@ -259,17 +260,27 @@ void TaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int tasks
    std::vector<Task*> open_tasks{};
    std::atomic<u64> doneTasks = {0};
    std::atomic<bool> cancleable = {false};
+
+#ifdef LEANSTORE_INCLUDE_OSV
+   volatile SharedConfig* config_ = SharedConfig::get_config();
+   ensure(config_);  
+#else
+   volatile SharedConfig* config_ = SharedConfig::get_config_from_file("/dev/shm/myshm");
+   ensure(config_);  
+#endif
+
    int startedTasks = 0;
    for (int thr = 0; thr < threads; thr++) {
       for (int ta = 0; ta < tasks; ta++) {
          startedTasks++;
          Task* task = sendTask(
-             thr + exclusiveThreads, [&cancleable, &threads, &tasks, &rate_active, &doneTasks, &bb, totalTasks, fun, originTask, originExecId] {
+             thr + exclusiveThreads, [&cancleable, &threads, &tasks, &rate_active, &doneTasks, &bb, config_, totalTasks, fun, originTask, originExecId] {
                 // work stealing
                 u64 start = 0;
                 u64 end = 0;
                 int startTime = mean::getSeconds();
                 int timeCheck = 0;
+                uint64_t prev_config_version = 0;
 
                 // std::string s = "load: start: " + std::to_string(start) + " end: " + std::to_string(end) + " bbs: " +
                 // std::to_string(bb.begin) +  " bbe: " + std::to_string(bb.end); std::cout << s << std::endl;
@@ -282,7 +293,13 @@ void TaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int tasks
                 std::mt19937 gen(rd());
                 std::exponential_distribution<> expDist(rate);
 
+                uint64_t cycles = 0; 
+
                 while (true) {
+                   if (cycles++ % 64 == 0 and prev_config_version < config_->version) {
+                        expDist = std::exponential_distribution<double>(config_->freq / (threads * tasks));
+                        prev_config_version = config_->version; 
+                   }
                    fun();
                    if (!rate_active || (timeCheck++ % 64 == 0 && mean::getSeconds() - startTime > FLAGS_run_for_seconds)) {
                       break;

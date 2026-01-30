@@ -1,24 +1,19 @@
 #pragma once
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <exception>
 #include <osv/leanstore_debug.hh>
 #include <random>
 #include <vector>
-#include <array>
 #include "leanstore/concurrency/Mean.hpp"
+#include "leanstore/concurrency/utils/SharedConfig.hpp"
 
 namespace mean
 {
 struct Request {
    uint64_t timestamp;
 };
-
-struct SharedConfig {
-   volatile uint64_t version;
-   uint64_t freq;  // Base rate (requests per second)
-   uint64_t var;   // Variance/deviation percentage (0-100)
-} __attribute__((packed));
 
 class DummyNIC
 {
@@ -35,17 +30,20 @@ class DummyNIC
    bool active = false;
 
   public:
-   DummyNIC(double rate)
-       : buffer_(), next_time_(0), rate_(rate), gen_(std::random_device{}()), dist_(rate), config_(nullptr)
+   DummyNIC(double rate) : buffer_(), next_time_(0), rate_(rate), gen_(std::random_device{}()), dist_(rate), config_(nullptr)
    {
-      config_ = (volatile SharedConfig*)leanstore_osv_debug::get_shared_memory();
+#ifdef LEANSTORE_INCLUDE_OSV
+   config_ = SharedConfig::get_config();
+#else
+      config_ = SharedConfig::get_config_from_file("/dev/shm/myshm");
+#endif
    }
 
    size_t poll()
    {
       // Check for config updates
       if (config_ && prev_version < config_->version) {
-         // std::cout << "upgrade rate" << std::endl; 
+         // std::cout << "upgrade rate" << std::endl;
          update_rate_from_config();
          prev_version = config_->version;
       }

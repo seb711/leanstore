@@ -1,9 +1,16 @@
 .PHONY: module
 BUILD_DIR = build
 MEAN_TYPE ?= MEAN_USE_JOBBING # Default value, can be overridden
-IS_LINUX ?= 1 # Default to Linux, can be overridden with IS_LINUX=0
+IS_OSV ?= 1 # Default to Linux, can be overridden with IS_LINUX=0
 
-module: install-dependencies cmake-configure
+module: install-dependencies build-shared cmake-configure
+
+LIBFAKEOSVDIR=$(OSV_BASE)/libfakeosv
+LIB_SHARED = $(LIBFAKEOSVDIR)/libfakeosv.so
+
+.PHONY: build-shared
+build-shared:
+	$(MAKE) -C $(LIBFAKEOSVDIR)
 
 # Install required dependencies using apt-get
 .PHONY: install-dependencies
@@ -14,20 +21,22 @@ install-dependencies:
 		libwiredtiger-dev liburing-dev
 
 # Configure compiler flags based on IS_LINUX
-ifeq ($(IS_LINUX),1)
-    PLATFORM_FLAGS = -DIS_LINUX
+ifeq ($(IS_OSV),1)
+    PLATFORM_FLAGS = -DIS_OSV=1
 else
-    PLATFORM_FLAGS = 
+    PLATFORM_FLAGS = -DIS_OSV=0
 endif
 
 # Configure the project with CMake, specifying GCC 12 as the compiler, linking against libtbb, and adding -fPIC for shared lib
 .PHONY: cmake-configure
 cmake-configure:
 	mkdir -p $(BUILD_DIR)
-	cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Release -DLEANSTORE_INCLUDE_OSV=0 \
+	cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Release \
 		-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
 		-DCMAKE_C_FLAGS="-fPIC" \
-		-DCMAKE_CXX_FLAGS="-fPIC -DNOMUTEX -D$(MEAN_TYPE) $(PLATFORM_FLAGS)" \
+		-DCMAKE_CXX_FLAGS="-fPIC -DNOMUTEX -D$(MEAN_TYPE)" \
+		 $(PLATFORM_FLAGS) \
+		-DLIBFAKEOSV_PATH=$(LIB_SHARED) \
 		 .. && make -j
 
 # Clean the build directory

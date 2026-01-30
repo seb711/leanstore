@@ -282,7 +282,7 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb,
 
    // TODO: PIN THE THREAD TO CORE 0
 
-#ifndef IS_LINUX
+#ifdef LEANSTORE_INCLUDE_OSV
    if (FLAGS_tx_rate == 0) {
          cpu_set_t cpuset;
          CPU_ZERO(&cpuset);
@@ -479,6 +479,10 @@ void DefaultThreadingManager::blockingIo(IoRequestType type, char* data, s64 add
 Task& DefaultThreadingManager::this_task()
 {
    throw std::logic_error("cannot be called when running with threads");
+}
+void DefaultThreadingManager::set_current_task_lock(YieldLock& lock)
+{
+   return; 
 }
 // -------------------------------------------------------------------------------------
 // other

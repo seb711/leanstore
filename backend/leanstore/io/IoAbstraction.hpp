@@ -6,8 +6,6 @@
 #include "Units.hpp"
 #include "Exceptions.hpp"
 #include "leanstore/concurrency-recovery/Worker.hpp"
-#include "leanstore/concurrency/osv/background/OsvIoSubmitter.hpp"
-#include "leanstore/concurrency/osv/background/OsvIoPoller.hpp"
 #include "leanstore/utils/Hist.hpp"
 #include "RequestStack.hpp"
 #include "RequestStackLockfree.hpp"
@@ -77,7 +75,7 @@ RequestStackLockfree<RaidRequest<TImplRequest>> request_stack;
    // -------------------------------------------------------------------------------------
   public:
    Raid0Channel(TIoEnvironment& io_env, TIoChannel& io_channel, IoOptions io_options, u64 channelId, u64 totalChannels) // TODO
-      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(2048), raid(io_env.deviceCount(), CHUNK_SIZE)
+      : IoChannel(io_env.deviceCount()), io_env(io_env), io_channel(io_channel), io_options(io_options), request_stack(2048 * 4), raid(io_env.deviceCount(), CHUNK_SIZE)
    {
       // ATTENTION: HERE WE NOW INIT THE BACKGROUND THREADS
       // io_submitter_thread = std::make_unique<OsvIoSubmitter<TImplRequest>>(*this, request_stack, 0); 

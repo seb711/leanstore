@@ -85,4 +85,4 @@ DEFINE_bool(persist, false, "");
 DEFINE_uint64(tx_rate, 0, "");
 DEFINE_uint64(tmp, 0, "");
 // -------------------------------------------------------------------------------------
-DEFINE_uint64(worker_per_threads, 100000, "");
+DEFINE_uint64(worker_per_threads, 100, "");

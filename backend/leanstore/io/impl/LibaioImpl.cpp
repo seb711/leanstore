@@ -52,6 +52,7 @@ void LinuxBaseEnv::init(IoOptions ioOpts)
       } else {
          dev = fileToNGDevice(dev);
       }
+      std::cout << "device name " << dev << std::endl; 
       if (this->ioOptions.truncate) {
          flags |= O_TRUNC | O_CREAT;
       }

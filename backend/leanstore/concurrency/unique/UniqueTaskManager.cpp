@@ -104,7 +104,7 @@ void UniqueTaskManager::adjustWorkerCount(int workerThreads)
       // ioChannels = 1;
       assert(ioChannels > exclusiveThreads);
       for (int i = runningExecs; i < workerThreads; i++) {
-         nics.push_back(new DummyNIC(FLAGS_tx_rate));
+         nics.push_back(new DummyNIC(FLAGS_tx_rate / FLAGS_worker_threads));
          int id = i + exclusiveThreads;
          ensure(id < ioChannels);
          // physical channel
