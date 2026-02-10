@@ -172,9 +172,9 @@ void run_ycsb() {
            auto timeDiff = mean::tscDifferenceUs(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time);
 #endif           // trace_finish_transaction(i); 
            auto timeDiffIncWait = mean::tscDifferenceUs(now, before);
-           WorkerCounters::myCounters().total_tx_time += timeDiff;
-           WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiff);
-           WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
+           WorkerCounters::myCounters().total_tx_time += timeDiffIncWait;
+           WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiffIncWait);
+           WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiff);
            // if (timeDiffIncWait < 10000000) {
            //   WorkerCounters::myCounters().total_tx_time_inc_wait += timeDiffIncWait;
            // }

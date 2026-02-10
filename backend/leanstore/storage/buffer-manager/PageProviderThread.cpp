@@ -1,4 +1,5 @@
-#include <osv/jumpmu.hh>
+#include "leanstore/sync-primitives/JumpMU.hpp"
+
 #include "BufferFrame.hpp"
 #include "BufferManager.hpp"
 #include "Exceptions.hpp"
@@ -47,6 +48,13 @@ void BufferManager::pageProviderThread(u64 partition_begin, u64 partition_end)
    // Thread entry point - can be extended with initialization if needed
 }
 
+std::function<bool()> BufferManager::getPageProviderPrio(int partition_id)
+{
+   CoolingPartition& partition = cooling_partitions[partition_id];
+
+   return [&partition, this]() { return calculateFreeBufferDeficit(partition) > 32; }; 
+}
+
 int BufferManager::pageProviderCycle(int partition_id)
 {
    ensure(partition_id < static_cast<int>(cooling_partitions_count));
@@ -56,12 +64,12 @@ int BufferManager::pageProviderCycle(int partition_id)
    //            If there are less than 64 free pages or (to be) free pages
    if (calculateCoolingDeficit(partition) > 64) {
       assert(arch::irq_enabled());
-      uint64_t unswizzledHotPages = unswizzleHotPages(partition, 128, partition_id);
+      uint64_t unswizzledHotPages = unswizzleHotPages(partition, 64, partition_id);
    }
 
    // Phase 2: Process cooling queue and initiate I/O for dirty pages
    s64 pages_to_process = calculateFreeBufferDeficit(partition);
-   int cooledDownPages = 0; 
+   int cooledDownPages = 0;
    if (pages_to_process > 0) {
       cooledDownPages = processCoolingQueue(partition, pages_to_process, partition.state.freed_bfs_batch);
    }
@@ -74,7 +82,7 @@ int BufferManager::pageProviderCycle(int partition_id)
       partition.pushFreeList();
    }
 
-   return cooledDownPages; 
+   return cooledDownPages;
 }
 
 // ============================================================================
@@ -218,6 +226,10 @@ u64 BufferManager::unswizzleHotPages(CoolingPartition& partition, u64 required_c
       }
    }
 
+   if (failed_attempts == max_failed_attempts) {
+      WorkerCounters::myCounters().time_counter_3++;
+   }
+
    return cooled_count;
 }
 
@@ -232,7 +244,7 @@ bool BufferManager::hasConflictingIoFrame(const BufferFrame& bf)
    if (!io_partition.io_mutex.try_lock()) {
       return true;
    }
-   
+
    bool has_conflict = io_partition.io_ht.lookup(bf.header.pid).holder != nullptr;
    io_partition.io_mutex.unlock();
 
@@ -395,7 +407,7 @@ int BufferManager::processCoolingQueue(CoolingPartition& partition, u64 pages_to
             ensure(partition.outstanding >= 0);
             if (!mean::exec::ioChannel().writeStackFull() && partition.outstanding < static_cast<s64>(partition.io_queue.max_size)) {
                initiateWriteBack(bf, partition, guard);
-               pages_processed++;
+               // pages_processed++;
             } else {
                // Re-queue if I/O resources unavailable
                partition.cooling_bfs_counter++;
@@ -405,7 +417,7 @@ int BufferManager::processCoolingQueue(CoolingPartition& partition, u64 pages_to
             }
          } else {
             // Evict clean pages immediately
-            pages_processed++; 
+            pages_processed++;
             __builtin_prefetch(bf.header.optimistic_parent_pointer.child.parent_bf, 0, 1);
             evictBufferFrame(partition, freed_batch, bf, guard);
          }
@@ -421,7 +433,7 @@ int BufferManager::processCoolingQueue(CoolingPartition& partition, u64 pages_to
       }
    }
 
-   ensure(mean::exec::ioChannel().submitMin() == 0 || pages_processed % mean::exec::ioChannel().submitMin() == 0);
+   // ensure(mean::exec::ioChannel().submitMin() == 0);
 
    return pages_processed;
 }

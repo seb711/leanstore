@@ -64,7 +64,7 @@ void YieldLock::lock()
 }
 void YieldLock::unlock()
 {
-   if (_owner >= 0) {
+   // if (_owner >= 0) {
       _owner = -1;
       _lock.clear(std::memory_order_release);
 #ifdef MEAN_USE_UNIQUE_TASKING
@@ -73,7 +73,7 @@ void YieldLock::unlock()
       arch::irq_enable();
       leanstore_osv_debug::trace_unlock(this, mean::UniqueTaskExecutor::localExec()._currentTask.get());
 #endif
-   }
+   // }
 }
 }  // namespace mean
 // -------------------------------------------------------------------------------------

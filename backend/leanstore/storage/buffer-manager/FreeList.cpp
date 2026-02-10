@@ -3,7 +3,8 @@
 
 #include "Exceptions.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
-#include <osv/jumpmu.hh>
+#include "leanstore/sync-primitives/JumpMU.hpp"
+
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
@@ -49,7 +50,7 @@ struct BufferFrame& FreeList::tryPop(JMUW<std::unique_lock<mean::mmutex>>& lock)
    } else {
       // printf("no free pages\n"); 
       lock->unlock();
-      jumpmu::jump(jumpmu::UserJumpReason::NoFreePages);
+      jumpmu::jump(leanstore::UserJumpReason::NoFreePages);
    }
    return *free_bf;
 }
@@ -79,7 +80,7 @@ struct BufferFrame& FreeList::pop()
    }
    // WorkerCounters::myCounters().dt_researchy_2[0]++;
    WorkerCounters::myCounters().free_list_pop_failed++;
-   jumpmu::jump(jumpmu::UserJumpReason::NoFreePages);
+   jumpmu::jump(leanstore::UserJumpReason::NoFreePages);
    return *free_bf;  // unreachable
 }
 // -------------------------------------------------------------------------------------

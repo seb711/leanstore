@@ -5,7 +5,8 @@
 #include "leanstore/utils/RandomGenerator.hpp"
 #include "leanstore/concurrency/utils/YieldLock.hpp"
 // -------------------------------------------------------------------------------------
-#include <osv/jumpmu.hh>
+#include "JumpMU.hpp"
+#include "leanstore/utils/UserJumpReasons.hpp"
 // -------------------------------------------------------------------------------------
 #ifdef __x86_64__
 #include <emmintrin.h>
@@ -26,10 +27,10 @@ namespace storage
 #define MAX_BACKOFF FLAGS_backoff  // FLAGS_x
 #define BACKOFF_STRATEGIES()                                                        \
    if (FLAGS_nopp                                                                   \
-         && (jumpmu::user_jump_reason() == jumpmu::UserJumpReason::NoFreePages              \
-            || jumpmu::user_jump_reason() == jumpmu::UserJumpReason::Lock)) {               \
-      if (jumpmu::user_jump_reason() == jumpmu::UserJumpReason::NoFreePages) {              \
-         mean::task::yield(mean::TaskState::ReadyMem);                              \
+         && (jumpmu::user_jump_reason() == UserJumpReason::NoFreePages              \
+            || jumpmu::user_jump_reason() == UserJumpReason::Lock)) {               \
+      if (jumpmu::user_jump_reason() == UserJumpReason::NoFreePages) {              \
+         mean::task::yield(mean::TaskState::ReadyNoFreePages);                              \
       } else {                                                                      \
          mean::task::yield(mean::TaskState::ReadyJumpLock);                         \
       }                                                                             \
@@ -67,7 +68,7 @@ struct alignas(64) HybridLatch {
    void assertExclusivelyLatched() { assert(isExclusivelyLatched()); }
    void assertNotExclusivelyLatched() { assert(!isExclusivelyLatched()); }
    // -------------------------------------------------------------------------------------
-   bool isExclusivelyLatched() const { return (version & LATCH_EXCLUSIVE_BIT) == LATCH_EXCLUSIVE_BIT; }
+   bool isExclusivelyLatched() const { return (version & LATCH_EXCLUSIVE_BIT) == LATCH_EXCLUSIVE_BIT; } 
 };
 static_assert(sizeof(HybridLatch) == 64, "");
 // -------------------------------------------------------------------------------------

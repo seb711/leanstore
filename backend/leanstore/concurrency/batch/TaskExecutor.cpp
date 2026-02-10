@@ -128,9 +128,9 @@ void TaskExecutor::cycle()
       // good for ycsb 60 thr: p: 2, pp: 32, d: 0
       constexpr int everyPoll = 64;
       constexpr int everyPP = 32;
-      constexpr int delaySubmit = 32;
+      constexpr int delaySubmit = 0;
       // run poll Routines
-      // TODO for runs with >> 60 threads, this hast to be changed
+      // TODO for runs with >>6 60 threads, this hast to be changed
       if (cycles % (8*1024) == 0 || cyclesNothingRun > sleepIfNothingRunForCycles) {
          messageHandler.poll(this);
          counters.msgPollCalled++;
@@ -212,7 +212,7 @@ void TaskExecutor::cycle()
                waiting_tasks[task] = std::tuple(TaskState::WaitIo, getTimePoint(), false);
 #endif
                break;
-            case TaskState::ReadyMem:
+            case TaskState::ReadyNoFreePages:
                COUNTERS_BLOCK() { leanstore::ThreadCounters::myCounters().exec_tasks_st_ready_mem++; }
                counters.tasksReady++;
                tasks.push_back(task);

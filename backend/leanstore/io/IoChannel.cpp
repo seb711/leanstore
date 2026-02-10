@@ -10,7 +10,7 @@ void IoChannel::push(const IoBaseRequest& req)
 int IoChannel::submit()
 {
    int submitted = _submit();
-   COUNTERS_BLOCK() { counters.handleSubmit(submitted); }
+   // COUNTERS_BLOCK() { counters.handleSubmit(submitted); }
    return submitted;
 }
 int IoChannel::poll(int min)

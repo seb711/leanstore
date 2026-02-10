@@ -42,12 +42,13 @@ class OsvChannel
    NVMeMultiController& controller;
    int queue;
    const int lbaSize;
-   std::vector<void*> qpairs;
    std::vector<int> outstanding;
    // -------------------------------------------------------------------------------------
    void prepare_request(RaidRequest<OsvIoReq>* req, OsvIoReqCallback spdkCb);
    // -------------------------------------------------------------------------------------
   public:
+   std::vector<void*> qpairs;
+
    OsvChannel(IoOptions options, NVMeMultiController& controller, int queue);
    ~OsvChannel();
    // -------------------------------------------------------------------------------------
@@ -96,7 +97,7 @@ class OsvChannel
          ensure(ok >= 0, "ok >= 0");
          done += ok;
       }
-      // printf("completed %i ios\n", done); 
+      // printf("completed %i ios\n", done);
       // }
       assert(done >= 0);
       return done;

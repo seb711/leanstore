@@ -3,7 +3,8 @@
 #include <vector>
 #include <memory>
 #include <functional>
-#include <osv/jumpmu.hh>
+#include "leanstore/sync-primitives/JumpMU.hpp"
+
 #include "boost/context/continuation_fcontext.hpp"
 #include "../UniqueTask.hpp"
 

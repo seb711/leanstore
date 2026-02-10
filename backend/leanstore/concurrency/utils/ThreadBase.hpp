@@ -91,7 +91,7 @@ class ThreadBase
    void setNameThisThread(std::string name)
    {
       this->name = name;
-      posix_check(pthread_setname_np(pthread_self(), name.c_str()) == 0);
+      // posix_check(pthread_setname_np(pthread_self(), name.c_str()) == 0);
       if (pthread_self() != thread_impl().native_handle()) {
          std::cout << "looks like somebody set the wrong thread?" << std::endl;
       }

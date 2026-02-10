@@ -17,7 +17,7 @@ struct Request {
 
 class DummyNIC
 {
-   std::array<Request, 1 << 12> buffer_;
+   std::array<Request, 1 << 10> buffer_;
    size_t head_ = 0, tail_ = 0, size_ = 0;
    uint64_t next_time_, next_key_ = 0;
    double rate_;
@@ -33,40 +33,38 @@ class DummyNIC
    DummyNIC(double rate) : buffer_(), next_time_(0), rate_(rate), gen_(std::random_device{}()), dist_(rate), config_(nullptr)
    {
 #ifdef LEANSTORE_INCLUDE_OSV
-   config_ = SharedConfig::get_config();
+      config_ = SharedConfig::get_config();
 #else
       config_ = SharedConfig::get_config_from_file("/dev/shm/myshm");
 #endif
    }
 
-   size_t poll()
+   void sync()
    {
-      // Check for config updates
       if (config_ && prev_version < config_->version) {
-         // std::cout << "upgrade rate" << std::endl;
          update_rate_from_config();
          prev_version = config_->version;
       }
 
       uint64_t now = mean::readTSC();
       if (!active)
-         return 0;
+         return;
       if (next_time_ == 0)
          next_time_ = now;
-      size_t count = 0;
       while (now >= next_time_) {
          if (size_ >= buffer_.size()) {
             std::cout << "reset overflow" << std::endl;
             next_time_ = now;
-            return count;
+            size_ = 0;
+            head_ = 0;
+            tail_ = 0;
+            return;
          }
          buffer_[tail_] = {next_time_};
          tail_ = (tail_ + 1) % buffer_.size();
          size_++;
-         count++;
          next_time_ += mean::nsToTSC(uint64_t(dist_(gen_) * 1e9));
       }
-      return count;
    }
 
    void update_rate_from_config()
@@ -85,6 +83,11 @@ class DummyNIC
 
       rate_ = new_rate;
       dist_ = std::exponential_distribution<double>(rate_);
+
+      next_time_ = mean::readTSC();
+      size_ = 0;
+      head_ = 0;
+      tail_ = 0;
    }
 
    void turn_on() { active = true; }

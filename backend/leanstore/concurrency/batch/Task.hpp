@@ -4,7 +4,8 @@
 #include "leanstore/concurrency/utils/YieldLock.hpp"
 #include "leanstore/concurrency/utils/MessageHandler.hpp"
 #include "leanstore/io/IoAbstraction.hpp"
-#include <osv/jumpmu.hh>
+#include "leanstore/sync-primitives/JumpMU.hpp"
+
 // -------------------------------------------------------------------------------------
 #include "boost/context/continuation.hpp"
 #include "boost/context/continuation_fcontext.hpp"
@@ -23,12 +24,15 @@ class TaskExecutor;
 enum class TaskState {
    New = 0,
    Ready = 1, // general yield, basically push back in queue
-   ReadyMem = 2, // ready, but waiting for mem
-   ReadyLock = 3, // ready, but waiting for lock
-   ReadyJumpLock = 4,
-   Waiting =5 , // general waiting, requires manual push ready
-   WaitIo =6 ,
-   Done =7,
+   ReadyNoFreePages = 2, // ready, but waiting for mem
+   ReadyNoCoolPages = 3, 
+   ReadyLock = 4, // ready, but waiting for lock
+   ReadyJumpLock = 5,
+   Waiting = 6, // general waiting, requires manual push ready
+   WaitIo = 7,
+   Done = 8,
+   Preempted = 9,
+   LAST_ELEMENT = 10 // DO NOT USE THIS
 };
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------

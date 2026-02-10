@@ -2,6 +2,8 @@
 BUILD_DIR = build
 MEAN_TYPE ?= MEAN_USE_JOBBING # Default value, can be overridden
 IS_OSV ?= 1 # Default to Linux, can be overridden with IS_LINUX=0
+IS_ADAPTIVE ?= 0
+
 
 module: install-dependencies build-shared cmake-configure
 
@@ -25,6 +27,13 @@ ifeq ($(IS_OSV),1)
     PLATFORM_FLAGS = -DIS_OSV=1
 else
     PLATFORM_FLAGS = -DIS_OSV=0
+endif
+
+# Configure compiler flags based on IS_LINUX
+ifeq ($(IS_ADAPTIVE),1)
+    PLATFORM_FLAGS += -DIS_ADAPTIVE=1
+else
+    PLATFORM_FLAGS += -DIS_ADAPTIVE=0
 endif
 
 # Configure the project with CMake, specifying GCC 12 as the compiler, linking against libtbb, and adding -fPIC for shared lib

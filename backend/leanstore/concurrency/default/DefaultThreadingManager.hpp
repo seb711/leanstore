@@ -1,22 +1,23 @@
 #pragma once
 // -------------------------------------------------------------------------------------
-#include "leanstore/utils/BlockedRange.hpp"
+#include "leanstore/concurrency-recovery/Worker.hpp"
+#include "leanstore/concurrency/batch/Task.hpp"
 #include "leanstore/concurrency/utils/MessageHandler.hpp"
 #include "leanstore/concurrency/utils/ThreadBase.hpp"
-#include "leanstore/concurrency/batch/Task.hpp"
-#include "leanstore/concurrency-recovery/Worker.hpp"
 #include "leanstore/io/IoInterface.hpp"
+#include "leanstore/utils/BlockedRange.hpp"
 // -------------------------------------------------------------------------------------
 #include <condition_variable>
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <osv/jumpmu.hh>
+#include "leanstore/sync-primitives/JumpMU.hpp"
+
 #include <thread>
 #include <vector>
 
 #define USE_THREAD_POOL
-// #define USE_SAME_THREAD // this flag is for measuring the performance if everything runs on the same thread
+#define USE_SAME_THREAD  // this flag is for measuring the performance if everything runs on the same thread
 
 // -------------------------------------------------------------------------------------
 namespace mean
@@ -34,7 +35,7 @@ struct ThreadData {
 
    ThreadData* next = nullptr;
 
-   ThreadData(std::atomic<ThreadData*>* head_pointer, std::mutex * threadDataPoolMutex, std::condition_variable * threadDataPoolCV)
+   ThreadData(std::atomic<ThreadData*>* head_pointer, std::mutex* threadDataPoolMutex, std::condition_variable* threadDataPoolCV)
        : head_pointer(head_pointer), threadDataPoolMutex(threadDataPoolMutex), threadDataPoolCV(threadDataPoolCV) {};
    // Add other captured variables as needed
 };
@@ -42,11 +43,11 @@ struct ThreadData {
 class DefaultThreadingManager
 {
 #ifdef USE_THREAD_POOL
-   std::mutex threadPoolMutex;
-   std::condition_variable threadPoolCV;
+std::vector<std::vector<std::unique_ptr<ThreadWithJump>>> worker_threads_per_core;  // [core][thread_idx]
+std::vector<std::unique_ptr<std::atomic<ThreadWithJump*>>> thread_pool_heads;  // One head per core
+std::vector<std::unique_ptr<std::mutex>> threadPoolMutexes;  // One mutex per core
+std::vector<std::unique_ptr<std::condition_variable>> threadPoolCVs;  // One CV per core
 
-   std::vector<std::unique_ptr<ThreadWithJump>> worker_threads;
-   std::atomic<ThreadWithJump*> thread_pool_head = {nullptr};
 #else
    std::mutex threadDataPoolMutex;
    std::condition_variable threadDataPoolCV;
@@ -85,11 +86,7 @@ class DefaultThreadingManager
    // task
    // -------------------------------------------------------------------------------------
    void registerExclusiveThread(std::string name, int t_i, TaskFunction fun);
-   void parallelFor(BlockedRange range,
-                    TaskFunction fun,
-                    int tasks,
-                    s64 bbgranularity = -1,
-                    bool rate_active = false);
+   void parallelFor(BlockedRange range, TaskFunction fun, int tasks, s64 bbgranularity = -1, bool rate_active = false);
    void scheduleTaskSync(TaskFunction fun);
    void yield(TaskState ts);
    void blockingIo(IoRequestType type, char* data, s64 addr, u64 len);

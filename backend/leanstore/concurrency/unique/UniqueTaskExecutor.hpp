@@ -2,9 +2,11 @@
 
 #include "./helper/ContextPool.hpp"
 #include "./helper/DummyNic.hpp"
+#include "./helper/LatencyTracker.hpp"
+#include "./helper/SystemState.hpp"
 #include "Exceptions.hpp"
-#include "UniqueTask.hpp"
 #include "UniqueBackgroundWork.hpp"
+#include "UniqueTask.hpp"
 #include "Units.hpp"
 #include "leanstore/Config.hpp"
 #include "leanstore/concurrency-recovery/Worker.hpp"
@@ -29,19 +31,12 @@
 // #define USE_WATCHDOG
 #define INTERRUPT_TIME FLAGS_tmp
 
-// #define USE_BACKGROUND_TASKS
+#ifdef IS_ADAPTIVE
+#define USE_BACKGROUND_TASKS
+#endif
 
 namespace mean
 {
-
-class UniqueTaskDeleter
-{
-   friend UniqueTask;
-
-  public:
-   void operator()(UniqueTask* task) const;
-};
-
 class UniqueTaskExecutor : public ThreadBase
 {
   public:
@@ -107,7 +102,7 @@ class UniqueTaskExecutor : public ThreadBase
    // Public Members
    TaskContextPool* g_task_context_pool;
    void* _sinkInterruptStack;
-   UniqueTaskPtr _currentTask = nullptr;
+   UniqueTaskPtr _currentTask;  // Use brace initialization
    boost::context::detail::fcontext_t _currentSink = nullptr;
 
    std::atomic<float> sleep;
@@ -157,16 +152,13 @@ class UniqueTaskExecutor : public ThreadBase
 
    // Cycle Helper Methods
    void handleSleep();
-   bool shouldPollMessages(u64 cycles, u64 cycles_nothing_run, u64 threshold) const;
    void pollMessages();
-   bool shouldRunPageProvider(u64 cycles) const;
-   bool shouldPollIo(u64 cycles) const;
-   void pollIo(u64 cycles);
+   void pollIo();
    void handleIoSubmission(u64 cycles, u64& delay_until_cycle);
    void submitIo();
    void handleDelayedIoSubmission(u64 cycles, u64& delay_until_cycle, int delay_amount);
-   bool shouldPollWorkload(u64 cycles) const;
-public: 
+
+  public:
    int pollWorkload();
    int pollWorkloadWithRate();
    int pollWorkloadWithoutRate();
@@ -187,11 +179,11 @@ public:
    void updateCycleCounters(int tasks_run, u64& cycles_nothing_run);
 
    // Background Work
-   void setupBackgroundWork(); 
-   void handleBackgroundWork(); 
+   void setupBackgroundWork();
+   void handleBackgroundWork();
 
    static std::atomic<int> interruptVector;
-   static std::atomic<int> readyExecutors; 
+   static std::atomic<int> readyExecutors;
    static void setupInterruptVector();
 
    // Task Queues
@@ -204,11 +196,11 @@ public:
 #endif
 
    // Background Work
-   uint64_t last_background_check = 0; 
-   std::array<uint8_t, 1 << 12> time_wheel; 
-   std::array<std::unique_ptr<UniqueBackgroundWork>, 8> background_work = {nullptr};
-   std::uniform_int_distribution<> distr; 
-   std::mt19937 gen;  
+   uint64_t last_background_check = 0;
+   std::array<uint8_t, 1 << 12> time_wheel;
+   std::array<std::unique_ptr<UniqueBackgroundWork>, 8> background_work;
+   std::uniform_int_distribution<> distr;
+   std::mt19937 gen;
 
    // Workload
    TaskFunction workloadFunction;
@@ -226,7 +218,13 @@ public:
    int core_id;
    uint64_t last_watchdog_access = 0;
 
-   public: 
+   // BG Optimization
+   LatencyTracker latencyTracker;
+   SystemState systemState;
+   size_t current_optimize_task = 1;  // start with first active task
+   uint32_t optimize_tick = 0;
+
+  public:
    // Page Provider State
    s64 partition_id = -1;
    BufferManager* buffer_manager;

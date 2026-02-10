@@ -109,7 +109,8 @@ class BufferManager
    // IoPartition& randomIoPartition();
    s64 calculateCoolingDeficit(CoolingPartition& partition) const;
    s64 calculateFreeBufferDeficit(CoolingPartition& partition) const;
-
+   std::function<bool()> getPageProviderPrio(int partition_id); 
+   
    void pageProviderThread(u64 partition_begin, u64 partition_end);
    int pageProviderCycle(int partition_id);
 

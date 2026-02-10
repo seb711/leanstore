@@ -1,6 +1,6 @@
 #pragma once
 // -------------------------------------------------------------------------------------
-#include <osv/jumpmu.hh>
+#include "leanstore/sync-primitives/JumpMU.hpp"
 #include "leanstore/concurrency/batch/Task.hpp"
 #include "leanstore/concurrency/utils/MessageHandler.hpp"
 #include "leanstore/concurrency/utils/YieldLock.hpp"
@@ -18,38 +18,45 @@
 namespace mean
 {
 class UniqueTaskExecutor;
-class UniqueTaskDeleter;
 // -------------------------------------------------------------------------------------
 struct UniqueTaskContext {
-   bool init = false;
-   bool wait = false;
-   s64 worker_id = -1;
-   void* stack;                                           // 8kb
-   void* interrupt_stack;                                 // 8kb
-   boost::context::detail::fcontext_t this_task_context;  // basically just a pointer
-   jumpmu::JumpMUContext* jumpmuctx;  // this is also ~8kb (but the size is not dynamic you can get it with sizeof(jumpmu::JumpMUContext))
-   // boost::context::continuation this_task_context;
-   // boost::context::continuation* sink_process_context;
+bool init = false;
+bool wait = false;
+s64 worker_id = -1;
+void* stack;
+void* interrupt_stack;
+boost::context::detail::fcontext_t this_task_context;
+jumpmu::JumpMUContext* jumpmuctx;
 };
 // -------------------------------------------------------------------------------------
 class UniqueTask
 {
-  private:
-   UniqueTaskContext context;
-   TaskFunction fun;
-   uint64_t arg;
-   TaskState state = TaskState::Ready;
-   static void trampoline(boost::context::detail::transfer_t t);
-   friend UniqueTaskExecutor;
-   friend UniqueTaskDeleter;
-
-  public:
-   YieldLock* lock;
-   UniqueTask(TaskFunction fun) : fun(fun) {}
-   ~UniqueTask();
-   // -------------------------------------------------------------------------------------
-   TaskState getState();
+private:
+UniqueTaskContext context;
+TaskFunction fun;
+uint64_t arg;
+TaskState state = TaskState::Ready;
+static void trampoline(boost::context::detail::transfer_t t);
+friend UniqueTaskExecutor;
+friend class UniqueTaskDeleter;
+public:
+YieldLock* lock;
+UniqueTask(TaskFunction fun) : fun(fun) {}
+~UniqueTask();
+TaskState getState();
+};
+// -------------------------------------------------------------------------------------
+class UniqueTaskDeleter
+{
+   friend UniqueTask;
+public:
+   UniqueTaskDeleter() noexcept = default;
+   UniqueTaskDeleter(const UniqueTaskDeleter&) noexcept = default;
+   UniqueTaskDeleter(UniqueTaskDeleter&&) noexcept = default;
+   UniqueTaskDeleter& operator=(const UniqueTaskDeleter&) noexcept = default;
+   UniqueTaskDeleter& operator=(UniqueTaskDeleter&&) noexcept = default;
+   
+   void operator()(UniqueTask* task) const;
 };
 // -------------------------------------------------------------------------------------
 }  // namespace mean
-// -------------------------------------------------------------------------------------
