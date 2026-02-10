@@ -17,15 +17,15 @@ namespace mean
 bool YieldLock::try_lock()
 {
 #ifdef MEAN_USE_UNIQUE_TASKING
-   leanstore_osv_debug::trace_try_lock(this, mean::UniqueTaskExecutor::localExec()._currentTask.get());
+   leanstore_osv_debug::trace_try_lock(this, mean::UniqueTaskExecutor::localExec()._currentTaskRaw);
    arch::irq_disable();
 #endif
    bool b = !_lock.test_and_set(std::memory_order_acquire);
    if (b) {
 #ifdef MEAN_USE_UNIQUE_TASKING
       jumpmu::thread_local_jumpmu_ctx->lock_counter++;
-      _owner = (uintptr_t)mean::UniqueTaskExecutor::localExec()._currentTask.get();  // mean::exec::getId();
-      leanstore_osv_debug::trace_lock(this, mean::UniqueTaskExecutor::localExec()._currentTask.get());
+      _owner = (uintptr_t)mean::UniqueTaskExecutor::localExec()._currentTaskRaw;  // mean::exec::getId();
+      leanstore_osv_debug::trace_lock(this, mean::UniqueTaskExecutor::localExec()._currentTaskRaw);
 #else
       _owner = mean::exec::getId();
 #endif
@@ -71,7 +71,7 @@ void YieldLock::unlock()
       jumpmu::thread_local_jumpmu_ctx->lock_counter--;
       assert(jumpmu::thread_local_jumpmu_ctx->lock_counter >= 0);
       arch::irq_enable();
-      leanstore_osv_debug::trace_unlock(this, mean::UniqueTaskExecutor::localExec()._currentTask.get());
+      leanstore_osv_debug::trace_unlock(this, mean::UniqueTaskExecutor::localExec()._currentTaskRaw);
 #endif
    // }
 }

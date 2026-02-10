@@ -61,7 +61,7 @@ class UniqueTaskExecutor : public ThreadBase
    void pushTask(UniqueTaskPtr task);
    void pushTask(TaskFunction fun);
    void moveReady(UniqueTaskPtr task);
-   bool popTask(UniqueTaskPtr& task);
+   bool popTaskRaw(UniqueTaskPtr& holder, UniqueTask*& raw); 
    int taskCount();
 
    // Page Provider
@@ -102,7 +102,9 @@ class UniqueTaskExecutor : public ThreadBase
    // Public Members
    TaskContextPool* g_task_context_pool;
    void* _sinkInterruptStack;
-   UniqueTaskPtr _currentTask;  // Use brace initialization
+   // UniqueTaskPtr _currentTask;             // Use brace initialization
+   UniqueTask* _currentTaskRaw = nullptr;  // hot path - no ownership
+   UniqueTaskPtr _currentTaskOwned;        // cold path - holds ownership when needed
    boost::context::detail::fcontext_t _currentSink = nullptr;
 
    std::atomic<float> sleep;
@@ -166,9 +168,8 @@ class UniqueTaskExecutor : public ThreadBase
 
    // Task Execution
    TaskState runCurrentTask();
-   int runScheduledTasks();
    bool tryAcquireTaskLock();
-   void handleTaskState(TaskState state);
+   void handleTaskStateRaw(TaskState state, UniqueTaskPtr& holder);
    void handleDoneTask();
    void handleWaitingTask();
    void handleWaitIoTask();

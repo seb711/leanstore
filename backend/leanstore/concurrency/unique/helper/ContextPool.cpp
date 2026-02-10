@@ -39,40 +39,27 @@ void MemoryPool<BlockSize>::deallocate(void* ptr) {
 }
 
 // Explicit template instantiations
-template class MemoryPool<8192>;
-template class MemoryPool<sizeof(jumpmu::JumpMUContext)>;
+template class MemoryPool<sizeof(UniqueTask)>;
 
 // TaskContextPool implementation
 TaskContextPool::TaskContextPool(size_t capacity)
-    : stack_pool_(capacity),
-      interrupt_stack_pool_(capacity),
-      jumpmu_pool_(capacity) {}
+    : 
+      task_pool_(capacity) {}
 
-void TaskContextPool::allocate(UniqueTaskContext& ctx) {
-    ctx.stack = stack_pool_.allocate();
-    ctx.interrupt_stack = interrupt_stack_pool_.allocate();
-    ctx.jumpmuctx = (jumpmu::JumpMUContext*) jumpmu_pool_.allocate(); 
-    new (ctx.jumpmuctx) jumpmu::JumpMUContext();  // Placement new
+UniqueTask* TaskContextPool::allocate(TaskFunction fun) {
+    auto task = (UniqueTask*) task_pool_.allocate(); 
+
+    new (task) UniqueTask(fun); 
+
+    return task; 
 }
 
-void TaskContextPool::deallocate(UniqueTaskContext& ctx) {
-    if (ctx.stack) {
-        stack_pool_.deallocate(ctx.stack);
-        ctx.stack = nullptr;
-    }
-    if (ctx.interrupt_stack) {
-        interrupt_stack_pool_.deallocate(ctx.interrupt_stack);
-        ctx.interrupt_stack = nullptr;
-    }
-    ctx.jumpmuctx->~JumpMUContext();  // Explicit destructor call
-    jumpmu_pool_.deallocate(ctx.jumpmuctx); 
-    ctx.jumpmuctx = nullptr; 
+void TaskContextPool::deallocate(UniqueTask* task) {
+    task_pool_.deallocate(task); 
 }
 
 size_t TaskContextPool::available() const {
-    return std::min({stack_pool_.available(),
-                    interrupt_stack_pool_.available(),
-                    jumpmu_pool_.available()});
+    return std::min({task_pool_.available()});
 }
 
 } // namespace mean
