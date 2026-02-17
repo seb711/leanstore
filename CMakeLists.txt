@@ -87,6 +87,24 @@ message("Not Including OSV")
    # do nothing
 endif(IS_ADAPTIVE)
 
+option(IS_PERIODIC "include Periodic" OFF) #OFF by default
+if(IS_PERIODIC)
+message("Including OSV")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DIS_PERIODIC")
+else()
+message("Not Including OSV")
+   # do nothing
+endif(IS_PERIODIC)
+
+option(IS_WATCHDOG "include Watchdog" OFF) #OFF by default
+if(IS_WATCHDOG)
+message("Including OSV")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DIS_WATCHDOG")
+else()
+message("Not Including OSV")
+   # do nothing
+endif(IS_WATCHDOG)
+
 # ---------------------------------------------------------------------------
 # Dependencies
 # ---------------------------------------------------------------------------

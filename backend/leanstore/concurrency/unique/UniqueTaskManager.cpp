@@ -49,7 +49,7 @@ void UniqueTaskManager::init(int workerThreads, int exclusiveThreads, IoOptions 
    messageManager = std::make_unique<MessageHandlerManager>(workerThreads + exclusiveThreads);
    IoInterface::initInstance(ioOptions);
    // exclusive
-   for (int t_i = 0; t_i < exclusiveThreads; t_i++) {
+   for (int t_i = 1; t_i <= exclusiveThreads; t_i++) {
       auto thread = std::make_unique<ThreadWithJump>(
           [&, t_i]() {
              // this is the setup code so to say
@@ -153,8 +153,7 @@ void UniqueTaskManager::start(TaskFunction taskFun)
        [](void*, uintptr_t task) {
           auto t = reinterpret_cast<TaskFunction*>(task);
           // ensure(TaskManager::instance().exclusiveThreads.find(this_task::exec().id()) == TaskManager::instance().exclusiveThreads.end());
-          UniqueTaskExecutor::localExec().pushTask(*t);
-          delete t;
+          UniqueTaskExecutor::localExec().pushTask(t);
        },
        reinterpret_cast<uint64_t>(taskf));
 }
@@ -341,7 +340,7 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
    // clock_event->disable();
    // leanstore_osv_debug::disable_scheduler();
 
-   UniqueTaskExecutor::localExec().yieldRunningTask(originTask.get(), TaskState::Waiting);
+   UniqueTaskExecutor::localExec().yieldRunningTask(originTask, TaskState::Waiting);
    // UniqueTaskExecutor::localExec().yieldCurrentTask(TaskState::Waiting);
    std::cout << "finished" << std::endl;
 }
@@ -371,7 +370,7 @@ void UniqueTaskManager::blockingIo(IoRequestType type, char* data, s64 addr, u64
    };
    cb.user_data.val.s = UniqueTaskExecutor::localExec().id();
    cb.user_data3.val.ptr = &UniqueTaskExecutor::localExec();
-   cb.user_data2.val.ptr = UniqueTaskExecutor::localExec().getCurrentTaskOwnership().release();
+   cb.user_data2.val.ptr = UniqueTaskExecutor::localExec().getCurrentTaskOwnership();
 
    UniqueTaskExecutor::localExec().ioChannel.push(type, data, addr, len, cb);
    // UniqueTaskExecutor::localExec().ioChannel.submit();
@@ -403,8 +402,7 @@ void UniqueTaskManager::sendTask(int to, TaskFunction taskFun)
           auto t = reinterpret_cast<TaskFunction*>(taskFun);
           // ensure(TaskManager::instance().exclusiveThreads.find(this_task::exec().id()) == TaskManager::instance().exclusiveThreads.end());
           // createTask(taskFun1);
-          UniqueTaskExecutor::localExec().pushTask(*t);
-          delete t;
+          UniqueTaskExecutor::localExec().pushTask(t);
        },
        reinterpret_cast<uint64_t>(taskFun1));
 }

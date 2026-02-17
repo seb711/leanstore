@@ -149,8 +149,8 @@ void run_ycsb() {
    atomic<u64> running_threads_counter = {0};
    {
       auto start = mean::getSeconds();
-      auto ycsb_tx = [&](){
 
+      auto ycsb_tx = [&](){
          running_threads_counter++;
 
             auto before = mean::readTSC();

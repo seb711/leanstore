@@ -31,6 +31,16 @@
 // #define USE_WATCHDOG
 #define INTERRUPT_TIME FLAGS_tmp
 
+#ifdef IS_PERIODIC
+#define USE_INTERRUPTS
+#define USE_PERIODIC_TIMER
+#endif
+
+#ifdef IS_WATCHDOG
+#define USE_INTERRUPTS
+#define USE_WATCHDOG
+#endif
+
 #ifdef IS_ADAPTIVE
 #define USE_BACKGROUND_TASKS
 #endif
@@ -40,7 +50,7 @@ namespace mean
 class UniqueTaskExecutor : public ThreadBase
 {
   public:
-   using UniqueTaskPtr = std::unique_ptr<UniqueTask, UniqueTaskDeleter>;
+   using UniqueTaskPtr = UniqueTask*;
 
    // Constructor & Destructor
    UniqueTaskExecutor(MessageHandler& msg, IoChannel& io, DummyNIC& nic, int id);
@@ -59,9 +69,9 @@ class UniqueTaskExecutor : public ThreadBase
 
    // Task Management
    void pushTask(UniqueTaskPtr task);
-   void pushTask(TaskFunction fun);
+   void pushTask(TaskFunction* fun);
    void moveReady(UniqueTaskPtr task);
-   bool popTaskRaw(UniqueTaskPtr& holder, UniqueTask*& raw); 
+   bool popTask(UniqueTaskPtr& task);
    int taskCount();
 
    // Page Provider
@@ -102,9 +112,7 @@ class UniqueTaskExecutor : public ThreadBase
    // Public Members
    TaskContextPool* g_task_context_pool;
    void* _sinkInterruptStack;
-   // UniqueTaskPtr _currentTask;             // Use brace initialization
-   UniqueTask* _currentTaskRaw = nullptr;  // hot path - no ownership
-   UniqueTaskPtr _currentTaskOwned;        // cold path - holds ownership when needed
+   UniqueTaskPtr _currentTask;  // Use brace initialization
    boost::context::detail::fcontext_t _currentSink = nullptr;
 
    std::atomic<float> sleep;
@@ -146,7 +154,7 @@ class UniqueTaskExecutor : public ThreadBase
    void initializeTaskContext(UniqueTaskContext& ctx, void* stack_base, size_t stack_size, void (*fn)(boost::context::detail::transfer_t));
 
    // Task Creation
-   UniqueTaskPtr createTask(TaskFunction fun, void (*entry_fn)(boost::context::detail::transfer_t));
+   UniqueTaskPtr createTask(TaskFunction* fun, void (*entry_fn)(boost::context::detail::transfer_t));
 
    // Main Execution Loop
    int process() override;
@@ -168,8 +176,9 @@ class UniqueTaskExecutor : public ThreadBase
 
    // Task Execution
    TaskState runCurrentTask();
+   int runScheduledTasks();
    bool tryAcquireTaskLock();
-   void handleTaskStateRaw(TaskState state, UniqueTaskPtr& holder);
+   void handleTaskState(TaskState state);
    void handleDoneTask();
    void handleWaitingTask();
    void handleWaitIoTask();
@@ -188,7 +197,7 @@ class UniqueTaskExecutor : public ThreadBase
    static void setupInterruptVector();
 
    // Task Queues
-   static const int MAX_TASKS = 1 << 12;
+   static const int MAX_TASKS = 1 << 10;
    leanstore::utils::RingBuffer<UniqueTaskPtr> tasks{MAX_TASKS};
    leanstore::utils::RingBuffer<UniqueTaskPtr> tasks_io_done{MAX_TASKS};
 
@@ -234,6 +243,6 @@ class UniqueTaskExecutor : public ThreadBase
 };
 
 // Thread-local State
-extern thread_local bool run_task;
+extern std::array<bool, MAX_CORES> run_task;
 extern thread_local std::atomic<uint64_t> last_timestamp;
 }  // namespace mean

@@ -346,13 +346,14 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb, TaskFunction fun, con
 
          // Process work assigned to this core
          while (true) {
-            if (cycles++ % 64 == 0 and prev_config_version < config_->version) {
-               expDist = std::exponential_distribution<double>(config_->freq / (FLAGS_worker_threads));
-               prev_config_version = config_->version;
-            }
+            // if (cycles++ % 64 == 0 and prev_config_version < config_->version) {
+            //    expDist = std::exponential_distribution<double>(config_->freq / (FLAGS_worker_threads));
+            //    prev_config_version = config_->version;
+            // }
             if ((timeCheck++ % 64 == 0 && mean::getSeconds() - startTime > FLAGS_run_for_seconds)) {
                break;
             }
+#ifdef NEW_JUMPMU
 
 #ifdef USE_THREAD_POOL
             // Wait for available thread in this core's pool
@@ -369,11 +370,10 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb, TaskFunction fun, con
 
             assert(old_top);
             assert(old_top->meta.job_set == false);
-
-            auto txStartTime = jumpmu::thread_local_jumpmu_ctx->tx_start_time;
+            auto txStartTime = jumpmu::thread_local_jumpmu.tx_start_time;
 
             old_top->sendTask([=, &fun]() {
-               jumpmu::thread_local_jumpmu_ctx->tx_start_time = txStartTime;
+               jumpmu::thread_local_jumpmu.tx_start_time = txStartTime;
                fun();
             });
 #endif
@@ -384,19 +384,18 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb, TaskFunction fun, con
                if (FLAGS_tx_rate == 0 || !rate_active)
                   break;
                if (now >= nextStartTime) {
-                  if (mean::tscDifferenceS(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time) > 1) {
+                  if (mean::tscDifferenceS(now, jumpmu::thread_local_jumpmu.tx_start_time) > 1) {
                      nextStartTime = now;
                      std::cout << "reset start time on core " << core_id << std::endl;
                   }
                   auto d = expDist(gen);
-                  jumpmu::thread_local_jumpmu_ctx->tx_start_time = nextStartTime;
+                  jumpmu::thread_local_jumpmu.tx_start_time = nextStartTime;
                   nextStartTime += mean::nsToTSC(d * 1e9);
                   break;
                }
             }
+#endif
          }
-
-         delete jumpmu::thread_local_jumpmu_ctx;
       });
    }
 

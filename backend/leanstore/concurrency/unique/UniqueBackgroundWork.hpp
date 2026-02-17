@@ -19,21 +19,21 @@ struct UniqueBackgroundWorkMeta {
 
 struct UniqueBackgroundWork {
     // Reordered to match initialization order in constructors
-    std::unique_ptr<UniqueTask, UniqueTaskDeleter> bg_task;
+    UniqueTask* bg_task;
     TaskState linked_state;
     bool has_linked_state;
     std::unique_ptr<UniqueBackgroundWorkMeta> meta;
     
-    UniqueBackgroundWork(std::unique_ptr<UniqueTask, UniqueTaskDeleter>&& bgctx,
+    UniqueBackgroundWork(UniqueTask* bgctx,
                         TaskState state, 
                         std::unique_ptr<UniqueBackgroundWorkMeta>&& meta)
-        : bg_task(std::move(bgctx)), linked_state(state), has_linked_state(true), meta(std::move(meta))
+        : bg_task(bgctx), linked_state(state), has_linked_state(true), meta(std::move(meta))
     {
     }
     
-    UniqueBackgroundWork(std::unique_ptr<UniqueTask, UniqueTaskDeleter>&& bgctx,
+    UniqueBackgroundWork(UniqueTask* bgctx,
                         std::unique_ptr<UniqueBackgroundWorkMeta>&& meta)
-        : bg_task(std::move(bgctx)), linked_state(TaskState::New), has_linked_state(false), meta(std::move(meta))
+        : bg_task(bgctx), linked_state(TaskState::New), has_linked_state(false), meta(std::move(meta))
     {
     }
 };

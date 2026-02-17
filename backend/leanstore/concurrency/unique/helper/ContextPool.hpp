@@ -40,7 +40,7 @@ class TaskContextPool
   public:
    explicit TaskContextPool(size_t capacity);
 
-   UniqueTask* allocate(TaskFunction fun);
+   UniqueTask* allocate(TaskFunction* fun);
    void deallocate(UniqueTask* task);
 
    size_t available() const;

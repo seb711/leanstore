@@ -318,7 +318,6 @@ void BufferManager::handleWriteCompletion(mean::IoBaseRequest* request)
 
    partition.state.done++;
    partition.io_queue.push_back(&written_bf);
-   partition.io_queue2.push_back(&written_bf);
 }
 
 void BufferManager::evictBufferFrame(CoolingPartition& partition, FreedBfsBatch& freed_batch, BufferFrame& bf, OptimisticGuard& guard)
@@ -445,14 +444,10 @@ int BufferManager::processCoolingQueue(CoolingPartition& partition, u64 pages_to
 void BufferManager::evictCompletedIoPages(CoolingPartition& partition, FreedBfsBatch& freed_batch)
 {
    BufferFrame* bf_ptr;
-   int pending_count = partition.io_queue2.size();
+   int pending_count = partition.io_queue.size();
 
-   while (!partition.io_queue2.empty() && pending_count-- > 0) {
+   while (!partition.io_queue.empty() && pending_count-- > 0) {
       ensure(partition.io_queue.try_pop(bf_ptr), "Failed to pop from I/O queue");
-
-      bf_ptr = partition.io_queue2.front();
-      partition.io_queue2.pop_front();
-
       ensure(partition.outstanding >= 0, "Outstanding count negative");
       ensure(partition.outstanding <= static_cast<s64>(partition.io_queue.max_size), "Outstanding count exceeds maximum");
 
@@ -483,7 +478,6 @@ void BufferManager::evictCompletedIoPages(CoolingPartition& partition, FreedBfsB
          if (!needs_requeue || bf.header.state == BufferFrame::STATE::IOCOLDDONE) {
             partition.outstanding++;
             partition.io_queue.push_back(bf_ptr);
-            partition.io_queue2.push_back(bf_ptr);
             ensure(partition.outstanding <= static_cast<s64>(partition.io_queue.max_size), "Outstanding count exceeds maximum after requeue");
          }
       }

@@ -5,13 +5,12 @@
 #include <setjmp.h>
 #include <signal.h>
 
-#include <cassert>
-#include <utility>
-#include <iostream>
-#include <condition_variable>
 #include <atomic>
-#include <mutex>
+#include <cassert>
 #include <condition_variable>
+#include <iostream>
+#include <mutex>
+#include <utility>
 
 #define JUMPMU_STACK_SIZE 20
 
@@ -19,78 +18,75 @@
 
 namespace jumpmu
 {
-  class JumpMUContext; 
+class JumpMUContext;
 
-  extern thread_local JumpMUContext *thread_local_jumpmu_ctx;
-
+extern thread_local JumpMUContext* thread_local_jumpmu_ctx;
 
 #ifdef NEW_JUMPMU
-  extern thread_local JumpMUContext thread_local_jumpmu;
+extern thread_local JumpMUContext thread_local_jumpmu;
 
-  class JumpMUContext
-  {
+class JumpMUContext
+{
   public:
-    int pid = 0; 
-    uint64_t tx_start_time = 0;
-    int checkpoint_counter = 0;
-    jmp_buf env[JUMPMU_STACK_SIZE]= {};
-    int val[JUMPMU_STACK_SIZE]= {};
-    int checkpoint_stacks_counter[JUMPMU_STACK_SIZE]= {};
-    void (*de_stack_arr[JUMPMU_STACK_SIZE])(void *) = {};
-    void *de_stack_obj[JUMPMU_STACK_SIZE]= {};
-    int de_stack_counter = 0;
-    bool in_jump = false;
-    int user_jump_reason = 0;
+   int pid = 0;
+   uint64_t tx_start_time = 0;
+   int checkpoint_counter = 0;
+   jmp_buf env[JUMPMU_STACK_SIZE] = {};
+   int val[JUMPMU_STACK_SIZE] = {};
+   int checkpoint_stacks_counter[JUMPMU_STACK_SIZE] = {};
+   void (*de_stack_arr[JUMPMU_STACK_SIZE])(void*) = {};
+   void* de_stack_obj[JUMPMU_STACK_SIZE] = {};
+   int de_stack_counter = 0;
+   bool in_jump = false;
+   int user_jump_reason = 0;
 
-    constexpr JumpMUContext() = default; 
+   constexpr JumpMUContext() = default;
 
-    // -------------------------------------------------------------------------------------
-  };
+   // -------------------------------------------------------------------------------------
+};
 
-  inline void jump(UserJumpReason jump_reason)
-  {
-    auto &j = jumpmu::thread_local_jumpmu;
-    assert(j.checkpoint_counter > 0);
-    assert(j.de_stack_counter >= 0);
-    j.user_jump_reason = jump_reason;
-    auto c_c_stacks_counter = j.checkpoint_stacks_counter[j.checkpoint_counter - 1];
-    if (j.de_stack_counter > c_c_stacks_counter)
-    {
-      int begin = j.de_stack_counter - 1; // inc
-      int till = c_c_stacks_counter;      // inc
+inline void jump(leanstore::UserJumpReason jump_reason)
+{
+   auto& j = jumpmu::thread_local_jumpmu;
+   assert(j.checkpoint_counter > 0);
+   assert(j.de_stack_counter >= 0);
+   j.user_jump_reason = jump_reason;
+   auto c_c_stacks_counter = j.checkpoint_stacks_counter[j.checkpoint_counter - 1];
+   if (j.de_stack_counter > c_c_stacks_counter) {
+      int begin = j.de_stack_counter - 1;  // inc
+      int till = c_c_stacks_counter;       // inc
       assert(begin >= 0);
       assert(till >= 0);
       j.in_jump = true;
-      for (int i = begin; i >= till; i--)
-      {
-        j.de_stack_arr[i](j.de_stack_obj[i]);
+      for (int i = begin; i >= till; i--) {
+         j.de_stack_arr[i](j.de_stack_obj[i]);
       }
       j.in_jump = false;
-    }
-    auto &env_to_jump = j.env[j.checkpoint_counter - 1];
-    j.checkpoint_counter--;
-    longjmp(env_to_jump, 1);
-  }
-  inline void jump()
-  {
-    jump(UserJumpReason::NoReason);
-  }
-  inline int user_jump_reason()
-  {
-    auto &j = jumpmu::thread_local_jumpmu;
-    return j.user_jump_reason;
-  }
-  inline void clearLastDestructor()
-  {
-    auto &j = jumpmu::thread_local_jumpmu;
-    j.de_stack_obj[j.de_stack_counter - 1] = nullptr;
-    j.de_stack_arr[j.de_stack_counter - 1] = nullptr;
-    j.de_stack_counter--;
-    assert(j.de_stack_counter >= 0);
-  }
-} // namespace jumpmu
-  // -------------------------------------------------------------------------------------
-  // clang-format off
+   }
+   auto& env_to_jump = j.env[j.checkpoint_counter - 1];
+   j.checkpoint_counter--;
+   longjmp(env_to_jump, 1);
+}
+inline void jump()
+{
+   jump(leanstore::UserJumpReason::NoReason);
+}
+inline int user_jump_reason()
+{
+   auto& j = jumpmu::thread_local_jumpmu;
+   return j.user_jump_reason;
+}
+inline void clearLastDestructor()
+{
+   auto& j = jumpmu::thread_local_jumpmu;
+   j.de_stack_obj[j.de_stack_counter - 1] = nullptr;
+   j.de_stack_arr[j.de_stack_counter - 1] = nullptr;
+   j.de_stack_counter--;
+   assert(j.de_stack_counter >= 0);
+}
+}  // namespace jumpmu
+   // -------------------------------------------------------------------------------------
+   // clang-format off
 #define jumpmu_registerDestructor()                       \
   assert(jumpmu::thread_local_jumpmu.de_stack_counter < JUMPMU_STACK_SIZE);  \
   assert(jumpmu::thread_local_jumpmu.checkpoint_counter < JUMPMU_STACK_SIZE);  \
@@ -121,72 +117,70 @@ namespace jumpmu
 #define jumpmuCatch()           \
   jumpmu::thread_local_jumpmu.checkpoint_counter--;  \
   } else
-  // clang-format on
+   // clang-format on
 
-#else 
+#else
 
 class JumpMUContext
 {
-public:
-  const int CANARY = 0xFEFE; 
-  int pid; 
-  int checkpoint_counter = 0;
-  jmp_buf env[JUMPMU_STACK_SIZE];
-  int val[JUMPMU_STACK_SIZE];
-  int checkpoint_stacks_counter[JUMPMU_STACK_SIZE];
-  void (*de_stack_arr[JUMPMU_STACK_SIZE])(void *);
-  void *de_stack_obj[JUMPMU_STACK_SIZE];
-  int de_stack_counter = 0;
-  int lock_counter = 0;
-  bool in_jump;
-  int user_jump_reason;
-  uint64_t tx_start_time = 0;
-  const int CANARY2 = 0xBABA; 
-  // -------------------------------------------------------------------------------------
+  public:
+   const int CANARY = 0xFEFE;
+   int pid;
+   int checkpoint_counter = 0;
+   jmp_buf env[JUMPMU_STACK_SIZE];
+   int val[JUMPMU_STACK_SIZE];
+   int checkpoint_stacks_counter[JUMPMU_STACK_SIZE];
+   void (*de_stack_arr[JUMPMU_STACK_SIZE])(void*);
+   void* de_stack_obj[JUMPMU_STACK_SIZE];
+   int de_stack_counter = 0;
+   int lock_counter = 0;
+   bool in_jump;
+   int user_jump_reason;
+   uint64_t tx_start_time = 0;
+   const int CANARY2 = 0xBABA;
+   // -------------------------------------------------------------------------------------
 };
-extern JumpMUContext __thread *thread_local_jumpmu_ctx;
+extern JumpMUContext __thread* thread_local_jumpmu_ctx;
 inline void jump(leanstore::UserJumpReason jump_reason)
 {
-  auto &j = *thread_local_jumpmu_ctx;
-  assert(j.checkpoint_counter > 0);
-  assert(j.de_stack_counter >= 0);
-  j.user_jump_reason = jump_reason;
-  auto c_c_stacks_counter = j.checkpoint_stacks_counter[j.checkpoint_counter - 1];
-  if (j.de_stack_counter > c_c_stacks_counter)
-  {
-    int begin = j.de_stack_counter - 1; // inc
-    int till = c_c_stacks_counter;      // inc
-    assert(begin >= 0);
-    assert(till >= 0);
-    j.in_jump = true;
-    for (int i = begin; i >= till; i--)
-    {
-      j.de_stack_arr[i](j.de_stack_obj[i]);
-    }
-    j.in_jump = false;
-  }
-  auto &env_to_jump = j.env[j.checkpoint_counter - 1];
-  j.checkpoint_counter--;
-longjmp(env_to_jump, 1);
+   auto& j = *thread_local_jumpmu_ctx;
+   assert(j.checkpoint_counter > 0);
+   assert(j.de_stack_counter >= 0);
+   j.user_jump_reason = jump_reason;
+   auto c_c_stacks_counter = j.checkpoint_stacks_counter[j.checkpoint_counter - 1];
+   if (j.de_stack_counter > c_c_stacks_counter) {
+      int begin = j.de_stack_counter - 1;  // inc
+      int till = c_c_stacks_counter;       // inc
+      assert(begin >= 0);
+      assert(till >= 0);
+      j.in_jump = true;
+      for (int i = begin; i >= till; i--) {
+         j.de_stack_arr[i](j.de_stack_obj[i]);
+      }
+      j.in_jump = false;
+   }
+   auto& env_to_jump = j.env[j.checkpoint_counter - 1];
+   j.checkpoint_counter--;
+   longjmp(env_to_jump, 1);
 }
 inline void jump()
 {
-  jump(leanstore::UserJumpReason::NoReason);
+   jump(leanstore::UserJumpReason::NoReason);
 }
 inline int user_jump_reason()
 {
-  auto &j = *thread_local_jumpmu_ctx;
-  return j.user_jump_reason;
+   auto& j = *thread_local_jumpmu_ctx;
+   return j.user_jump_reason;
 }
 inline void clearLastDestructor()
 {
-  auto &j = *thread_local_jumpmu_ctx;
-  j.de_stack_obj[j.de_stack_counter - 1] = nullptr;
-  j.de_stack_arr[j.de_stack_counter - 1] = nullptr;
-  j.de_stack_counter--;
-  assert(j.de_stack_counter >= 0);
+   auto& j = *thread_local_jumpmu_ctx;
+   j.de_stack_obj[j.de_stack_counter - 1] = nullptr;
+   j.de_stack_arr[j.de_stack_counter - 1] = nullptr;
+   j.de_stack_counter--;
+   assert(j.de_stack_counter >= 0);
 }
-} // namespace jumpmu
+}  // namespace jumpmu
 // -------------------------------------------------------------------------------------
 // clang-format off
 #define jumpmu_registerDestructor()                       \
@@ -226,16 +220,14 @@ jumpmu::thread_local_jumpmu_ctx->checkpoint_counter--;  \
 template <typename T>
 class JMUW
 {
-public:
-  T obj;
-  template <typename... Args>
-  JMUW(Args &&...args) : obj(std::forward<Args>(args)...)
-  {
-    jumpmu_registerDestructor();
-
-  }
-  static void des(void *t) { reinterpret_cast<JMUW<T> *>(t)->~JMUW<T>(); }
-  ~JMUW() {     
-        jumpmu::clearLastDestructor(); }
-  T *operator->() { return reinterpret_cast<T *>(&obj); }
+  public:
+   T obj;
+   template <typename... Args>
+   JMUW(Args&&... args) : obj(std::forward<Args>(args)...)
+   {
+      jumpmu_registerDestructor();
+   }
+   static void des(void* t) { reinterpret_cast<JMUW<T>*>(t)->~JMUW<T>(); }
+   ~JMUW() { jumpmu::clearLastDestructor(); }
+   T* operator->() { return reinterpret_cast<T*>(&obj); }
 };

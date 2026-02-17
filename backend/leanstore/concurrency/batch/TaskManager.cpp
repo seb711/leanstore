@@ -296,10 +296,10 @@ void TaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int tasks
                 uint64_t cycles = 0; 
 
                 while (true) {
-                   if (cycles++ % 64 == 0 and prev_config_version < config_->version) {
-                        expDist = std::exponential_distribution<double>(config_->freq / (threads * tasks));
-                        prev_config_version = config_->version; 
-                   }
+                  // if (cycles++ % 64 == 0 and prev_config_version < config_->version) {
+                  //       expDist = std::exponential_distribution<double>(config_->freq / (threads * tasks));
+                  //       prev_config_version = config_->version; 
+                  // }
                    fun();
                    if (!rate_active || (timeCheck++ % 64 == 0 && mean::getSeconds() - startTime > FLAGS_run_for_seconds)) {
                       break;

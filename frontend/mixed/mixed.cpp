@@ -81,24 +81,45 @@ void run_ycsb()
       std::cout << "-------------------------------------------------------------------------------------" << endl;
       cout << "Inserting " << n << " values" << endl;
       begin = chrono::high_resolution_clock::now();
-      BlockedRange bb(0, (u64)1);
-      ensure((bool)((bb.end - bb.begin) >= 1));
+
+      std::atomic<u64> current_block_start{0};
+      const u64 block_size = 1 << 18;  // Adjust granularity as needed
+      const u64 total_items = n;
+
 // #ifdef MEAN_USE_TASKING
 #if defined(MEAN_USE_TASKING) || defined(MEAN_USE_UNIQUE_TASKING)
       auto ycsb_insert_fun = [&]() {
-         for (uint32_t t = 0; t < n; t++) {
-            wl.insert();
-            mean::task::yield();
+         while (true) {
+            // Atomically fetch the next block to work on
+            u64 block_start = current_block_start.fetch_add(block_size, std::memory_order_relaxed);
+
+            // Check if we're done
+            if (block_start >= total_items) {
+               break;
+            }
+
+            // Calculate actual block end (handle last block being smaller)
+            u64 block_end = std::min(block_start + block_size, total_items);
+
+            // Process this block
+            for (u64 t = block_start; t < block_end; t++) {
+               wl.insert(t);
+            }
          }
       };
-      mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks);
+      BlockedRange bb(0, (u64)1);
+      mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks, false);
+      wl.current_idx = n - 1; 
+      wl.highest_inserted = n; 
 #else
 #ifndef NEW_JUMPMU
       // jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext();
 #endif
-      for (uint64_t i = 0; i < bb.end; i++) {
-         wl.insert();
+      for (uint64_t i = 0; i < n; i++) {
+         wl.insert(i);
       }
+      wl.current_idx = n - 1; 
+      wl.highest_inserted = n; 
 #endif
       end = chrono::high_resolution_clock::now();
       cout << "time elapsed = " << (chrono::duration_cast<chrono::microseconds>(end - begin).count() / 1000000.0) << endl;
@@ -145,6 +166,7 @@ void run_ycsb()
             WorkerCounters::myCounters().ltx++;
          }
          running_threads_counter--;
+         mean::task::yield();
       };
       BlockedRange bb(0, (u64)1000000000000ul);
       auto startTsc = mean::readTSC();

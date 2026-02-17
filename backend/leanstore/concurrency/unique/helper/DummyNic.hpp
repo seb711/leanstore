@@ -8,6 +8,7 @@
 #include <vector>
 #include "leanstore/concurrency/Mean.hpp"
 #include "leanstore/concurrency/utils/SharedConfig.hpp"
+#include "leanstore/Config.hpp"
 
 namespace mean
 {
@@ -17,7 +18,7 @@ struct Request {
 
 class DummyNIC
 {
-   std::array<Request, 1 << 10> buffer_;
+   std::array<Request, 1 << 16> buffer_;
    size_t head_ = 0, tail_ = 0, size_ = 0;
    uint64_t next_time_, next_key_ = 0;
    double rate_;
@@ -33,7 +34,7 @@ class DummyNIC
    DummyNIC(double rate) : buffer_(), next_time_(0), rate_(rate), gen_(std::random_device{}()), dist_(rate), config_(nullptr)
    {
 #ifdef LEANSTORE_INCLUDE_OSV
-      config_ = SharedConfig::get_config();
+      // config_ = SharedConfig::get_config();
 #else
       config_ = SharedConfig::get_config_from_file("/dev/shm/myshm");
 #endif
@@ -53,7 +54,8 @@ class DummyNIC
          next_time_ = now;
       while (now >= next_time_) {
          if (size_ >= buffer_.size()) {
-            std::cout << "reset overflow" << std::endl;
+            // std::cout << "reset overflow" << std::endl;
+            leanstore::WorkerCounters::myCounters().time_counter_2 += 1; 
             next_time_ = now;
             size_ = 0;
             head_ = 0;
@@ -72,7 +74,7 @@ class DummyNIC
       if (!config_)
          return;
 
-      uint64_t base_freq = config_->freq;    // Requests per second
+      uint64_t base_freq = config_->freq / FLAGS_worker_threads;    // Requests per second
       uint64_t variance_pct = config_->var;  // Variance 0-100%
 
       // Calculate new rate with variance applied

@@ -46,7 +46,7 @@ TaskContextPool::TaskContextPool(size_t capacity)
     : 
       task_pool_(capacity) {}
 
-UniqueTask* TaskContextPool::allocate(TaskFunction fun) {
+UniqueTask* TaskContextPool::allocate(TaskFunction* fun) {
     auto task = (UniqueTask*) task_pool_.allocate(); 
 
     new (task) UniqueTask(fun); 

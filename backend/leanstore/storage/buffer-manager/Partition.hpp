@@ -11,13 +11,9 @@
 #include "leanstore/utils/RingBufferMPSC.hpp"
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
-#include <deque>
-#include <list>
 #include <mutex>
 #include <unordered_set>
 #include <vector>
-#include <stack>
-#include <boost/lockfree/queue.hpp>
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {
@@ -71,6 +67,11 @@ struct HashTable {
    void remove(u64 key);
    bool has(u64 key);  // for debugging
    HashTable(u64 size_in_bits);
+
+   HashTable(const HashTable&) = delete;
+   HashTable& operator=(const HashTable&) = delete;
+   HashTable(HashTable&&) = delete;
+   HashTable& operator=(HashTable&&) = delete;
 };
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
@@ -115,10 +116,9 @@ struct CoolingPartition {
    } state;
    // -------------------------------------------------------------------------------------
    // -------------------------------------------------------------------------------------
-   //mean::SpinLock cooling_mutex;
+   // mean::SpinLock cooling_mutex;
    utils::RingBuffer<BufferFrame*> cooling_queue;
-   utils::RingBuffer<BufferFrame*> io_queue;
-   std::deque<BufferFrame*> io_queue2;
+   utils::RingBufferMPSC<BufferFrame*> io_queue;
    // -------------------------------------------------------------------------------------
    atomic<u64> cooling_bfs_counter = 0;
    const u64 free_bfs_limit;
@@ -127,19 +127,19 @@ struct CoolingPartition {
    s64 outstanding = 0;
    // -------------------------------------------------------------------------------------
    const u64 pid_distance;
-   // Lock-free queue for freed PIDs
-   boost::lockfree::queue<PID> freed_pids_queue;
+   // Fixed-size ring buffer for freed PIDs instead of lock-free queue
+   utils::RingBufferMPSC<PID> freed_pids_queue;
    atomic<u64> next_pid;
    atomic<u64> freed_pids_count;  // Track count for statistics
    // -------------------------------------------------------------------------------------
    CoolingPartition(u64 first_pid, u64 pid_distance, u64 free_bfs_limit, u64 cooling_bfs_limit, u64 max_outsanding_ios)
-      : cooling_queue(cooling_bfs_limit * 2), // FIXME
-      io_queue(max_outsanding_ios),
-      free_bfs_limit(free_bfs_limit), 
-      cooling_bfs_limit(cooling_bfs_limit), 
-      pid_distance(pid_distance),
-      freed_pids_queue(1024),  // Initial capacity, can grow dynamically
-      freed_pids_count(0)
+       : cooling_queue(cooling_bfs_limit * 2),  // FIXME
+         io_queue(max_outsanding_ios),
+         free_bfs_limit(free_bfs_limit),
+         cooling_bfs_limit(cooling_bfs_limit),
+         pid_distance(pid_distance),
+         freed_pids_queue(FLAGS_ssd_gib * 1024 * 1024 * 1024 / PAGE_SIZE / pid_distance * 0.25),  // Fixed capacity ring buffer
+         freed_pids_count(0)
    {
       next_pid = first_pid;
    }
@@ -149,8 +149,8 @@ struct CoolingPartition {
    inline PID nextPID()
    {
       PID pid;
-      // Try to pop a freed PID from the lock-free queue
-      if (freed_pids_queue.pop(pid)) {
+      // Try to pop a freed PID from the ring buffer
+      if (freed_pids_queue.try_pop(pid)) {
          freed_pids_count.fetch_sub(1, std::memory_order_relaxed);
          return pid;
       } else {
@@ -160,27 +160,21 @@ struct CoolingPartition {
          return pid;
       }
    }
-   
+
    void freePage(PID pid)
    {
-      // Push the freed PID to the lock-free queue
-      while (!freed_pids_queue.push(pid)) {
-         // If push fails (queue is full), try again
-         // boost::lockfree::queue will handle dynamic growth in most cases
-         // but we need to handle the bounded case
-      }
+      // Push the freed PID to the ring buffer
+      // If full, we could either: drop (leak the PID), spin-wait, or fall back to allocation
+      // Here we spin-wait since PIDs are a limited resource
+      freed_pids_queue.push_back(pid);
+         // Ring buffer is full, wait for space
+         // In production, might want to add backpressure or fallback logic
       freed_pids_count.fetch_add(1, std::memory_order_relaxed);
    }
-   
-   u64 allocatedPages() 
-   { 
-      return next_pid.load(std::memory_order_relaxed) / pid_distance; 
-   }
-   
-   u64 freedPages()
-   {
-      return freed_pids_count.load(std::memory_order_relaxed);
-   }
+
+   u64 allocatedPages() { return next_pid.load(std::memory_order_relaxed) / pid_distance; }
+
+   u64 freedPages() { return freed_pids_count.load(std::memory_order_relaxed); }
    // -------------------------------------------------------------------------------------
    void pushFreeList()
    {
@@ -196,7 +190,7 @@ struct IoPartition {
    HashTable io_ht;
    IoPartition(u64 first_pid, u64 pid_distance, u64 free_bfs_limit, u64 cooling_bfs_limit);
    // -------------------------------------------------------------------------------------
-   IoPartition(u64 max_outsanding_ios) : io_ht(utils::getBitsNeeded(max_outsanding_ios)) { }
+   IoPartition(u64 max_outsanding_ios) : io_ht(utils::getBitsNeeded(max_outsanding_ios)) {}
    ~IoPartition();
    // -------------------------------------------------------------------------------------
 };

@@ -17,6 +17,7 @@
 #include "leanstore/utils/RandomGenerator.hpp"
 // -------------------------------------------------------------------------------------
 #include "leanstore/concurrency/Mean.hpp"
+#include "osv/leanstore_debug.hh"
 // -------------------------------------------------------------------------------------
 #include <gflags/gflags.h>
 // -------------------------------------------------------------------------------------
@@ -334,7 +335,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
 #ifdef MEAN_USE_UNIQUE_TASKING
       ensure(jumpmu::thread_local_jumpmu_ctx->lock_counter > 0);
 #endif
-      ensure(io_frame.mutex.try_lock());  /// HEREREER
+      if (!io_frame.mutex.try_lock()) {abort(); };  /// HEREREER
       // -------------------------------------------------------------------------------------
       g_guard->unlock();
       // -------------------------------------------------------------------------------------

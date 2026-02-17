@@ -41,7 +41,7 @@ namespace mean
 
 thread_local uint64_t opentasks = 0;
 thread_local TaskContextPool* tl_task_context_pool;
-thread_local bool run_task = false;
+std::array<bool, MAX_CORES> run_task = {false};
 
 UniqueTaskExecutor::PaddedTimestamp UniqueTaskExecutor::timestamps[8];
 
@@ -79,6 +79,7 @@ void UniqueTaskDeleter::operator()(UniqueTask* task) const
    if (task) {
       UniqueTaskExecutor::localExec().g_task_context_pool->deallocate(task);
    }
+   delete task;
 }
 
 void UniqueTaskExecutor::initTaskContextPool(size_t capacity)
@@ -103,8 +104,13 @@ void UniqueTaskExecutor::initializeTaskContext(UniqueTaskContext& ctx,
    ctx.this_task_context = boost::context::detail::make_fcontext(static_cast<char*>(stack_base) + stack_size, stack_size, fn);
 }
 
-UniqueTaskExecutor::UniqueTaskPtr UniqueTaskExecutor::createTask(TaskFunction fun, void (*entry_fn)(boost::context::detail::transfer_t))
+UniqueTaskExecutor::UniqueTaskPtr UniqueTaskExecutor::createTask(TaskFunction* fun, void (*entry_fn)(boost::context::detail::transfer_t))
 {
+   if (!g_task_context_pool) {
+      throw std::runtime_error("Pool not initialized");
+   }
+
+   // auto task = new UniqueTask(fun);
    auto task = g_task_context_pool->allocate(fun);
    initializeTaskContext(task->context, task->context.stack, TaskContextPool::getStackSize(), entry_fn);
 
@@ -130,7 +136,7 @@ void UniqueTaskExecutor::trampoline(boost::context::detail::transfer_t t)
 #endif
 #endif
 
-   self._currentTaskRaw->fun();
+   (*self._currentTask->fun)();
 
 #ifdef USE_WATCHDOG
    timestamps[self.core_id] = 0;
@@ -138,9 +144,10 @@ void UniqueTaskExecutor::trampoline(boost::context::detail::transfer_t t)
 
    {
 #if defined(USE_INTERRUPTS)
-      leanstore_osv_debug::set_interrupt_stack((char*)localExec()._sinkInterruptStack);
+      arch::irq_disable(); 
+      leanstore_osv_debug::set_interrupt_stack((char*)localExec()._sinkInterruptStack, UniqueTaskContext::INTERRUPT_STACK_SIZE);
 #endif
-      self._currentTaskRaw->state = TaskState::Done;
+      self._currentTask->state = TaskState::Done;
       // self.latencyTracker.record(mean::tscDifferenceUs(mean::readTSC(), jumpmu::thread_local_jumpmu_ctx->tx_start_time), DESIRED_P99);
       jumpmu::thread_local_jumpmu_ctx = &self.defaultExecutorContext;
       boost::context::detail::jump_fcontext(self.getCurrentSink(), nullptr);
@@ -156,13 +163,13 @@ UniqueTaskExecutor::UniqueTaskExecutor(MessageHandler& msg, IoChannel& io_channe
 {
    core_id = executor_id;
    jumpmu::thread_local_jumpmu_ctx = &defaultExecutorContext;
-   initTaskContextPool(MAX_TASKS);
+   initTaskContextPool(FLAGS_worker_tasks);
    tl_task_context_pool = g_task_context_pool;
 
    // setupInterruptHandling();
 
    printf("create unique task executor %i\n", executor_id);
-   _sinkInterruptStack = static_cast<char*>(malloc(g_task_context_pool->getStackSize())) + g_task_context_pool->getStackSize();
+   _sinkInterruptStack = static_cast<char*>(aligned_alloc(UniqueTaskContext::INTERRUPT_STACK_SIZE, 64));
 }
 
 UniqueTaskExecutor::~UniqueTaskExecutor()
@@ -187,11 +194,13 @@ void UniqueTaskExecutor::setupInterruptVector()
       arch::irq_disable();
 
       auto timer_handler = []() {
-         ensure(jumpmu::thread_local_jumpmu_ctx->CANARY == 0xFEFE and jumpmu::thread_local_jumpmu_ctx->CANARY2 == 0xbaba);
-         leanstore::WorkerCounters::myCounters().time_counter_1++;
-         // return;
+         if (!run_task[leanstore_osv_debug::get_cpu_id()]) return; 
 
-         if (!run_task or jumpmu::thread_local_jumpmu_ctx->lock_counter > 0) {
+         if (!leanstore_osv_debug::is_app()) return;  
+
+         ensure(jumpmu::thread_local_jumpmu_ctx->CANARY == 0xFEFE and jumpmu::thread_local_jumpmu_ctx->CANARY2 == 0xbaba);
+
+         if (jumpmu::thread_local_jumpmu_ctx->lock_counter > 0) {
             // leanstore::WorkerCounters::myCounters().time_counter_2++;
             return;
          }
@@ -202,17 +211,27 @@ void UniqueTaskExecutor::setupInterruptVector()
 
          if (self._currentTask != nullptr && self._currentSink != nullptr) {
 
+            if (!self._currentTask->context.interrupted) {
+               self._currentTask->context.interrupted = true; 
+               return; 
+            }
+
 #ifdef USE_WATCHDOG
             timestamps[self.core_id] = 0;
 #endif
-            leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
+            leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack, UniqueTaskContext::INTERRUPT_STACK_SIZE);
 
             assert(self._currentSink != nullptr);
-            assert(self._currentTask.get() != nullptr);
+            assert(self._currentTask != nullptr);
 
             // leanstore_osv_debug::trace_interrupted(&self._currentTask, jumpmu::thread_local_jumpmu_ctx->lock_counter);
+            if (self._currentTask == nullptr) {
+               abort(); 
+            }
 
-            boost::context::detail::ontop_fcontext(self.getCurrentSink(), (void*)self._currentTask.get(), UniqueTaskExecutor::store_task_on_yield);
+            self._currentTask->state = TaskState::Preempted;  
+
+            boost::context::detail::ontop_fcontext(self.getCurrentSink(), (void*)self._currentTask, UniqueTaskExecutor::store_task_on_yield);
 
 #if !defined(USE_PERIODIC_TIMER) && !defined(USE_WATCHDOG)
             clock_event->set(std::chrono::nanoseconds(INTERRUPT_TIME));
@@ -257,26 +276,29 @@ void UniqueTaskExecutor::setupInterruptHandling()
 
 TaskState UniqueTaskExecutor::runCurrentTask()
 {
-   jumpmu::thread_local_jumpmu_ctx = &_currentTaskRaw->context.jumpmuctx;
+   auto task = _currentTask;
+   jumpmu::thread_local_jumpmu_ctx = &_currentTask->context.jumpmuctx;
 
 #ifdef USE_INTERRUPTS
    arch::irq_disable();
-   run_task = true;
+   run_task[leanstore_osv_debug::get_cpu_id()] = true;
 #ifdef USE_WATCHDOG
    timestamps[this->core_id] = processor::rdtsc();
 #endif
-   leanstore_osv_debug::set_interrupt_stack((char*)task->context.interrupt_stack);
+   leanstore_osv_debug::set_interrupt_stack((char*)task->context.interrupt_stack, UniqueTaskContext::INTERRUPT_STACK_SIZE);
 #endif
 
-   if (!_currentTaskRaw->context.init) {
-      _currentTaskRaw->context.init = true;
-      boost::context::detail::jump_fcontext(_currentTaskRaw->context.this_task_context, (void*)_currentTaskRaw->arg);
+   assert(_currentTask->context.isStackValid()); 
+
+   if (!_currentTask->context.init) {
+      _currentTask->context.init = true;
+      boost::context::detail::jump_fcontext(_currentTask->context.this_task_context, (void*)_currentTask->arg);
    } else {
-      boost::context::detail::ontop_fcontext(_currentTaskRaw->context.this_task_context, this, this->store_sink_on_yield);
+      boost::context::detail::ontop_fcontext(_currentTask->context.this_task_context, this, this->store_sink_on_yield);
    }
 
 #ifdef USE_INTERRUPTS
-   run_task = false;
+   run_task[leanstore_osv_debug::get_cpu_id()] = false;
 #ifdef USE_WATCHDOG
    timestamps[this->core_id] = 0;
 #endif
@@ -284,7 +306,7 @@ TaskState UniqueTaskExecutor::runCurrentTask()
 #endif
    jumpmu::thread_local_jumpmu_ctx = &defaultExecutorContext;
 
-   return _currentTaskRaw->getState();
+   return task->getState();
 }
 
 // ============================================================================
@@ -294,10 +316,6 @@ TaskState UniqueTaskExecutor::runCurrentTask()
 void UniqueTaskExecutor::yieldCurrentTask(TaskState state)
 {
    assert(arch::irq_enabled());
-
-   if (localExec()._currentTaskRaw == nullptr) {
-      abort();
-   }
 
 #ifdef USE_INTERRUPTS
    arch::irq_disable();
@@ -313,7 +331,7 @@ void UniqueTaskExecutor::yieldCurrentTask(TaskState state)
    auto sink_fcontext = local_executor.getCurrentSink();
 
 #ifdef USE_INTERRUPTS
-   leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
+   leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack, UniqueTaskContext::INTERRUPT_STACK_SIZE);
 #endif
 
    boost::context::detail::ontop_fcontext(sink_fcontext, (void*)&task, local_executor.store_task_on_yield);
@@ -329,6 +347,7 @@ void UniqueTaskExecutor::yieldCurrentTask(TaskState state)
 void UniqueTaskExecutor::yieldRunningTask(UniqueTask* task, TaskState state)
 {
    assert(arch::irq_enabled());
+   auto& local_executor = UniqueTaskExecutor::localExec();
 
 #ifdef USE_INTERRUPTS
    arch::irq_disable();
@@ -337,13 +356,16 @@ void UniqueTaskExecutor::yieldRunningTask(UniqueTask* task, TaskState state)
 #endif
 #endif
 
+#ifdef USE_WATCHDOG
+   timestamps[local_executor.core_id] = 0;
+#endif
+
    task->state = state;
 
-   auto& local_executor = UniqueTaskExecutor::localExec();
    auto sink_fcontext = local_executor.getCurrentSink();
 
 #ifdef USE_INTERRUPTS
-   leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack);
+   leanstore_osv_debug::set_interrupt_stack((char*)UniqueTaskExecutor::localExec()._sinkInterruptStack, UniqueTaskContext::INTERRUPT_STACK_SIZE);
 #endif
 
    boost::context::detail::ontop_fcontext(sink_fcontext, (void*)task, local_executor.store_task_on_yield);
@@ -363,7 +385,7 @@ void UniqueTaskExecutor::setupBackgroundWork()
 {
    std::unique_ptr<UniqueBackgroundWorkMeta> meta1 = std::make_unique<UniqueBackgroundWorkMeta>();
    auto* meta1_ptr = meta1.get();
-   std::function<void(void)> io_poller_fn = [this, meta1_ptr]() {
+   std::function<void(void)>* io_poller_fn = new std::function<void(void)>([this, meta1_ptr]() {
       while (true) {
          leanstore_osv_debug::trace_bg_start(1);
          auto work_done = ioChannel.poll();
@@ -371,14 +393,14 @@ void UniqueTaskExecutor::setupBackgroundWork()
          meta1_ptr->last_work = work_done;
          yieldCurrentTask(TaskState::Ready);
       }
-   };
+   });
    UniqueTaskPtr bgctx1 = createTask(io_poller_fn, UniqueTaskExecutor::trampoline);
    background_work[1] = std::make_unique<UniqueBackgroundWork>(std::move(bgctx1), TaskState::WaitIo, std::move(meta1));
 
    // IO SUBMITTER - linked to WaitIo
    std::unique_ptr<UniqueBackgroundWorkMeta> meta2 = std::make_unique<UniqueBackgroundWorkMeta>();
    auto* meta2_ptr = meta2.get();
-   std::function<void(void)> io_submitter_fn = [this, meta2_ptr]() {
+   std::function<void(void)>* io_submitter_fn = new std::function<void(void)>([this, meta2_ptr]() {
       while (true) {
          leanstore_osv_debug::trace_bg_start(2);
          auto submitted = ioChannel.submit();
@@ -386,7 +408,7 @@ void UniqueTaskExecutor::setupBackgroundWork()
          meta2_ptr->last_work = submitted;
          yieldCurrentTask(TaskState::Ready);
       }
-   };
+   });
    UniqueTaskPtr bgctx2 = createTask(io_submitter_fn, UniqueTaskExecutor::trampoline);
    background_work[2] = std::make_unique<UniqueBackgroundWork>(std::move(bgctx2), TaskState::WaitIo, std::move(meta2));
 
@@ -417,8 +439,9 @@ void UniqueTaskExecutor::handleBackgroundWork()
 
       auto* task = background_work[task_id].get();
       if (systemState.get(task->linked_state) > 0) {
-         _currentTaskRaw = task->bg_task.get();
+         _currentTask = std::move(task->bg_task);
          runCurrentTask();
+         task->bg_task = std::move(_currentTask);
          // task->meta->max_work = std::max(task->meta->max_work, task->meta->last_work);
       }
    }
@@ -449,8 +472,9 @@ void UniqueTaskExecutor::handleBackgroundWork()
       auto* task = background_work[task_id].get();
 
       uint64_t start_time = mean::readTSC();
-      _currentTaskRaw = task->bg_task.get();
+      _currentTask = task->bg_task;
       runCurrentTask();
+      task->bg_task = _currentTask;
       uint64_t end_time = mean::readTSC();
 
       // task->meta->max_work = std::max(task->meta->max_work, task->meta->last_work);
@@ -508,7 +532,7 @@ void UniqueTaskExecutor::cycle()
    while (_keep_running) {
       if (timeCheck++ % 64 == 0 && mean::getSeconds() - start > FLAGS_run_for_seconds) {
          if (--parallel_threads == 0) {
-            _currentTaskRaw = originTask.get();
+            _currentTask = std::move(originTask);
             runCurrentTask();
          }
       }
@@ -554,27 +578,7 @@ void UniqueTaskExecutor::cycle()
       }
 #endif
 
-#ifdef USE_BACKGROUND_TASKS
-      int max_tasks_per_cycle = 16;
-#else
-      const int max_tasks_per_cycle = 1;  // std::min((unsigned long)16, tasks.size() + tasks_io_done.size());
-#endif
-      int tasks_run = 0;
-
-      while (tasks_run < max_tasks_per_cycle && popTaskRaw(_currentTaskOwned, _currentTaskRaw)) {
-         counters.tasksRun++;
-
-         if (!tryAcquireTaskLock()) {
-            tasks_run++;
-            break;
-         }
-
-         tasks_run++;
-         TaskState state = runCurrentTask();
-         handleTaskStateRaw(state, _currentTaskOwned);
-      }
-
-      _currentTaskRaw = nullptr;
+      int tasks_run = runScheduledTasks();
    }
 }
 
@@ -646,12 +650,13 @@ int UniqueTaskExecutor::pollWorkload()
 int UniqueTaskExecutor::pollWorkloadWithRate()
 {
    leanstore_osv_debug::trace_bg_start(3);
+   nic.sync(); 
    size_t requests = nic.size();
 
    size_t task_to_do = std::min(requests, FLAGS_worker_tasks - opentasks);
 
    for (size_t i = 0; i < task_to_do; i++) {
-      UniqueTaskPtr task = createTask(workloadFunction, trampoline);
+      UniqueTaskPtr task = createTask(&workloadFunction, trampoline);
       task->context.jumpmuctx.tx_start_time = nic.get(i)->timestamp;
       tasks.push_back(std::move(task));
    }
@@ -660,10 +665,10 @@ int UniqueTaskExecutor::pollWorkloadWithRate()
    leanstore_osv_debug::trace_bg_end(3);
 
    // Drop any requests we couldn't handle — don't let backlog grow
-   if (requests > task_to_do) {
-      leanstore::WorkerCounters::myCounters().time_counter_2 += requests - task_to_do;
-      nic.consume(requests - task_to_do);
-   }
+   // if (requests > task_to_do) {
+   //    leanstore::WorkerCounters::myCounters().time_counter_2 += requests - task_to_do;
+   //    nic.consume(requests - task_to_do);
+   // }
 
    return task_to_do;
 }
@@ -674,7 +679,7 @@ int UniqueTaskExecutor::pollWorkloadWithoutRate()
       leanstore_osv_debug::trace_bg_start(3);
       size_t new_tasks = FLAGS_worker_tasks - opentasks;
       for (size_t i = 0; i < new_tasks; i++) {
-         this->pushTask(workloadFunction);
+         this->pushTask(&workloadFunction);
       }
       leanstore_osv_debug::trace_bg_end(3);
       return new_tasks;
@@ -691,23 +696,55 @@ bool UniqueTaskExecutor::shouldCheckWatchdog()
    return false;
 }
 
-bool UniqueTaskExecutor::popTaskRaw(UniqueTaskPtr& holder, UniqueTask*& raw)
+int UniqueTaskExecutor::runScheduledTasks()
 {
-   if (tasks_io_done.try_pop(holder) || tasks.try_pop(holder)) {
-      raw = holder.get();
-      systemState.decrement(raw->state);
+#ifdef USE_BACKGROUND_TASKS
+   int max_tasks_per_cycle = std::min((unsigned long)16, tasks.size() + tasks_io_done.size());
+#else
+   const int max_tasks_per_cycle = 1;  // std::min((unsigned long)16, tasks.size() + tasks_io_done.size());
+#endif
+   int tasks_run = 0;
+
+   while (tasks_run < max_tasks_per_cycle && popTask(_currentTask)) {
+      counters.tasksRun++;
+
+      if (!tryAcquireTaskLock()) {
+         tasks_run++;
+         // continue;
+         break;
+      }
+
+      tasks_run++;
+      TaskState state = runCurrentTask();
+      handleTaskState(state);
+      if (state == TaskState::Done) {
+         _currentTask->~UniqueTask(); 
+         g_task_context_pool->deallocate(_currentTask);
+      }
+   }
+
+   leanstore::WorkerCounters::myCounters().time_counter_3++;
+   leanstore::WorkerCounters::myCounters().total_time_sum_3 += tasks_run;
+
+   return tasks_run;
+}
+
+bool UniqueTaskExecutor::popTask(UniqueTaskPtr& task)
+{
+   if (tasks_io_done.try_pop(task) || tasks.try_pop(task)) {
+      systemState.decrement(task->state);
       return true;
    }
    return false;
 }
 
-void UniqueTaskExecutor::handleTaskStateRaw(TaskState state, UniqueTaskPtr& holder)
+void UniqueTaskExecutor::handleTaskState(TaskState state)
 {
    switch (state) {
       case TaskState::Done:
          counters.tasksCompleted++;
+         opentasks--;
          leanstore::ThreadCounters::myCounters().exec_tasks_st_comp++;
-         // holder destructs here naturally at end of loop iteration — cold path
          break;
 
       case TaskState::Waiting:
@@ -729,11 +766,19 @@ void UniqueTaskExecutor::handleTaskStateRaw(TaskState state, UniqueTaskPtr& hold
       case TaskState::ReadyNoFreePages:
       case TaskState::ReadyLock:
       case TaskState::ReadyJumpLock:
+      case TaskState::Preempted: 
          systemState.increment(state);
-         // move ownership back into the queue — one move, same as before
-         tasks.push_back(std::move(holder));
+         tasks.push_back(std::move(_currentTask));
          counters.tasksReady++;
-         // ... counter updates ...
+
+         if (state == TaskState::Ready)
+            leanstore::ThreadCounters::myCounters().exec_tasks_st_ready++;
+         else if (state == TaskState::ReadyNoFreePages)
+            leanstore::ThreadCounters::myCounters().exec_tasks_st_ready_mem++;
+         else if (state == TaskState::ReadyLock)
+            leanstore::ThreadCounters::myCounters().exec_tasks_st_ready_lck++;
+         else
+            leanstore::ThreadCounters::myCounters().exec_tasks_st_ready_jumplck++;
          break;
 
       default:
@@ -745,13 +790,15 @@ void UniqueTaskExecutor::handleTaskStateRaw(TaskState state, UniqueTaskPtr& hold
 
 bool UniqueTaskExecutor::tryAcquireTaskLock()
 {
-   if (_currentTaskRaw->state == TaskState::ReadyLock) {
-      if (!_currentTaskRaw->lock->try_lock()) {
-         // need to put it back — but holder is in the caller, so we need to pass it
-         // or just keep the old pattern here since it's the failure (cold) path
+   if (_currentTask->state == TaskState::ReadyLock) {
+      if (!_currentTask->lock->try_lock()) {
+         systemState.increment(TaskState::ReadyLock);
+         tasks.push_back(_currentTask);
+         leanstore::WorkerCounters::myCounters().time_counter_0++;
+         leanstore::ThreadCounters::myCounters().exec_tasks_st_ready_lckskip++;
          return false;
       }
-      _currentTaskRaw->lock->unlock();
+      _currentTask->lock->unlock();
    }
    return true;
 }
@@ -773,7 +820,7 @@ void UniqueTaskExecutor::registerPageProvider(void* buffer_manager_ptr, u64 part
    // PAGE PROVIDER
    std::unique_ptr<UniqueBackgroundWorkMeta> meta3 = std::make_unique<UniqueBackgroundWorkMeta>();
    auto meta3_ptr = meta3.get();
-   std::function<void(void)> page_provider_fn1 = [this, meta3_ptr]() {
+   std::function<void(void)>* page_provider_fn1 = new std::function<void(void)>([this, meta3_ptr]() {
       CoolingPartition& partition = buffer_manager->cooling_partitions[partition_id];
 
       while (true) {
@@ -793,7 +840,7 @@ void UniqueTaskExecutor::registerPageProvider(void* buffer_manager_ptr, u64 part
          yieldCurrentTask(TaskState::Ready);
       }
       return 0;
-   };
+   });
    UniqueTaskPtr bgctx3 = createTask(page_provider_fn1, UniqueTaskExecutor::trampoline);
    std::unique_ptr<UniqueBackgroundWork> page_provider_bg =
        std::make_unique<UniqueBackgroundWork>(std::move(bgctx3), TaskState::ReadyNoCoolPages, std::move(meta3));
@@ -801,7 +848,7 @@ void UniqueTaskExecutor::registerPageProvider(void* buffer_manager_ptr, u64 part
 
    std::unique_ptr<UniqueBackgroundWorkMeta> meta4 = std::make_unique<UniqueBackgroundWorkMeta>();
    auto meta4_ptr = meta4.get();
-   std::function<void(void)> page_provider_fn2 = [this, meta4_ptr]() {
+   std::function<void(void)>* page_provider_fn2 = new std::function<void(void)>([this, meta4_ptr]() {
       CoolingPartition& partition = buffer_manager->cooling_partitions[partition_id];
 
       while (true) {
@@ -837,7 +884,7 @@ void UniqueTaskExecutor::registerPageProvider(void* buffer_manager_ptr, u64 part
          yieldCurrentTask(TaskState::Ready);
       }
       return 0;
-   };
+   });
    UniqueTaskPtr bgctx4 = createTask(page_provider_fn2, UniqueTaskExecutor::trampoline);
    std::unique_ptr<UniqueBackgroundWork> page_provider_bg2 =
        std::make_unique<UniqueBackgroundWork>(std::move(bgctx4), TaskState::ReadyNoCoolPages, std::move(meta4));
@@ -861,13 +908,13 @@ void UniqueTaskExecutor::pageProviderCycle()
 
 void UniqueTaskExecutor::pushTask(UniqueTaskPtr task)
 {
-   tasks.push_back(std::move(task));
+   tasks.push_back(task);
 }
 
-void UniqueTaskExecutor::pushTask(TaskFunction fun)
+void UniqueTaskExecutor::pushTask(TaskFunction* fun)
 {
    UniqueTaskPtr task = createTask(fun, trampoline);
-   tasks.push_back(std::move(task));
+   tasks.push_back(task);
 }
 
 void UniqueTaskExecutor::moveReady(UniqueTaskPtr task)
@@ -903,14 +950,14 @@ UniqueTaskExecutor& UniqueTaskExecutor::localExec()
 
 UniqueTask& UniqueTaskExecutor::currentTask()
 {
-   auto task = localExec()._currentTaskRaw;
-   ensure(task);
+   auto task = localExec()._currentTask;
+   if (!task) {abort(); }
    return *task;
 }
 
 UniqueTaskExecutor::UniqueTaskPtr UniqueTaskExecutor::getCurrentTaskOwnership()
 {
-   return std::move(localExec()._currentTaskOwned);
+   return localExec()._currentTask;
 }
 
 }  // namespace mean

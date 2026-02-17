@@ -117,6 +117,7 @@ bool HashTable::has(u64 key)
    }
    return false;
 }
+
 // -------------------------------------------------------------------------------------
 }  // namespace storage
 }  // namespace leanstore
