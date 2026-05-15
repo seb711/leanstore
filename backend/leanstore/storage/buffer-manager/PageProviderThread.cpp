@@ -60,11 +60,15 @@ int BufferManager::pageProviderCycle(int partition_id)
    ensure(partition_id < static_cast<int>(cooling_partitions_count));
    CoolingPartition& partition = cooling_partitions[partition_id];
 
+   if (partition.outstanding) {
+      mean::exec::ioChannel().poll(); 
+   } 
+
    // Phase 1:   Unswizzle hot pages and move them to cooling stage
    //            If there are less than 64 free pages or (to be) free pages
-   if (calculateCoolingDeficit(partition) > 64) {
+   if (calculateCoolingDeficit(partition) > 128) {
       assert(arch::irq_enabled());
-      uint64_t unswizzledHotPages = unswizzleHotPages(partition, 64, partition_id);
+      uint64_t unswizzledHotPages = unswizzleHotPages(partition, 128, partition_id);
    }
 
    // Phase 2: Process cooling queue and initiate I/O for dirty pages
@@ -75,6 +79,7 @@ int BufferManager::pageProviderCycle(int partition_id)
    }
 
    // Phase 3: Complete I/O operations and evict clean pages
+
    evictCompletedIoPages(partition, partition.state.freed_bfs_batch);
 
    // Attach freed buffer frames to partition's free list
@@ -155,13 +160,15 @@ u64 BufferManager::unswizzleHotPages(CoolingPartition& partition, u64 required_c
    u64 failed_attempts = 0;
    const u64 max_failed_attempts = 10;
 
+   uint64_t start = mean::readTSC(); 
+
    while (failed_attempts < max_failed_attempts) {
       jumpmuTry()
       {
          while (cooled_count < required_count && failed_attempts < max_failed_attempts) {
             OptimisticGuard guard(current_bf->header.latch, true);
 
-            // Check if this buffer frame is a valid cooling candidate
+            // Check if this buffer frame is a valid cooling candidate (check if this page has to be in mem, is hot, or excl latched)
             if (!isValidCoolingCandidate(*current_bf)) {
                current_bf = &partitionRandomBufferFrame(partition_id, max_partitions);
                failed_attempts++;
@@ -230,6 +237,11 @@ u64 BufferManager::unswizzleHotPages(CoolingPartition& partition, u64 required_c
       WorkerCounters::myCounters().time_counter_3++;
    }
 
+   WorkerCounters::myCounters().time_counter_2 = cooled_count;
+   WorkerCounters::myCounters().total_time_sum_2 = cooled_count + failed_attempts;
+   WorkerCounters::myCounters().time_counter_3 = cooled_count;
+   WorkerCounters::myCounters().total_time_sum_3 = (mean::readTSC() - start) / 4.4;
+
    return cooled_count;
 }
 
@@ -284,6 +296,7 @@ void BufferManager::initiateWriteBack(BufferFrame& bf, CoolingPartition& partiti
 
 void BufferManager::handleWriteCompletion(mean::IoBaseRequest* request)
 {
+   PPCounters::myCounters().flushed_pages_counter++; 
    auto& written_bf = *request->user.user_data.as<BufferFrame*>();
    auto written_gsn = request->user.user_data2.val.u;
    auto& partition = *request->user.user_data3.as<CoolingPartition*>();

@@ -104,7 +104,7 @@ void UniqueTaskExecutor::initializeTaskContext(UniqueTaskContext& ctx,
    ctx.this_task_context = boost::context::detail::make_fcontext(static_cast<char*>(stack_base) + stack_size, stack_size, fn);
 }
 
-UniqueTaskExecutor::UniqueTaskPtr UniqueTaskExecutor::createTask(TaskFunction* fun, void (*entry_fn)(boost::context::detail::transfer_t))
+UniqueTaskExecutor::UniqueTaskPtr UniqueTaskExecutor::createTask(TaskFunction* fun, void (*entry_fn)(boost::context::detail::transfer_t), BaseRequest req)
 {
    if (!g_task_context_pool) {
       throw std::runtime_error("Pool not initialized");
@@ -113,6 +113,7 @@ UniqueTaskExecutor::UniqueTaskPtr UniqueTaskExecutor::createTask(TaskFunction* f
    // auto task = new UniqueTask(fun);
    auto task = g_task_context_pool->allocate(fun);
    initializeTaskContext(task->context, task->context.stack, TaskContextPool::getStackSize(), entry_fn);
+   task->type = req; 
 
    opentasks++;
    return UniqueTaskPtr(task);
@@ -136,7 +137,10 @@ void UniqueTaskExecutor::trampoline(boost::context::detail::transfer_t t)
 #endif
 #endif
 
-   (*self._currentTask->fun)();
+   assert(self._currentTask);
+   assert(self._currentTask->fun); 
+   
+   (*self._currentTask->fun)(self._currentTask->type.type, self._currentTask->type.key);
 
 #ifdef USE_WATCHDOG
    timestamps[self.core_id] = 0;
@@ -158,7 +162,7 @@ void UniqueTaskExecutor::trampoline(boost::context::detail::transfer_t t)
 // Constructor / Destructor
 // ============================================================================
 
-UniqueTaskExecutor::UniqueTaskExecutor(MessageHandler& msg, IoChannel& io_channel, DummyNIC& nic, int executor_id)
+UniqueTaskExecutor::UniqueTaskExecutor(MessageHandler& msg, IoChannel& io_channel, AbstractNIC& nic, int executor_id)
     : ThreadBase("te_", executor_id), ioChannel(io_channel), nic(nic), messageHandler(msg), systemState()
 {
    core_id = executor_id;
@@ -385,7 +389,7 @@ void UniqueTaskExecutor::setupBackgroundWork()
 {
    std::unique_ptr<UniqueBackgroundWorkMeta> meta1 = std::make_unique<UniqueBackgroundWorkMeta>();
    auto* meta1_ptr = meta1.get();
-   std::function<void(void)>* io_poller_fn = new std::function<void(void)>([this, meta1_ptr]() {
+   TaskFunction* io_poller_fn = new TaskFunction([this, meta1_ptr](BaseRequestType t, u64 key) {
       while (true) {
          leanstore_osv_debug::trace_bg_start(1);
          auto work_done = ioChannel.poll();
@@ -394,13 +398,13 @@ void UniqueTaskExecutor::setupBackgroundWork()
          yieldCurrentTask(TaskState::Ready);
       }
    });
-   UniqueTaskPtr bgctx1 = createTask(io_poller_fn, UniqueTaskExecutor::trampoline);
+   UniqueTaskPtr bgctx1 = createTask(io_poller_fn, UniqueTaskExecutor::trampoline, {0, 0, BaseRequestType::BACKGROUND});
    background_work[1] = std::make_unique<UniqueBackgroundWork>(std::move(bgctx1), TaskState::WaitIo, std::move(meta1));
 
    // IO SUBMITTER - linked to WaitIo
    std::unique_ptr<UniqueBackgroundWorkMeta> meta2 = std::make_unique<UniqueBackgroundWorkMeta>();
    auto* meta2_ptr = meta2.get();
-   std::function<void(void)>* io_submitter_fn = new std::function<void(void)>([this, meta2_ptr]() {
+   TaskFunction* io_submitter_fn = new TaskFunction([this, meta2_ptr](BaseRequestType t, u64 key) {
       while (true) {
          leanstore_osv_debug::trace_bg_start(2);
          auto submitted = ioChannel.submit();
@@ -409,7 +413,7 @@ void UniqueTaskExecutor::setupBackgroundWork()
          yieldCurrentTask(TaskState::Ready);
       }
    });
-   UniqueTaskPtr bgctx2 = createTask(io_submitter_fn, UniqueTaskExecutor::trampoline);
+   UniqueTaskPtr bgctx2 = createTask(io_submitter_fn, UniqueTaskExecutor::trampoline, {0, 0, BaseRequestType::BACKGROUND});
    background_work[2] = std::make_unique<UniqueBackgroundWork>(std::move(bgctx2), TaskState::WaitIo, std::move(meta2));
 
    // PAGE PROVIDER - linked to ReadyNoFreePages (placeholder)
@@ -524,6 +528,7 @@ void UniqueTaskExecutor::cycle()
 {
    UniqueTaskExecutor::readyExecutors++;
    u64 cycles = 0;
+   u64 previous_run = mean::readTSC(); 
 
    random_generator.seed(mean::exec::getId());
    int start = mean::getSeconds();
@@ -546,15 +551,20 @@ void UniqueTaskExecutor::cycle()
       }
 #ifndef USE_BACKGROUND_TASKS
       handleSleep();
-      if (cycles % 32 == 0) {
+      if (cycles % 32 /* mean::readTSC() - previous_run > (256000 * 1.5) */) {
+         u64 currentRun = mean::readTSC(); 
          pageProviderCycle();
+         leanstore::WorkerCounters::myCounters().time_counter_0 += 1; 
+         leanstore::WorkerCounters::myCounters().total_time_sum_0 += (currentRun - previous_run) / 4500; 
+         previous_run = currentRun; 
+
       }
 
       submitIo();
 
-      if (cycles % 64 == 0) {
-         pollIo();
-      }
+      // if (cycles % 64 == 0) {
+      //    pollIo();
+      // }
 #else
       handleBackgroundWork();
 #endif
@@ -638,7 +648,7 @@ void UniqueTaskExecutor::handleDelayedIoSubmission(u64 cycles, u64& delay_until_
 
 int UniqueTaskExecutor::pollWorkload()
 {
-   if (!nic.active)
+   if (!nic.is_active())
       return 0;
    if (FLAGS_tx_rate > 0) {
       return pollWorkloadWithRate();
@@ -656,7 +666,7 @@ int UniqueTaskExecutor::pollWorkloadWithRate()
    size_t task_to_do = std::min(requests, FLAGS_worker_tasks - opentasks);
 
    for (size_t i = 0; i < task_to_do; i++) {
-      UniqueTaskPtr task = createTask(&workloadFunction, trampoline);
+      UniqueTaskPtr task = createTask(&workloadFunction, trampoline, *nic.get(i));
       task->context.jumpmuctx.tx_start_time = nic.get(i)->timestamp;
       tasks.push_back(std::move(task));
    }
@@ -679,7 +689,7 @@ int UniqueTaskExecutor::pollWorkloadWithoutRate()
       leanstore_osv_debug::trace_bg_start(3);
       size_t new_tasks = FLAGS_worker_tasks - opentasks;
       for (size_t i = 0; i < new_tasks; i++) {
-         this->pushTask(&workloadFunction);
+         this->pushTask(&workloadFunction, nic.get());
       }
       leanstore_osv_debug::trace_bg_end(3);
       return new_tasks;
@@ -720,6 +730,20 @@ int UniqueTaskExecutor::runScheduledTasks()
       if (state == TaskState::Done) {
          _currentTask->~UniqueTask(); 
          g_task_context_pool->deallocate(_currentTask);
+         opentasks--; 
+      }
+   }
+
+   while (tasks_run < max_tasks_per_cycle && popPreemptedTask(_currentTask)) {
+      counters.tasksRun++;
+
+      tasks_run++;
+      TaskState state = runCurrentTask();
+      handleTaskState(state);
+      if (state == TaskState::Done) {
+         _currentTask->~UniqueTask(); 
+         g_task_context_pool->deallocate(_currentTask);
+         opentasks--; 
       }
    }
 
@@ -729,21 +753,19 @@ int UniqueTaskExecutor::runScheduledTasks()
    return tasks_run;
 }
 
-bool UniqueTaskExecutor::popTask(UniqueTaskPtr& task)
+inline bool UniqueTaskExecutor::popTask(UniqueTaskPtr& task)
 {
-   if (tasks_io_done.try_pop(task) || tasks.try_pop(task)) {
-      systemState.decrement(task->state);
-      return true;
+   return tasks_io_done.try_pop(task) || tasks.try_pop(task); 
    }
-   return false;
+
+inline bool UniqueTaskExecutor::popPreemptedTask(UniqueTaskPtr& task) {
+   return preempted_tasks.try_pop(task); 
 }
 
 void UniqueTaskExecutor::handleTaskState(TaskState state)
 {
    switch (state) {
       case TaskState::Done:
-         counters.tasksCompleted++;
-         opentasks--;
          leanstore::ThreadCounters::myCounters().exec_tasks_st_comp++;
          break;
 
@@ -760,27 +782,21 @@ void UniqueTaskExecutor::handleTaskState(TaskState state)
          counters.tasksWaiting++;
          waitingTaskCount++;
          waitIoTaskCount++;
+         tasks.push_back(_currentTask); 
          break;
 
       case TaskState::Ready:
       case TaskState::ReadyNoFreePages:
       case TaskState::ReadyLock:
       case TaskState::ReadyJumpLock:
-      case TaskState::Preempted: 
          systemState.increment(state);
-         tasks.push_back(std::move(_currentTask));
+         tasks.push_back(_currentTask);
          counters.tasksReady++;
-
-         if (state == TaskState::Ready)
-            leanstore::ThreadCounters::myCounters().exec_tasks_st_ready++;
-         else if (state == TaskState::ReadyNoFreePages)
-            leanstore::ThreadCounters::myCounters().exec_tasks_st_ready_mem++;
-         else if (state == TaskState::ReadyLock)
-            leanstore::ThreadCounters::myCounters().exec_tasks_st_ready_lck++;
-         else
-            leanstore::ThreadCounters::myCounters().exec_tasks_st_ready_jumplck++;
          break;
-
+      case TaskState::Preempted:
+         systemState.increment(state); 
+         preempted_tasks.push_back(_currentTask); 
+         break; 
       default:
          throw std::logic_error("Invalid task state");
    }
@@ -794,15 +810,23 @@ bool UniqueTaskExecutor::tryAcquireTaskLock()
       if (!_currentTask->lock->try_lock()) {
          systemState.increment(TaskState::ReadyLock);
          tasks.push_back(_currentTask);
-         leanstore::WorkerCounters::myCounters().time_counter_0++;
-         leanstore::ThreadCounters::myCounters().exec_tasks_st_ready_lckskip++;
+         // leanstore::WorkerCounters::myCounters().time_counter_0++;
+         // leanstore::ThreadCounters::myCounters().exec_tasks_st_ready_lckskip++;
          return false;
       }
       _currentTask->lock->unlock();
    }
+
+   if (_currentTask->state == TaskState::WaitIo) {
+      pollIo();
+      // leanstore::WorkerCounters::myCounters().time_counter_0++;  
+      if (_currentTask->state == TaskState::WaitIo) {
+         tasks.push_back(_currentTask);
+         return false;  
+      }
+   }
    return true;
 }
-
 // ============================================================================
 // Page Provider Integration
 // ============================================================================
@@ -820,7 +844,7 @@ void UniqueTaskExecutor::registerPageProvider(void* buffer_manager_ptr, u64 part
    // PAGE PROVIDER
    std::unique_ptr<UniqueBackgroundWorkMeta> meta3 = std::make_unique<UniqueBackgroundWorkMeta>();
    auto meta3_ptr = meta3.get();
-   std::function<void(void)>* page_provider_fn1 = new std::function<void(void)>([this, meta3_ptr]() {
+   TaskFunction* page_provider_fn1 = new TaskFunction([this, meta3_ptr](BaseRequestType t, uint64_t k) {
       CoolingPartition& partition = buffer_manager->cooling_partitions[partition_id];
 
       while (true) {
@@ -841,14 +865,14 @@ void UniqueTaskExecutor::registerPageProvider(void* buffer_manager_ptr, u64 part
       }
       return 0;
    });
-   UniqueTaskPtr bgctx3 = createTask(page_provider_fn1, UniqueTaskExecutor::trampoline);
+   UniqueTaskPtr bgctx3 = createTask(page_provider_fn1, UniqueTaskExecutor::trampoline, {0, 0, BaseRequestType::BACKGROUND});
    std::unique_ptr<UniqueBackgroundWork> page_provider_bg =
        std::make_unique<UniqueBackgroundWork>(std::move(bgctx3), TaskState::ReadyNoCoolPages, std::move(meta3));
    background_work[3] = std::move(page_provider_bg);
 
    std::unique_ptr<UniqueBackgroundWorkMeta> meta4 = std::make_unique<UniqueBackgroundWorkMeta>();
    auto meta4_ptr = meta4.get();
-   std::function<void(void)>* page_provider_fn2 = new std::function<void(void)>([this, meta4_ptr]() {
+   TaskFunction* page_provider_fn2 = new TaskFunction([this, meta4_ptr](BaseRequestType t, uint64_t k) {
       CoolingPartition& partition = buffer_manager->cooling_partitions[partition_id];
 
       while (true) {
@@ -885,7 +909,7 @@ void UniqueTaskExecutor::registerPageProvider(void* buffer_manager_ptr, u64 part
       }
       return 0;
    });
-   UniqueTaskPtr bgctx4 = createTask(page_provider_fn2, UniqueTaskExecutor::trampoline);
+   UniqueTaskPtr bgctx4 = createTask(page_provider_fn2, UniqueTaskExecutor::trampoline, {0, 0, BaseRequestType::BACKGROUND});
    std::unique_ptr<UniqueBackgroundWork> page_provider_bg2 =
        std::make_unique<UniqueBackgroundWork>(std::move(bgctx4), TaskState::ReadyNoCoolPages, std::move(meta4));
    background_work[4] = std::move(page_provider_bg2);
@@ -911,13 +935,25 @@ void UniqueTaskExecutor::pushTask(UniqueTaskPtr task)
    tasks.push_back(task);
 }
 
-void UniqueTaskExecutor::pushTask(TaskFunction* fun)
+void UniqueTaskExecutor::pushTask(TaskFunction* fun, BaseRequest b)
 {
-   UniqueTaskPtr task = createTask(fun, trampoline);
+   UniqueTaskPtr task = createTask(fun, trampoline, b);
    tasks.push_back(task);
 }
 
+void UniqueTaskExecutor::pushPreemptedTask(UniqueTaskPtr task) {
+   preempted_tasks.push_back(task); 
+}
+
 void UniqueTaskExecutor::moveReady(UniqueTaskPtr task)
+{
+   task->state = TaskState::Ready;
+   waitingTaskCount--;
+   waitIoTaskCount--;
+   // tasks_io_done.push_back(std::move(task));
+}
+
+void UniqueTaskExecutor::moveReadyForReal(UniqueTaskPtr task)
 {
    task->state = TaskState::Ready;
    waitingTaskCount--;

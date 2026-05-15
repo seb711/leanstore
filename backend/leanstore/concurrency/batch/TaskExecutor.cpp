@@ -61,7 +61,7 @@ void TaskExecutor::runUserThread(Task& task)
              // task.context.this_task_context = boost::context::callcc([&task](boost::context::continuation&& sink_process_context){
              // std::cout << "callcc lamda " <<std::endl << std::flush;
              task.context.sink_process_context = &sink;
-             task.fun();
+             task.fun(task.req.type, task.req.key);
              task.state = TaskState::Done;
              // std::cout << "callcc lamda end" <<std::endl << std::flush;
              return std::move(sink);

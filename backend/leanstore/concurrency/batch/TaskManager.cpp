@@ -23,7 +23,7 @@ TaskManager::~TaskManager()
 // -------------------------------------------------------------------------------------
 // env
 // -------------------------------------------------------------------------------------
-void TaskManager::init(int workerThreads, int exclusiveThreads, IoOptions ioOptions, int threadAffinityOffset)
+void TaskManager::init(int workerThreads, int exclusiveThreads, IoOptions ioOptions, NICCreator* creator, int threadAffinityOffset)
 {
    if (ioOptions.engine == "auto") {
       if (ioOptions.path.find("traddr") != std::string::npos) {
@@ -39,6 +39,11 @@ void TaskManager::init(int workerThreads, int exclusiveThreads, IoOptions ioOpti
    // worker threads must share with a message handler
    messageManager = std::make_unique<MessageHandlerManager>(workerThreads + exclusiveThreads);
    IoInterface::initInstance(ioOptions);
+   //
+   for (int t_i = 0; t_i < workerThreads + exclusiveThreads; t_i++) {
+      nics.push_back(std::move(creator->createNIC(FLAGS_tx_rate / FLAGS_worker_threads)));
+   }
+
    // exclusive
    for (int t_i = 0; t_i < exclusiveThreads; t_i++) {
       auto thread = std::make_unique<ThreadWithJump>(
@@ -57,7 +62,7 @@ void TaskManager::init(int workerThreads, int exclusiveThreads, IoOptions ioOpti
                    break;
                 }
                 meta.wt_ready = false;
-                meta.task();
+                meta.task(BaseRequestType::SYSTEM, 0);
                 meta.wt_ready = true;
                 meta.job_done = true;
                 meta.job_set = false;
@@ -118,7 +123,7 @@ void TaskManager::reflowPageProviderPartitions()
          exclusiveThreads = buffer_manager->cooling_partitions_count;
       }
       if (t_i < (int)buffer_manager->cooling_partitions_count) {
-         sendTask(t_i, [=] { TaskExecutor::localExec().registerPageProvider(buffer_manager, t_i); });
+         sendTask(t_i, [=](BaseRequestType t, u64 k) { TaskExecutor::localExec().registerPageProvider(buffer_manager, t_i); });
       }
    }
 }
@@ -261,90 +266,89 @@ void TaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int tasks
    std::atomic<u64> doneTasks = {0};
    std::atomic<bool> cancleable = {false};
 
-#ifdef LEANSTORE_INCLUDE_OSV
-   volatile SharedConfig* config_ = SharedConfig::get_config();
-   ensure(config_);  
-#else
-   volatile SharedConfig* config_ = SharedConfig::get_config_from_file("/dev/shm/myshm");
-   ensure(config_);  
-#endif
-
    int startedTasks = 0;
    for (int thr = 0; thr < threads; thr++) {
+      if (rate_active) {
+         nics[thr]->turn_on();
+      } else {
+         nics[thr]->turn_off();
+      }
+      AbstractNIC* coreNic = nics[thr].get();
       for (int ta = 0; ta < tasks; ta++) {
          startedTasks++;
-         Task* task = sendTask(
-             thr + exclusiveThreads, [&cancleable, &threads, &tasks, &rate_active, &doneTasks, &bb, config_, totalTasks, fun, originTask, originExecId] {
-                // work stealing
-                u64 start = 0;
-                u64 end = 0;
-                int startTime = mean::getSeconds();
-                int timeCheck = 0;
-                uint64_t prev_config_version = 0;
+         Task* task = sendTask(thr + exclusiveThreads, [&cancleable, &threads, &tasks, &rate_active, &doneTasks, &bb, &totalTasks, coreNic, fun,
+                                                        originTask, originExecId](BaseRequestType b, u64 k) {
+            // work stealing
+            u64 start = 0;
+            u64 end = 0;
+            int startTime = mean::getSeconds();
+            int timeCheck = 0;
+            uint64_t prev_config_version = 0;
 
-                // std::string s = "load: start: " + std::to_string(start) + " end: " + std::to_string(end) + " bbs: " +
-                // std::to_string(bb.begin) +  " bbe: " + std::to_string(bb.end); std::cout << s << std::endl;
+            // std::string s = "load: start: " + std::to_string(start) + " end: " + std::to_string(end) + " bbs: " +
+            // std::to_string(bb.begin) +  " bbe: " + std::to_string(bb.end); std::cout << s << std::endl;
 
-                auto nextStartTime = mean::readTSC();
-                u64 longLat = 0;
+            auto nextStartTime = mean::readTSC();
+            u64 longLat = 0;
 
-                const float rate = FLAGS_tx_rate / (threads * tasks);
-                std::random_device rd;
-                std::mt19937 gen(rd());
-                std::exponential_distribution<> expDist(rate);
+            const float rate = FLAGS_tx_rate / (threads * tasks);
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::exponential_distribution<> expDist(rate);
 
-                uint64_t cycles = 0; 
+            uint64_t cycles = 0;
 
-                while (true) {
-                  // if (cycles++ % 64 == 0 and prev_config_version < config_->version) {
-                  //       expDist = std::exponential_distribution<double>(config_->freq / (threads * tasks));
-                  //       prev_config_version = config_->version; 
-                  // }
-                   fun();
-                   if (!rate_active || (timeCheck++ % 64 == 0 && mean::getSeconds() - startTime > FLAGS_run_for_seconds)) {
-                      break;
-                   }
+            while (true) {
+               // if (cycles++ % 64 == 0 and prev_config_version < config_->version) {
+               //       expDist = std::exponential_distribution<double>(config_->freq / (threads * tasks));
+               //       prev_config_version = config_->version;
+               // }
+               BaseRequest b = coreNic->get();
+               fun(b.type, b.key);
+               if (!rate_active || (timeCheck++ % 64 == 0 && mean::getSeconds() - startTime > FLAGS_run_for_seconds)) {
+                  break;
+               }
 
-                   // this has to be done in order to simulate the latency
-                   while (true) {
-                      mean::task::yield();
-                      auto now = mean::readTSC();
-                      if (rate == 0 or !rate_active)
-                         break;
-                      if (now >= nextStartTime) {
-                         if (mean::tscDifferenceS(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time) > 1) {
-                            longLat++;
-                            nextStartTime = now;
-                            std::cout << "reset start time" << std::endl;
-                            if (longLat % 100000 == 0) {
-                               // std::cout << "thr: " << mean::exec::getId() << " long latency: " << longLat << std::endl;
-                            }
-                         }
-                         auto d = expDist(gen);
-                         jumpmu::thread_local_jumpmu_ctx->tx_start_time = nextStartTime;
-                         nextStartTime += mean::nsToTSC(d * 1e9);
-                         // std::cout << "next: " << nextStartTime << std::flush << std::endl;
-                         break;
-                      }
-                   }
-                   // END: LATENCY TESTS
+               // this has to be done in order to simulate the latency
+               while (true) {
+                  mean::task::yield();
+                  auto now = mean::readTSC();
+                  if (rate == 0 or !rate_active)
+                     break;
+                  if (now >= nextStartTime) {
+                     if (mean::tscDifferenceS(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time) > 1) {
+                        longLat++;
+                        nextStartTime = now;
+                        std::cout << "reset start time" << std::endl;
+                        if (longLat % 100000 == 0) {
+                           // std::cout << "thr: " << mean::exec::getId() << " long latency: " << longLat << std::endl;
+                        }
+                     }
+                     auto d = expDist(gen);
+                     jumpmu::thread_local_jumpmu_ctx->tx_start_time = nextStartTime;
+                     nextStartTime += mean::nsToTSC(d * 1e9);
+                     // std::cout << "next: " << nextStartTime << std::flush << std::endl;
+                     break;
+                  }
+               }
+               // END: LATENCY TESTS
 
-                   // TaskExecutor::localExec().disableMessagePoller = false;
-                }
-                doneTasks++;
-                // std::cout << "dones task: " << doneTasks << " toal: " << totalTasks << std::endl;
-                if (doneTasks == totalTasks) {  // last one hast to wake up the original thread.
-                                                // sendMessage to origin Exec, in it move origin Task from waiting to ready and let it continue
-                   std::cout << "dones task: " << doneTasks << " toal: " << totalTasks << std::endl;
-                   TaskExecutor::localExec().sendMessage(
-                       originExecId,
-                       [](void*, uintptr_t taskPtr) {
-                          Task* task = reinterpret_cast<Task*>(taskPtr);
-                          TaskExecutor::localExec().moveReady(task);
-                       },
-                       reinterpret_cast<uintptr_t>(originTask));
-                }
-             });
+               // TaskExecutor::localExec().disableMessagePoller = false;
+            }
+            doneTasks++;
+            // std::cout << "dones task: " << doneTasks << " toal: " << totalTasks << std::endl;
+            if (doneTasks == totalTasks) {  // last one hast to wake up the original thread.
+                                            // sendMessage to origin Exec, in it move origin Task from waiting to ready and let it continue
+               std::cout << "dones task: " << doneTasks << " toal: " << totalTasks << std::endl;
+               TaskExecutor::localExec().sendMessage(
+                   originExecId,
+                   [](void*, uintptr_t taskPtr) {
+                      Task* task = reinterpret_cast<Task*>(taskPtr);
+                      TaskExecutor::localExec().moveReady(task);
+                   },
+                   reinterpret_cast<uintptr_t>(originTask));
+            }
+         });
          open_tasks.push_back(task);
          // std::cout << "startedTasks: " << startedTasks << std::endl;
       }
@@ -353,13 +357,13 @@ void TaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int tasks
    TaskExecutor::localExec().yieldCurrentTask(TaskState::Waiting);
 
    for (auto* task : open_tasks) {
-      delete task; 
+      delete task;
    }
    std::cout << "parallel for done" << std::endl;
 }
 void TaskManager::scheduleTaskSync(TaskFunction fun)
 {
-   fun();
+   fun(BaseRequestType::SYSTEM, 0);
 }
 // -------------------------------------------------------------------------------------
 void TaskManager::yield(TaskState ts)
@@ -414,7 +418,7 @@ Task* TaskManager::sendTask(int to, TaskFunction taskFun)
           TaskExecutor::localExec().pushTask(t);
        },
        reinterpret_cast<uint64_t>(task));
-   return task; 
+   return task;
 }
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------

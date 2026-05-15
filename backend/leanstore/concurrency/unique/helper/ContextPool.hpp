@@ -11,8 +11,6 @@
 namespace mean
 {
 
-using TaskFunction = std::function<void()>;
-
 // Simple free list memory pool
 template <size_t BlockSize>
 class MemoryPool

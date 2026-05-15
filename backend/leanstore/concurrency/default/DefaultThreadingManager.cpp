@@ -63,7 +63,7 @@ void DefaultThreadingManager::init(int workers_count, int exclusiveThreads, IoOp
                    break;
                 }
                 meta.wt_ready = false;
-                meta.task();
+                meta.task(BaseRequestType::SYSTEM, 0);
                 meta.wt_ready = true;
                 meta.job_done = true;
                 meta.job_set = false;
@@ -110,7 +110,7 @@ void DefaultThreadingManager::init(int workers_count, int exclusiveThreads, IoOp
                       break;
                    }
                    meta.wt_ready = false;
-                   meta.task();
+                   meta.task(BaseRequestType::SYSTEM, 0);
                    meta.wt_ready = true;
                    meta.job_done = true;
                    meta.job_set = false;
@@ -169,7 +169,7 @@ void DefaultThreadingManager::init(int workers_count, int exclusiveThreads, IoOp
 void DefaultThreadingManager::start(TaskFunction taskFun)
 {
    // all_threads[max_exclusive_threads]->sendTask(taskFun);
-   taskFun();
+   taskFun(BaseRequestType::SYSTEM, 0);
 }
 // -------------------------------------------------------------------------------------
 void DefaultThreadingManager::shutdown()
@@ -246,7 +246,7 @@ void DefaultThreadingManager::registerPageProvider(void* bf_ptr, int partitions_
    auto buffer_manager = static_cast<leanstore::storage::BufferManager*>(bf_ptr);
    for (int t_i = 0; t_i < partitions_count; t_i++) {
       printf("register pp thread\n");
-      registerExclusiveThread("pp", t_i, [buffer_manager, t_i, this]() {
+      registerExclusiveThread("pp", t_i, [buffer_manager, t_i, this](BaseRequestType b, u64 k) {
          auto& iochannel = execIoChannel();
          while (true) {
             buffer_manager->pageProviderCycle(t_i);
@@ -290,14 +290,6 @@ void* threadFunction(void* arg)
 void DefaultThreadingManager::parallelFor(BlockedRange bb, TaskFunction fun, const int tasks, s64 bbgranularity, bool rate_active)
 {
    int num_cores = FLAGS_worker_threads;
-
-#ifdef LEANSTORE_INCLUDE_OSV
-   volatile SharedConfig* config_ = SharedConfig::get_config();
-   ensure(config_);
-#else
-   volatile SharedConfig* config_ = SharedConfig::get_config_from_file("/dev/shm/myshm");
-   ensure(config_);
-#endif
 
    // Divide work among cores
    std::vector<std::thread> workload_generators;
@@ -408,7 +400,7 @@ void DefaultThreadingManager::parallelFor(BlockedRange bb, TaskFunction fun, con
 void DefaultThreadingManager::scheduleTaskSync(TaskFunction fun)
 {
    jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext();
-   fun();
+   fun(BaseRequestType::SYSTEM, 0);
    delete jumpmu::thread_local_jumpmu_ctx;
 }
 // -------------------------------------------------------------------------------------

@@ -3,12 +3,13 @@
 #include "leanstore/BTreeAdapter.hpp"
 #include "leanstore/Config.hpp"
 #include "leanstore/LeanStore.hpp"
-#include "leanstore/profiling/counters/WorkerCounters.hpp"
 #include "leanstore/profiling/counters/ThreadCounters.hpp"
+#include "leanstore/profiling/counters/WorkerCounters.hpp"
 #include "leanstore/utils/FVector.hpp"
 #include "leanstore/utils/Files.hpp"
 #include "leanstore/utils/RandomGenerator.hpp"
 #include "leanstore/utils/ScrambledZipfGenerator.hpp"
+#include "leanstore/workload/NIC.hpp"
 // -------------------------------------------------------------------------------------
 #include "leanstore/concurrency/Mean.hpp"
 #include "leanstore/io/IoInterface.hpp"
@@ -34,6 +35,9 @@ using namespace leanstore;
 // -------------------------------------------------------------------------------------
 using YCSBKey = u64;
 using YCSBPayload = BytesPayload<120>;
+
+#include "ycsbnic.hpp"
+
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 double calculateMTPS(chrono::high_resolution_clock::time_point begin, chrono::high_resolution_clock::time_point end, u64 factor)
@@ -42,18 +46,20 @@ double calculateMTPS(chrono::high_resolution_clock::time_point begin, chrono::hi
    return (tps / 1000000.0);
 }
 // -------------------------------------------------------------------------------------
-void run_ycsb() {
+void run_ycsb(mean::BaseRequestType _2, u64 _1)
+{
+   std::cout << "hello here1\n" << std::endl;
    // -------------------------------------------------------------------------------------
    chrono::high_resolution_clock::time_point begin, end;
    // -------------------------------------------------------------------------------------
    // LeanStore DB
    LeanStore db;
    unique_ptr<BTreeInterface<YCSBKey, YCSBPayload>> adapter;
-   mean::task::scheduleTaskSync([&]() {
-         auto& vs_btree = db.registerBTreeLL("ycsb", "y");
-         adapter.reset(new BTreeVSAdapter<YCSBKey, YCSBPayload>(vs_btree));
-         db.registerConfigEntry("ycsb_read_ratio", FLAGS_ycsb_read_ratio);
-         db.registerConfigEntry("ycsb_target_gib", FLAGS_target_gib);
+   mean::task::scheduleTaskSync([&](mean::BaseRequestType _2, u64 _1) {
+      auto& vs_btree = db.registerBTreeLL("ycsb", "y");
+      adapter.reset(new BTreeVSAdapter<YCSBKey, YCSBPayload>(vs_btree));
+      db.registerConfigEntry("ycsb_read_ratio", FLAGS_ycsb_read_ratio);
+      db.registerConfigEntry("ycsb_target_gib", FLAGS_target_gib);
    });
    // -------------------------------------------------------------------------------------
    auto& table = *adapter;
@@ -70,31 +76,31 @@ void run_ycsb() {
 
       // Atomic counter for block coordination
       std::atomic<u64> current_block_start{0};
-      const u64 block_size = 1 << 18; // Adjust granularity as needed
+      const u64 block_size = 1 << 18;  // Adjust granularity as needed
       const u64 total_items = n;
 
 #if defined(MEAN_USE_TASKING) || defined(MEAN_USE_UNIQUE_TASKING)
-      auto ycsb_insert_fun = [&]() {
+      auto ycsb_insert_fun = [&](mean::BaseRequestType type, uint64_t key) {
          while (true) {
             // Atomically fetch the next block to work on
             u64 block_start = current_block_start.fetch_add(block_size, std::memory_order_relaxed);
-            
+
             // Check if we're done
             if (block_start >= total_items) {
                break;
             }
-            
+
             // Calculate actual block end (handle last block being smaller)
             u64 block_end = std::min(block_start + block_size, total_items);
-            
+
             // Process this block
             for (u64 t = block_start; t < block_end; t++) {
                YCSBPayload payload;
                utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
                auto& key = t;
                table.insert(key, payload);
-               
-               YCSBPayload result; /// FIXME remove this check
+
+               YCSBPayload result;  /// FIXME remove this check
                table.lookup(t, result);
                ensure(result == payload);
             }
@@ -106,11 +112,11 @@ void run_ycsb() {
       mean::task::parallelFor(bb, ycsb_insert_fun, FLAGS_worker_tasks, false);
 #else
 #ifdef NEW_JUMPMU
-            jumpmu::thread_local_jumpmu.pid = -2; 
+      jumpmu::thread_local_jumpmu.pid = -2;
 #else
-      // jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext(); 
-      jumpmu::thread_local_jumpmu_ctx->pid = -2; 
-#endif 
+      // jumpmu::thread_local_jumpmu_ctx = new jumpmu::JumpMUContext();
+      jumpmu::thread_local_jumpmu_ctx->pid = -2;
+#endif
 
       // auto ycsb_insert_fun = [&](u64 t_i, std::atomic<bool>&) {
       for (int i = 0; i < n; i++) {
@@ -121,7 +127,7 @@ void run_ycsb() {
          utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
          auto& key = i;
          table.insert(key, payload);
-         YCSBPayload result; /// FIXME remove this check
+         YCSBPayload result;  /// FIXME remove this check
          // table.lookup(i, result);
          // ensure(result == payload);
 
@@ -150,39 +156,53 @@ void run_ycsb() {
    {
       auto start = mean::getSeconds();
 
-      auto ycsb_tx = [&](){
+      auto ycsb_tx = [&](mean::BaseRequestType type, uint64_t key1) {
          running_threads_counter++;
+         auto before = mean::readTSC();
 
-            auto before = mean::readTSC();
-            YCSBKey key = zipf_random->rand();
- 
-            assert(key < ycsb_tuple_count);
-            YCSBPayload result;
-            if (FLAGS_ycsb_read_ratio == 100 || utils::RandomGenerator::getRandU64(0, 100) < FLAGS_ycsb_read_ratio) {
-               table.lookup(key, result);
-            } else {
-               YCSBPayload payload;
+         YCSBKey key = key1;
+         assert(key < ycsb_tuple_count);
+         YCSBPayload payload;
+
+         switch (type) {
+            case mean::BaseRequestType::A:  // READ
+               table.lookup(key, payload);
+               break;
+            case mean::BaseRequestType::B:  // INSERT
+               utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
+               table.insert(key, payload);
+               break;
+            case mean::BaseRequestType::C:  // UPDATE
+               // std::cout << "update" << std::endl; 
                utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
                table.update(key, payload);
-            }
-           auto now = mean::readTSC();
+               break;
+            case mean::BaseRequestType::D:  // SCAN → fallback to read (no scan support)
+               table.lookup(key, payload);
+               break;
+            case mean::BaseRequestType::E:  // RMW → lookup then update
+               table.lookup(key, payload);
+               utils::RandomGenerator::getRandString(reinterpret_cast<u8*>(&payload), sizeof(YCSBPayload));
+               table.update(key, payload);
+               break;
+            default:
+               table.lookup(key, payload);
+               break;
+         }
+
+         auto now = mean::readTSC();
 #ifdef NEW_JUMPMU
-           auto timeDiff = mean::tscDifferenceUs(now, jumpmu::thread_local_jumpmu.tx_start_time);
+         auto timeDiff = mean::tscDifferenceUs(now, jumpmu::thread_local_jumpmu.tx_start_time);
 #else
-           auto timeDiff = mean::tscDifferenceUs(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time);
-#endif           // trace_finish_transaction(i); 
-           auto timeDiffIncWait = mean::tscDifferenceUs(now, before);
-           WorkerCounters::myCounters().total_tx_time += timeDiffIncWait;
-           WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiffIncWait);
-           WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiff);
-           // if (timeDiffIncWait < 10000000) {
-           //   WorkerCounters::myCounters().total_tx_time_inc_wait += timeDiffIncWait;
-           // }
-           // WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiffIncWait);
-           WorkerCounters::myCounters().tx++;
-           // ThreadCounters::myCounters().tx++;
-           mean::task::yield();
-            running_threads_counter--;
+         auto timeDiff = mean::tscDifferenceUs(now, jumpmu::thread_local_jumpmu_ctx->tx_start_time);
+#endif
+         auto timeDiffIncWait = mean::tscDifferenceUs(now, before);
+         WorkerCounters::myCounters().total_tx_time += timeDiffIncWait;
+         WorkerCounters::myCounters().tx_latency_hist.increaseSlot(timeDiffIncWait);
+         WorkerCounters::myCounters().tx_latency_hist_incwait.increaseSlot(timeDiff);
+         WorkerCounters::myCounters().tx++;
+         mean::task::yield();
+         running_threads_counter--;
       };
       BlockedRange bb(0, (u64)1000000000000ul);
       auto startTsc = mean::readTSC();
@@ -210,16 +230,18 @@ int main(int argc, char** argv)
    ioOptions.ioUringPollMode = FLAGS_io_uring_poll_mode;
    ioOptions.ioUringShareWq = FLAGS_io_uring_share_wq;
    ioOptions.raid5 = FLAGS_raid5;
-   ioOptions.iodepth = (FLAGS_async_batch_size + FLAGS_worker_tasks)*2; // hacky, how to take into account for remotes 
+   ioOptions.iodepth = (FLAGS_async_batch_size + FLAGS_worker_tasks) * 2;  // hacky, how to take into account for remotes
    // -------------------------------------------------------------------------------------
+
+   YCSBNICCreator creator;
+
    if (FLAGS_nopp) {
       ioOptions.channelCount = FLAGS_worker_threads;
-      mean::env::init(
-         FLAGS_worker_threads, //std::min(std::thread::hardware_concurrency(), FLAGS_tpcc_warehouse_count),
-         0/*FLAGS_pp_threads*/, ioOptions);
+      mean::env::init(FLAGS_worker_threads,  // std::min(std::thread::hardware_concurrency(), FLAGS_tpcc_warehouse_count),
+                      0 /*FLAGS_pp_threads*/, ioOptions, &creator);
    } else {
-      ioOptions.channelCount = 3; // FLAGS_worker_threads + FLAGS_pp_threads;
-      mean::env::init(FLAGS_worker_threads, FLAGS_pp_threads, ioOptions);
+      ioOptions.channelCount = 3;  // FLAGS_worker_threads + FLAGS_pp_threads;
+      mean::env::init(FLAGS_worker_threads, FLAGS_pp_threads, ioOptions, &creator);
    }
    mean::env::start(run_ycsb);
    // -------------------------------------------------------------------------------------

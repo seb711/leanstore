@@ -31,7 +31,7 @@ UniqueTaskManager::~UniqueTaskManager()
 // -------------------------------------------------------------------------------------
 // env
 // -------------------------------------------------------------------------------------
-void UniqueTaskManager::init(int workerThreads, int exclusiveThreads, IoOptions ioOptions, int threadAffinityOffset)
+void UniqueTaskManager::init(int workerThreads, int exclusiveThreads, IoOptions ioOptions, NICCreator* creator, int threadAffinityOffset)
 {
    std::cout << "USE UNIQUE TASKING" << std::endl;
    if (ioOptions.engine == "auto") {
@@ -43,6 +43,7 @@ void UniqueTaskManager::init(int workerThreads, int exclusiveThreads, IoOptions 
    }
    this->exclusiveThreads = exclusiveThreads;
    this->threadAffinityOffset = threadAffinityOffset;
+   this->creator = creator; 
    // -------------------------------------------------------------------------------------
    // all exclusive threds get an exclusibe channel
    // worker threads must share with a message handler
@@ -68,7 +69,7 @@ void UniqueTaskManager::init(int workerThreads, int exclusiveThreads, IoOptions 
                    break;
                 }
                 meta.wt_ready = false;
-                meta.task();
+                meta.task(BaseRequestType::SYSTEM, 0);
                 meta.wt_ready = true;
                 meta.job_done = true;
                 meta.job_set = false;
@@ -104,12 +105,12 @@ void UniqueTaskManager::adjustWorkerCount(int workerThreads)
       // ioChannels = 1;
       assert(ioChannels > exclusiveThreads);
       for (int i = runningExecs; i < workerThreads; i++) {
-         nics.push_back(new DummyNIC(FLAGS_tx_rate / FLAGS_worker_threads));
+         nics.push_back(std::move(creator->createNIC(FLAGS_tx_rate / FLAGS_worker_threads)));
          int id = i + exclusiveThreads;
          ensure(id < ioChannels);
          // physical channel
          execs.push_back(std::make_unique<UniqueTaskExecutor>(messageManager->getMessageHandler(id),
-                                                              IoInterface::instance().getIoChannel(i - runningExecs), *nics.back(), id));
+                                                              IoInterface::instance().getIoChannel(i - runningExecs), *((nics.back()).get()), id));
          execs.back()->setCpuAffinityBeforeStart(id + threadAffinityOffset);
          workers[id] = new leanstore::cr::Worker(id, workers, workerThreads + exclusiveThreads);
          execs.back()->this_worker = workers[id];
@@ -131,7 +132,7 @@ void UniqueTaskManager::reflowPageProviderPartitions()
          exclusiveThreads = buffer_manager->cooling_partitions_count;
       }
       if (t_i < (int)buffer_manager->cooling_partitions_count) {
-         sendTask(t_i, [=]() { UniqueTaskExecutor::localExec().registerPageProvider(buffer_manager, t_i); });
+         sendTask(t_i, [=](BaseRequestType t, uint64_t k) { UniqueTaskExecutor::localExec().registerPageProvider(buffer_manager, t_i); });
       }
    }
 }
@@ -153,7 +154,7 @@ void UniqueTaskManager::start(TaskFunction taskFun)
        [](void*, uintptr_t task) {
           auto t = reinterpret_cast<TaskFunction*>(task);
           // ensure(TaskManager::instance().exclusiveThreads.find(this_task::exec().id()) == TaskManager::instance().exclusiveThreads.end());
-          UniqueTaskExecutor::localExec().pushTask(t);
+          UniqueTaskExecutor::localExec().pushTask(t, {0, 0, BaseRequestType::SYSTEM});
        },
        reinterpret_cast<uint64_t>(taskf));
 }
@@ -163,11 +164,8 @@ void UniqueTaskManager::shutdown()
    for (auto& exe : execs) {
       exe->stop();
    }
-   for (auto* nic : nics) {
-      delete nic;
-   }
-   IoInterface::instance().~RaidEnvironment(); 
-   std::cout << "delete here? " << std::endl; 
+   IoInterface::instance().~RaidEnvironment();
+   std::cout << "delete here? " << std::endl;
 }
 // -------------------------------------------------------------------------------------
 void UniqueTaskManager::join()
@@ -304,11 +302,11 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
 
    parallel_threads = threads;
 
-   std::atomic<uint8_t> done_tasks = {0}; 
+   std::atomic<uint8_t> done_tasks = {0};
 
    for (int thr = 0; thr < parallel_threads; thr++) {
-      done_tasks++; 
-      sendTask(thr + exclusiveThreads, [&done_tasks, &rate_active, &fun]() {
+      done_tasks++;
+      sendTask(thr + exclusiveThreads, [&done_tasks, &rate_active, &fun](BaseRequestType t, u64 k) {
          // here setup the local executor
          // std::cout << "\n\n\nyeah idk what we will do here\n\n\n" << std::endl;
 
@@ -324,14 +322,14 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
             UniqueTaskExecutor::localExec().nic.turn_on();
          } else {
             // run the function directly
-            fun();
+            fun(t, k);
 
 #if defined(USE_INTERRUPTS) && !defined(USE_PERIODIC_TIMER)
             clock_event->disable();
 #endif
             if (--done_tasks == 0) {
-               UniqueTaskExecutor::localExec().moveReady(std::move(originTask));
-            } 
+               UniqueTaskExecutor::localExec().moveReadyForReal(std::move(originTask));
+            }
          }
       });
    }
@@ -346,7 +344,7 @@ void UniqueTaskManager::parallelFor(BlockedRange bb, TaskFunction fun, const int
 }
 void UniqueTaskManager::scheduleTaskSync(TaskFunction fun)
 {
-   fun();
+   fun(BaseRequestType::SYSTEM, 0);
 }
 // -------------------------------------------------------------------------------------
 void UniqueTaskManager::yield(TaskState ts)
@@ -402,7 +400,7 @@ void UniqueTaskManager::sendTask(int to, TaskFunction taskFun)
           auto t = reinterpret_cast<TaskFunction*>(taskFun);
           // ensure(TaskManager::instance().exclusiveThreads.find(this_task::exec().id()) == TaskManager::instance().exclusiveThreads.end());
           // createTask(taskFun1);
-          UniqueTaskExecutor::localExec().pushTask(t);
+          UniqueTaskExecutor::localExec().pushTask(t, {0, 0, BaseRequestType::SYSTEM});
        },
        reinterpret_cast<uint64_t>(taskFun1));
 }

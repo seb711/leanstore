@@ -5,6 +5,7 @@
 #include "leanstore/concurrency/utils/MessageHandler.hpp"
 #include "leanstore/io/IoAbstraction.hpp"
 #include "leanstore/sync-primitives/JumpMU.hpp"
+#include "leanstore/workload/NIC.hpp"
 
 // -------------------------------------------------------------------------------------
 #include "boost/context/continuation.hpp"
@@ -36,8 +37,8 @@ enum class TaskState {
 };
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
-using TaskFunction = std::function<void()>;  // std::add_pointer_t<void()>;
 using StacklessFunction = std::function<void()>;
+using TaskFunction = std::function<void(BaseRequestType, u64)>;  // std::add_pointer_t<void()>;
 // -------------------------------------------------------------------------------------
 struct TaskContext {
    bool init = false;
@@ -53,6 +54,7 @@ class Task
    jumpmu::JumpMUContext jumpctx;
    friend TaskExecutor;
    TaskFunction fun;
+   BaseRequest req; 
    TaskState state = TaskState::Ready;
   public:
    YieldLock* lock;

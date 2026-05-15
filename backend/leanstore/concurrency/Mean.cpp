@@ -33,9 +33,9 @@ using ExecEnv = OsvJobManager;
 namespace env
 {
 ExecEnv _instance;
-void init(int workerThreads, int exclusiveThreads, mean::IoOptions ioOptions, int threadAffinityOffset)
+void init(int workerThreads, int exclusiveThreads, mean::IoOptions ioOptions, NICCreator* creator, int threadAffinityOffset)
 {
-   _instance.init(workerThreads, exclusiveThreads, ioOptions, threadAffinityOffset);
+   _instance.init(workerThreads, exclusiveThreads, ioOptions, creator, threadAffinityOffset);
 }
 // -------------------------------------------------------------------------------------
 void start(TaskFunction fun)

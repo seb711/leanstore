@@ -1,7 +1,6 @@
 #pragma once
 
 #include "./helper/ContextPool.hpp"
-#include "./helper/DummyNic.hpp"
 #include "./helper/LatencyTracker.hpp"
 #include "./helper/SystemState.hpp"
 #include "Exceptions.hpp"
@@ -53,7 +52,7 @@ class UniqueTaskExecutor : public ThreadBase
    using UniqueTaskPtr = UniqueTask*;
 
    // Constructor & Destructor
-   UniqueTaskExecutor(MessageHandler& msg, IoChannel& io, DummyNIC& nic, int id);
+   UniqueTaskExecutor(MessageHandler& msg, IoChannel& io, AbstractNIC& nic, int id);
    ~UniqueTaskExecutor();
 
    // Delete copy and move
@@ -69,9 +68,12 @@ class UniqueTaskExecutor : public ThreadBase
 
    // Task Management
    void pushTask(UniqueTaskPtr task);
-   void pushTask(TaskFunction* fun);
+   void pushTask(TaskFunction* fun, BaseRequest req);
+   void pushPreemptedTask(UniqueTaskPtr task); 
    void moveReady(UniqueTaskPtr task);
+   void moveReadyForReal(UniqueTaskPtr task); 
    bool popTask(UniqueTaskPtr& task);
+   bool popPreemptedTask(UniqueTaskPtr& task);
    int taskCount();
 
    // Page Provider
@@ -117,7 +119,7 @@ class UniqueTaskExecutor : public ThreadBase
 
    std::atomic<float> sleep;
    IoChannel& ioChannel;
-   DummyNIC& nic;
+   AbstractNIC& nic;
    TaskExecutorCounters counters;
    leanstore::cr::Worker* this_worker;
 
@@ -154,7 +156,7 @@ class UniqueTaskExecutor : public ThreadBase
    void initializeTaskContext(UniqueTaskContext& ctx, void* stack_base, size_t stack_size, void (*fn)(boost::context::detail::transfer_t));
 
    // Task Creation
-   UniqueTaskPtr createTask(TaskFunction* fun, void (*entry_fn)(boost::context::detail::transfer_t));
+   UniqueTaskPtr createTask(TaskFunction* fun, void (*entry_fn)(boost::context::detail::transfer_t), BaseRequest req);
 
    // Main Execution Loop
    int process() override;
@@ -199,6 +201,7 @@ class UniqueTaskExecutor : public ThreadBase
    // Task Queues
    static const int MAX_TASKS = 1 << 10;
    leanstore::utils::RingBuffer<UniqueTaskPtr> tasks{MAX_TASKS};
+   leanstore::utils::RingBuffer<UniqueTaskPtr> preempted_tasks{MAX_TASKS};
    leanstore::utils::RingBuffer<UniqueTaskPtr> tasks_io_done{MAX_TASKS};
 
 #ifndef NDEBUG

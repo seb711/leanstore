@@ -34,7 +34,7 @@ class DummyNIC
    DummyNIC(double rate) : buffer_(), next_time_(0), rate_(rate), gen_(std::random_device{}()), dist_(rate), config_(nullptr)
    {
 #ifdef LEANSTORE_INCLUDE_OSV
-      // config_ = SharedConfig::get_config();
+      config_ = SharedConfig::get_config();
 #else
       config_ = SharedConfig::get_config_from_file("/dev/shm/myshm");
 #endif
@@ -80,8 +80,6 @@ class DummyNIC
       // Calculate new rate with variance applied
       // variance_pct of 0 means exact rate, 100 means full uniform distribution
       double new_rate = static_cast<double>(base_freq);
-
-      // std::cout << "Updating rate: freq=" << base_freq << " var=" << variance_pct << " new_rate=" << new_rate << std::endl;
 
       rate_ = new_rate;
       dist_ = std::exponential_distribution<double>(rate_);

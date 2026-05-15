@@ -47,6 +47,7 @@ class UniqueTask
 
   private:
    TaskFunction* fun;
+   BaseRequest type; 
    uint64_t arg;
    TaskState state = TaskState::Ready;
    static void trampoline(boost::context::detail::transfer_t t);

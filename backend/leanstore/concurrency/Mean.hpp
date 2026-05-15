@@ -4,6 +4,7 @@
 #include "leanstore/concurrency/batch/Task.hpp"
 #include "leanstore/concurrency/utils/YieldLock.hpp"
 #include "leanstore/io/IoInterface.hpp"
+#include "leanstore/workload/NIC.hpp"
 // -------------------------------------------------------------------------------------
 #include <functional>
 #include <string>
@@ -18,18 +19,18 @@ namespace mean
 #if defined(MEAN_USE_THREADING) || defined(MEAN_USE_DEFAULT_THREADING)
 using mmutex = std::mutex;
 #elif defined(MEAN_USE_JOBBING) && defined(NDEBUG)
-using mmutex = lockfree::mutex;
+using mmutex = YieldLock; // lockfree::mutex;
 #elif defined(MEAN_USE_JOBBING)
-using mmutex = lockfree::mutex; // DebugLock;
+using mmutex = YieldLock; // lockfree::mutex; // DebugLock;
 #else
 using mmutex = YieldLock;
 #endif
 
-using TaskFunction = std::function<void()>;  // std::add_pointer_t<void()>;
+using TaskFunction = std::function<void(BaseRequestType, u64)>;  // std::add_pointer_t<void()>;
 // -------------------------------------------------------------------------------------
 namespace env
 {
-void init(int workerThreads, int exclusiveThreads, IoOptions ioOptions, int threadAffinityOffset = 0);
+void init(int workerThreads, int exclusiveThreads, IoOptions ioOptions, NICCreator* creator, int threadAffinityOffset = 0);
 // ExecEnv& instance();
 void start(TaskFunction fun);
 void shutdown();

@@ -21,8 +21,9 @@ class UniqueTaskManager
    std::unordered_map<int, std::reference_wrapper<UniqueTaskExecutor>> exclusiveThreadsMap;
    std::vector<std::unique_ptr<ThreadWithJump>> exclusive_threads;
    std::unique_ptr<MessageHandlerManager> messageManager = nullptr;
-   std::vector<DummyNIC*> nics; 
+   std::vector<std::unique_ptr<AbstractNIC>> nics; 
 
+   NICCreator* creator; 
 
    int exclusiveThreads;
    int threadAffinityOffset;
@@ -36,7 +37,7 @@ class UniqueTaskManager
    // -------------------------------------------------------------------------------------
    // env
    // -------------------------------------------------------------------------------------
-   void init(int workerThreads, int exclsuiveThreads, IoOptions ioOptions, int threadAffinityOffset = 0);
+   void init(int workerThreads, int exclsuiveThreads, IoOptions ioOptions, NICCreator* creator, int threadAffinityOffset = 0);
    void start(TaskFunction taskFun);
    void shutdown();
    void join();

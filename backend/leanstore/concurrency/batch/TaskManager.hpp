@@ -20,6 +20,7 @@ class TaskManager
    std::atomic<int> exclusiveThreadCounter = {0};
    std::unordered_map<int, std::reference_wrapper<TaskExecutor>> exclusiveThreadsMap;
    std::vector<std::unique_ptr<ThreadWithJump>> exclusive_threads;
+   std::vector<std::unique_ptr<AbstractNIC>> nics; 
    std::unique_ptr<MessageHandlerManager> messageManager = nullptr;
    int exclusiveThreads;
    int threadAffinityOffset;
@@ -33,7 +34,7 @@ class TaskManager
    // -------------------------------------------------------------------------------------
    // env
    // -------------------------------------------------------------------------------------
-   void init(int workerThreads, int exclsuiveThreads, IoOptions ioOptions, int threadAffinityOffset = 0);
+   void init(int workerThreads, int exclsuiveThreads, IoOptions ioOptions, NICCreator* creator, int threadAffinityOffset = 0);
    void start(TaskFunction taskFun);
    void shutdown();
    void join();
